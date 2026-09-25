@@ -33,6 +33,7 @@ import {
   saveTransactions,
   getClubProfile,
   saveClubProfile,
+  clearDatabaseToZero,
   resetToSeedData,
 } from './services/storage';
 
@@ -135,11 +136,20 @@ export default function App() {
     }
   };
 
-  const handleResetData = () => {
-    if (confirm('Apakah Anda yakin ingin mereset seluruh data kembali ke kondisi demo awal SportKit?')) {
+  const handleClearToZero = () => {
+    if (confirm('Mulai database dari nol? Semua data murid, transaksi, absensi, dan iuran akan dikosongkan.')) {
+      clearDatabaseToZero();
+      loadAllData();
+      setSelectedStudentId('');
+      alert('Database sekarang telah kosong (mulai dari nol). Anda siap menginput data baru.');
+    }
+  };
+
+  const handleLoadSeedData = () => {
+    if (confirm('Muat data contoh demo SportKit (30+ murid KU-10, transaksi, dan absensi)?')) {
       resetToSeedData();
       loadAllData();
-      alert('Data berhasil di-reset ke kondisi awal!');
+      alert('Data contoh demo berhasil dimuat!');
     }
   };
 
@@ -380,7 +390,7 @@ export default function App() {
         onChangeRole={handleRoleChange}
         clubProfile={profile}
         calonCount={calonCount}
-        onResetData={handleResetData}
+        onResetData={handleClearToZero}
         onToggleSidebar={() => setSidebarMobileOpen(!sidebarMobileOpen)}
         onNavigateCalon={() => setCurrentNav('calon-siswa')}
       />
@@ -594,7 +604,8 @@ export default function App() {
                     setClasses(c);
                     saveClasses(c);
                   }}
-                  onResetData={handleResetData}
+                  onClearToZero={handleClearToZero}
+                  onLoadSeedData={handleLoadSeedData}
                 />
               )}
             </>

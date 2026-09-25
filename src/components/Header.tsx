@@ -109,14 +109,14 @@ export const Header: React.FC<HeaderProps> = ({
           </button>
         )}
 
-        {/* Reset Demo Data Button */}
+        {/* Kosongkan / Reset Database Button */}
         <button
           onClick={onResetData}
           className="hidden lg:flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-400 hover:text-slate-200 text-xs font-medium transition-colors border border-slate-700/60"
-          title="Reset ke data awal video SportKit"
+          title="Kosongkan seluruh data untuk mulai dari nol"
         >
           <RefreshCw className="w-3 h-3" />
-          <span>Reset Data</span>
+          <span>Kosongkan Data (Mulai Nol)</span>
         </button>
 
         {/* User Avatar */}

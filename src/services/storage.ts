@@ -12,14 +12,14 @@ import {
 import { numberToWordsId } from '../utils/numberToWordsId';
 
 const STORAGE_KEYS = {
-  STUDENTS: 'sportkit_students_v1',
-  CLASSES: 'sportkit_classes_v1',
-  MONTHLY_DUES: 'sportkit_monthly_dues_v1',
-  EVENTS: 'sportkit_events_v1',
-  EVENT_PARTICIPANTS: 'sportkit_event_participants_v1',
-  ATTENDANCE: 'sportkit_attendance_v1',
-  TRANSACTIONS: 'sportkit_transactions_v1',
-  PROFILE: 'sportkit_profile_v1',
+  STUDENTS: 'sportkit_students_v2',
+  CLASSES: 'sportkit_classes_v2',
+  MONTHLY_DUES: 'sportkit_monthly_dues_v2',
+  EVENTS: 'sportkit_events_v2',
+  EVENT_PARTICIPANTS: 'sportkit_event_participants_v2',
+  ATTENDANCE: 'sportkit_attendance_v2',
+  TRANSACTIONS: 'sportkit_transactions_v2',
+  PROFILE: 'sportkit_profile_v2',
 };
 
 export const INITIAL_CLASSES: ClassGroup[] = [
@@ -422,16 +422,27 @@ function generateSeedData() {
 
 export function initializeStorage() {
   if (!localStorage.getItem(STORAGE_KEYS.STUDENTS)) {
-    const seed = generateSeedData();
-    localStorage.setItem(STORAGE_KEYS.STUDENTS, JSON.stringify(seed.students));
-    localStorage.setItem(STORAGE_KEYS.CLASSES, JSON.stringify(seed.classes));
-    localStorage.setItem(STORAGE_KEYS.MONTHLY_DUES, JSON.stringify(seed.monthlyDues));
-    localStorage.setItem(STORAGE_KEYS.EVENTS, JSON.stringify(seed.events));
-    localStorage.setItem(STORAGE_KEYS.EVENT_PARTICIPANTS, JSON.stringify(seed.eventParticipants));
-    localStorage.setItem(STORAGE_KEYS.ATTENDANCE, JSON.stringify(seed.attendanceSessions));
-    localStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(seed.transactions));
-    localStorage.setItem(STORAGE_KEYS.PROFILE, JSON.stringify(seed.profile));
+    // Start database completely clean from zero (kosong)
+    localStorage.setItem(STORAGE_KEYS.STUDENTS, JSON.stringify([]));
+    localStorage.setItem(STORAGE_KEYS.CLASSES, JSON.stringify(INITIAL_CLASSES));
+    localStorage.setItem(STORAGE_KEYS.MONTHLY_DUES, JSON.stringify([]));
+    localStorage.setItem(STORAGE_KEYS.EVENTS, JSON.stringify([]));
+    localStorage.setItem(STORAGE_KEYS.EVENT_PARTICIPANTS, JSON.stringify([]));
+    localStorage.setItem(STORAGE_KEYS.ATTENDANCE, JSON.stringify([]));
+    localStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify([]));
+    localStorage.setItem(STORAGE_KEYS.PROFILE, JSON.stringify(INITIAL_PROFILE));
   }
+}
+
+export function clearDatabaseToZero() {
+  localStorage.setItem(STORAGE_KEYS.STUDENTS, JSON.stringify([]));
+  localStorage.setItem(STORAGE_KEYS.CLASSES, JSON.stringify(INITIAL_CLASSES));
+  localStorage.setItem(STORAGE_KEYS.MONTHLY_DUES, JSON.stringify([]));
+  localStorage.setItem(STORAGE_KEYS.EVENTS, JSON.stringify([]));
+  localStorage.setItem(STORAGE_KEYS.EVENT_PARTICIPANTS, JSON.stringify([]));
+  localStorage.setItem(STORAGE_KEYS.ATTENDANCE, JSON.stringify([]));
+  localStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify([]));
+  localStorage.setItem(STORAGE_KEYS.PROFILE, JSON.stringify(INITIAL_PROFILE));
 }
 
 export function resetToSeedData() {

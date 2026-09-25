@@ -313,7 +313,16 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </div>
 
         <div className="divide-y divide-slate-100 overflow-x-auto">
-          {transactions.map((tx) => (
+          {transactions.length === 0 ? (
+            <div className="p-8 text-center text-slate-500 text-xs">
+              <Receipt className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+              <p className="font-semibold text-slate-700">Belum ada transaksi pembayaran.</p>
+              <p className="text-slate-400 mt-0.5">
+                Kuitansi resmi akan otomatis tercatat di sini setelah pendaftaran siswa baru atau pembayaran iuran dilakukan.
+              </p>
+            </div>
+          ) : (
+            transactions.map((tx) => (
             <div
               key={tx.id}
               className="p-4 flex items-center justify-between gap-4 hover:bg-slate-50/80 transition-colors"
@@ -349,7 +358,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 </button>
               </div>
             </div>
-          ))}
+          )))}
         </div>
       </div>
     </div>

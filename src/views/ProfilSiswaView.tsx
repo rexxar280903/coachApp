@@ -81,7 +81,15 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
   }, [currentStudent]);
 
   if (!currentStudent) {
-    return <div className="p-8 text-center text-slate-500">Pilih siswa terlebih dahulu</div>;
+    return (
+      <div className="bg-white rounded-2xl p-12 border border-slate-200 shadow-xs text-center space-y-3">
+        <User className="w-12 h-12 text-slate-300 mx-auto" />
+        <h2 className="text-lg font-bold text-slate-800">Belum Ada Data Siswa</h2>
+        <p className="text-xs text-slate-500 max-w-md mx-auto">
+          Database masih kosong dari nol. Silakan lakukan pendaftaran siswa baru melalui menu Pendaftaran Baru untuk melihat data profil, matriks iuran, dan absensi di sini.
+        </p>
+      </div>
+    );
   }
 
   // Monthly dues for this student & year

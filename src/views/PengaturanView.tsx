@@ -8,7 +8,8 @@ interface PengaturanViewProps {
   classes: ClassGroup[];
   onUpdateProfile: (newProfile: ClubProfile) => void;
   onUpdateClasses: (newClasses: ClassGroup[]) => void;
-  onResetData: () => void;
+  onClearToZero: () => void;
+  onLoadSeedData: () => void;
 }
 
 export const PengaturanView: React.FC<PengaturanViewProps> = ({
@@ -16,7 +17,8 @@ export const PengaturanView: React.FC<PengaturanViewProps> = ({
   classes,
   onUpdateProfile,
   onUpdateClasses,
-  onResetData,
+  onClearToZero,
+  onLoadSeedData,
 }) => {
   const [profileForm, setProfileForm] = useState<ClubProfile>(profile);
   const [classList, setClassList] = useState<ClassGroup[]>(classes);
@@ -72,13 +74,25 @@ export const PengaturanView: React.FC<PengaturanViewProps> = ({
           </p>
         </div>
 
-        <button
-          onClick={onResetData}
-          className="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold flex items-center gap-1.5 transition-colors"
-        >
-          <RefreshCw className="w-3.5 h-3.5" />
-          <span>Reset ke Data Demo Awal</span>
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={onClearToZero}
+            className="px-3.5 py-2 rounded-xl bg-red-50 hover:bg-red-100 text-red-700 text-xs font-bold border border-red-200 flex items-center gap-1.5 transition-colors"
+            title="Hapus semua murid, transaksi, dan riwayat untuk mulai dari nol"
+          >
+            <RefreshCw className="w-3.5 h-3.5" />
+            <span>Mulai dari Nol (Kosongkan)</span>
+          </button>
+          <button
+            type="button"
+            onClick={onLoadSeedData}
+            className="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold flex items-center gap-1.5 transition-colors"
+            title="Muat data contoh demo video SportKit"
+          >
+            <span>Muat Data Demo</span>
+          </button>
+        </div>
       </div>
 
       {savedSuccess && (
