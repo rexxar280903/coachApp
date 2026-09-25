@@ -6,15 +6,19 @@ import { CheckCircle2, UserPlus, Sparkles, ArrowLeft } from 'lucide-react';
 interface PendaftaranViewProps {
   classes: ClassGroup[];
   isPublicMode?: boolean;
+  initialClassId?: string;
   onRegisterSubmit: (newStudent: Student, autoPayDirectly: boolean) => void;
   onCancel?: () => void;
+  onNavigateKelas?: () => void;
 }
 
 export const PendaftaranView: React.FC<PendaftaranViewProps> = ({
   classes,
   isPublicMode = false,
+  initialClassId,
   onRegisterSubmit,
   onCancel,
+  onNavigateKelas,
 }) => {
   // Form fields matching video timestamp 00:21 & 00:34
   const [nama, setNama] = useState<string>('');
@@ -31,7 +35,7 @@ export const PendaftaranView: React.FC<PendaftaranViewProps> = ({
   const [namaIbu, setNamaIbu] = useState<string>('');
   const [noHpIbu, setNoHpIbu] = useState<string>('');
 
-  const [selectedClassId, setSelectedClassId] = useState<string>('ku-10');
+  const [selectedClassId, setSelectedClassId] = useState<string>(initialClassId || classes[0]?.id || 'ku-10');
   const [successBanner, setSuccessBanner] = useState<boolean>(false);
 
   const selectedClass = classes.find((c) => c.id === selectedClassId) || classes[0];
@@ -42,6 +46,12 @@ export const PendaftaranView: React.FC<PendaftaranViewProps> = ({
   const handleSubmit = (autoPay: boolean) => {
     if (!nama.trim()) {
       alert('Silakan masukkan nama siswa terlebih dahulu.');
+      return;
+    }
+
+    if (classes.length === 0 || !selectedClass) {
+      alert('Belum ada kelompok kelas yang tersedia. Silakan buat kelompok kelas baru terlebih dahulu.');
+      if (onNavigateKelas) onNavigateKelas();
       return;
     }
 
@@ -298,20 +308,52 @@ export const PendaftaranView: React.FC<PendaftaranViewProps> = ({
 
         {/* SECTION 3: KELAS & BIAYA (matching video timestamp 00:41) */}
         <div>
-          <label className="block font-bold text-slate-800 text-sm mb-1.5">
-            Kelas *
-          </label>
-          <select
-            value={selectedClassId}
-            onChange={(e) => setSelectedClassId(e.target.value)}
-            className="w-full rounded-xl border border-slate-300 bg-slate-50/50 px-3.5 py-2.5 text-sm font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
-          >
-            {classes.map((cls) => (
-              <option key={cls.id} value={cls.id}>
-                {cls.nama} - {cls.deskripsi}
-              </option>
-            ))}
-          </select>
+          <div className="flex items-center justify-between mb-1.5">
+            <label className="block font-bold text-slate-800 text-sm">
+              Kelas *
+            </label>
+            {!isPublicMode && onNavigateKelas && (
+              <button
+                type="button"
+                onClick={onNavigateKelas}
+                className="text-xs text-blue-600 hover:text-blue-800 font-bold flex items-center gap-1 cursor-pointer"
+              >
+                + Buat / Kelola Kelompok Kelas Baru
+              </button>
+            )}
+          </div>
+
+          {classes.length === 0 ? (
+            <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <p className="font-bold">Belum ada kelompok kelas yang dibuat.</p>
+                <p className="text-amber-700 text-[11px] mt-0.5">
+                  Admin perlu membuat kelas terlebih dahulu untuk menentukan tarif iuran dan pelatih.
+                </p>
+              </div>
+              {!isPublicMode && onNavigateKelas && (
+                <button
+                  type="button"
+                  onClick={onNavigateKelas}
+                  className="px-3.5 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-bold whitespace-nowrap shadow-xs"
+                >
+                  + Buat Kelas Sekarang
+                </button>
+              )}
+            </div>
+          ) : (
+            <select
+              value={selectedClassId}
+              onChange={(e) => setSelectedClassId(e.target.value)}
+              className="w-full rounded-xl border border-slate-300 bg-slate-50/50 px-3.5 py-2.5 text-sm font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              {classes.map((cls) => (
+                <option key={cls.id} value={cls.id}>
+                  {cls.nama} - {cls.deskripsi}
+                </option>
+              ))}
+            </select>
+          )}
 
           {/* Fee Calculation Breakdown (matching video timestamp 00:41) */}
           <div className="mt-4 p-4 rounded-xl bg-slate-50 border border-slate-200 text-xs space-y-2">

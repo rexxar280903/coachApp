@@ -53,6 +53,7 @@ import { LaporanAbsensiView } from './views/LaporanAbsensiView';
 import { SiswaListView } from './views/SiswaListView';
 import { PengaturanView } from './views/PengaturanView';
 import { AngsuranLaporanView } from './views/AngsuranLaporanView';
+import { KelasManagerView } from './views/KelasManagerView';
 
 export default function App() {
   // Global Data State
@@ -354,11 +355,9 @@ export default function App() {
   };
 
   const handleDeleteSession = (sessionId: string) => {
-    if (confirm('Hapus riwayat sesi absensi ini?')) {
-      const updated = attendanceSessions.filter((s) => s.id !== sessionId);
-      setAttendanceSessions(updated);
-      saveAttendanceSessions(updated);
-    }
+    const updated = attendanceSessions.filter((s) => s.id !== sessionId);
+    setAttendanceSessions(updated);
+    saveAttendanceSessions(updated);
   };
 
   // Update student biodata
@@ -366,6 +365,71 @@ export default function App() {
     const updated = students.map((s) => (s.id === updatedStudent.id ? updatedStudent : s));
     setStudents(updated);
     saveStudents(updated);
+  };
+
+  // Class Management Handlers
+  const handleAddClass = (newClass: ClassGroup) => {
+    const updated = [...classes, newClass];
+    setClasses(updated);
+    saveClasses(updated);
+  };
+
+  const handleUpdateClass = (updatedClass: ClassGroup) => {
+    const updated = classes.map((c) => (c.id === updatedClass.id ? updatedClass : c));
+    setClasses(updated);
+    saveClasses(updated);
+  };
+
+  const handleDeleteClass = (classId: string, reassignClassId?: string) => {
+    let updatedStudents = [...students];
+    if (reassignClassId) {
+      updatedStudents = updatedStudents.map((s) =>
+        s.kelasId === classId ? { ...s, kelasId: reassignClassId } : s
+      );
+    } else {
+      updatedStudents = updatedStudents.filter((s) => s.kelasId !== classId);
+    }
+    setStudents(updatedStudents);
+    saveStudents(updatedStudents);
+
+    const updatedClasses = classes.filter((c) => c.id !== classId);
+    setClasses(updatedClasses);
+    saveClasses(updatedClasses);
+
+    if (selectedClassId === classId) {
+      setSelectedClassId(reassignClassId || (updatedClasses.length > 0 ? updatedClasses[0].id : ''));
+    }
+  };
+
+  // Delete single applicant
+  const handleDeleteApplicant = (studentId: string) => {
+    const updatedStudents = students.filter((s) => s.id !== studentId);
+    setStudents(updatedStudents);
+    saveStudents(updatedStudents);
+
+    const updatedDues = monthlyDues.filter((d) => d.siswaId !== studentId);
+    setMonthlyDues(updatedDues);
+    saveMonthlyDues(updatedDues);
+
+    const updatedParticipants = eventParticipants.filter((p) => p.siswaId !== studentId);
+    setEventParticipants(updatedParticipants);
+    saveEventParticipants(updatedParticipants);
+  };
+
+  // Delete multiple applicants (bulk)
+  const handleDeleteBulkApplicants = (studentIds: string[]) => {
+    const idSet = new Set(studentIds);
+    const updatedStudents = students.filter((s) => !idSet.has(s.id));
+    setStudents(updatedStudents);
+    saveStudents(updatedStudents);
+
+    const updatedDues = monthlyDues.filter((d) => !idSet.has(d.siswaId));
+    setMonthlyDues(updatedDues);
+    saveMonthlyDues(updatedDues);
+
+    const updatedParticipants = eventParticipants.filter((p) => !idSet.has(p.siswaId));
+    setEventParticipants(updatedParticipants);
+    saveEventParticipants(updatedParticipants);
   };
 
   const handleUpdateStudentStatus = (studentId: string, newStatus: StudentStatus) => {
@@ -452,7 +516,22 @@ export default function App() {
                   onSelectEventIuran={handleSelectEventIuran}
                   onNavigateNewRegistration={() => setCurrentNav('pendaftaran-baru')}
                   onNavigateCalonSiswa={() => setCurrentNav('calon-siswa')}
+                  onNavigateKelas={() => setCurrentNav('kelas')}
                   onViewReceipt={handleViewReceipt}
+                />
+              )}
+
+              {currentNav === 'kelas' && (
+                <KelasManagerView
+                  classes={classes}
+                  students={students}
+                  onAddClass={handleAddClass}
+                  onUpdateClass={handleUpdateClass}
+                  onDeleteClass={handleDeleteClass}
+                  onNavigateNewRegistration={(classId) => {
+                    if (classId) setSelectedClassId(classId);
+                    setCurrentNav('pendaftaran-baru');
+                  }}
                 />
               )}
 
@@ -505,6 +584,8 @@ export default function App() {
                   classes={classes}
                   onOpenApplicantPaymentModal={handleOpenApplicantPaymentModal}
                   onNavigateNewRegistration={() => setCurrentNav('pendaftaran-baru')}
+                  onDeleteApplicant={handleDeleteApplicant}
+                  onDeleteBulkApplicants={handleDeleteBulkApplicants}
                 />
               )}
 
@@ -512,8 +593,10 @@ export default function App() {
                 <PendaftaranView
                   classes={classes}
                   isPublicMode={false}
+                  initialClassId={selectedClassId}
                   onRegisterSubmit={handleRegisterSubmit}
                   onCancel={() => setCurrentNav('dashboard')}
+                  onNavigateKelas={() => setCurrentNav('kelas')}
                 />
               )}
 

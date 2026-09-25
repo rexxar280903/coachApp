@@ -14,11 +14,13 @@ import {
   BarChart3, 
   Clock, 
   Award,
-  PhoneCall
+  PhoneCall,
+  Layers
 } from 'lucide-react';
 
 export type ActiveNav = 
   | 'dashboard'
+  | 'kelas'
   | 'iuran-rutin'
   | 'iuran-insidentil'
   | 'angsuran'
@@ -129,6 +131,19 @@ export const Sidebar: React.FC<SidebarProps> = ({
               >
                 <LayoutDashboard className="w-4 h-4 text-sky-400" />
                 <span>Dashboard</span>
+              </button>
+
+              {/* Kelas (Kelompok Kelas) */}
+              <button
+                onClick={() => handleNavClick('kelas')}
+                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all ${
+                  currentNav === 'kelas'
+                    ? 'bg-blue-600 text-white font-bold shadow-md'
+                    : 'text-slate-300 hover:text-white hover:bg-[#113963]'
+                }`}
+              >
+                <Layers className="w-4 h-4 text-sky-400" />
+                <span>Kelompok Kelas</span>
               </button>
 
               {/* IURAN (Expandable) */}

@@ -25,6 +25,7 @@ interface DashboardViewProps {
   onSelectEventIuran: (eventId: string) => void;
   onNavigateNewRegistration: () => void;
   onNavigateCalonSiswa: () => void;
+  onNavigateKelas: () => void;
   onViewReceipt: (transaction: PaymentTransaction) => void;
 }
 
@@ -38,6 +39,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   onSelectEventIuran,
   onNavigateNewRegistration,
   onNavigateCalonSiswa,
+  onNavigateKelas,
   onViewReceipt,
 }) => {
   const [selectedStudentId, setSelectedStudentId] = useState<string>('');
@@ -247,17 +249,25 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
       {/* Quick Summary Statistics */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-xs">
+        <div 
+          onClick={onNavigateKelas}
+          className="bg-white rounded-xl p-4 border border-slate-200 shadow-xs hover:border-blue-300 hover:shadow-md cursor-pointer transition-all group"
+          title="Klik untuk kelola & buat kelompok kelas baru"
+        >
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Siswa Aktif</span>
-            <div className="p-2 rounded-lg bg-blue-50 text-blue-600">
+            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider group-hover:text-blue-600 transition-colors">
+              Kelompok Kelas
+            </span>
+            <div className="p-2 rounded-lg bg-blue-50 text-blue-600 group-hover:bg-blue-600 group-hover:text-white transition-colors">
               <Users className="w-4 h-4" />
             </div>
           </div>
-          <div className="mt-2 text-2xl font-black text-slate-900">
-            {activeStudents.length}
+          <div className="mt-2 text-2xl font-black text-slate-900 group-hover:text-blue-700 transition-colors">
+            {classes.length} Kelas
           </div>
-          <p className="text-[11px] text-slate-500 mt-0.5">Tersebar di {classes.length} kelas</p>
+          <p className="text-[11px] text-blue-600 font-semibold mt-0.5 flex items-center gap-1">
+            <span>+ Buat / Atur Kelas</span>
+          </p>
         </div>
 
         <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-xs">
