@@ -1,8 +1,27 @@
 import React, { useState, useEffect } from 'react';
 import { PaymentMethod, PaymentTransaction } from '../types/sportkit';
 import { formatRupiah, numberToWordsId } from '../utils/numberToWordsId';
-import { generateReceiptNumber } from '../services/storage';
-import { CheckCircle2, DollarSign, X, Receipt, ArrowLeft } from 'lucide-react';
+import { generateReceiptNumber, SAMPLE_TRANSFER_PROOF_SVG } from '../services/storage';
+import { 
+  CheckCircle2, 
+  DollarSign, 
+  X, 
+  Receipt, 
+  ArrowLeft, 
+  CreditCard, 
+  Sparkles,
+  Upload,
+  Image as ImageIcon,
+  Trash2,
+  Calendar,
+  FileText,
+  MessageSquare
+} from 'lucide-react';
+
+const MONTH_NAMES = [
+  'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+  'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
+];
 
 interface PaymentModalProps {
   isOpen: boolean;
@@ -10,6 +29,7 @@ interface PaymentModalProps {
   title?: string;
   siswaNama: string;
   siswaId: string;
+  kelasId?: string;
   kelasNama: string;
   noHp?: string;
   nominalAwal: number;
@@ -18,7 +38,18 @@ interface PaymentModalProps {
   biayaPendaftaran?: number;
   iuranBulanan?: number;
   periodeInfo?: string;
-  onSuccess: (transaction: PaymentTransaction) => void;
+  bulan?: number;
+  tahun?: number;
+  onSuccess: (
+    transaction: PaymentTransaction,
+    proofData?: {
+      buktiGambarUrl?: string;
+      pesanPembayaran?: string;
+      catatanAdmin?: string;
+      bulan?: number;
+      tahun?: number;
+    }
+  ) => void;
   onViewReceipt: (transaction: PaymentTransaction) => void;
 }
 
@@ -28,6 +59,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
   title = 'Pembayaran Iuran Rutin',
   siswaNama,
   siswaId,
+  kelasId,
   kelasNama,
   noHp = '08123456789',
   nominalAwal,
@@ -36,6 +68,8 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
   biayaPendaftaran,
   iuranBulanan,
   periodeInfo,
+  bulan: initialBulan = 12,
+  tahun: initialTahun = 2024,
   onSuccess,
   onViewReceipt,
 }) => {
@@ -43,6 +77,10 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
   const [jumlahBayar, setJumlahBayar] = useState<number>(nominalAwal);
   const [metode, setMetode] = useState<PaymentMethod>('Transfer BCA');
   const [catatan, setCatatan] = useState<string>('');
+  const [selectedBulan, setSelectedBulan] = useState<number>(initialBulan || 12);
+  const [selectedTahun, setSelectedTahun] = useState<number>(initialTahun || 2024);
+  const [buktiGambarUrl, setBuktiGambarUrl] = useState<string>('');
+  const [pesanPembayaran, setPesanPembayaran] = useState<string>('');
   const [isSuccess, setIsSuccess] = useState<boolean>(false);
   const [createdTx, setCreatedTx] = useState<PaymentTransaction | null>(null);
 
@@ -55,14 +93,45 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
       setCreatedTx(null);
       setCatatan('');
       setMetode('Transfer BCA');
+      setSelectedBulan(initialBulan || 12);
+      setSelectedTahun(initialTahun || 2024);
+      setBuktiGambarUrl('');
+      setPesanPembayaran(
+        `Pembayaran iuran bulan ${MONTH_NAMES[(initialBulan || 12) - 1]} ${initialTahun || 2024} untuk ${siswaNama}`
+      );
     }
-  }, [isOpen, nominalAwal]);
+  }, [isOpen, nominalAwal, initialBulan, initialTahun, siswaNama]);
 
   if (!isOpen) return null;
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.size > 5 * 1024 * 1024) {
+        alert('Ukuran file maksimal 5 MB.');
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        setBuktiGambarUrl(event.target?.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleUseSampleProof = () => {
+    setBuktiGambarUrl(SAMPLE_TRANSFER_PROOF_SVG);
+    if (!pesanPembayaran) {
+      setPesanPembayaran(
+        `Pembayaran iuran ${MONTH_NAMES[selectedBulan - 1]} ${selectedTahun} telah ditransfer melalui m-Banking oleh wali murid ${siswaNama}.`
+      );
+    }
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const receiptNo = generateReceiptNumber();
+    const monthLabel = tipe === 'Iuran Rutin' ? ` ${MONTH_NAMES[selectedBulan - 1]} ${selectedTahun}` : '';
     const tx: PaymentTransaction = {
       id: 'tx-' + Date.now(),
       nomorKuitansi: receiptNo,
@@ -74,218 +143,337 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
       terbilang: numberToWordsId(Number(jumlahBayar)),
       metodePembayaran: metode,
       tipe,
-      keterangan,
-      catatan,
+      keterangan: tipe === 'Iuran Rutin' ? `Iuran Rutin${monthLabel}` : keterangan,
+      catatan: catatan || pesanPembayaran || 'Pembayaran dicatat & diverifikasi Admin.',
     };
 
     setCreatedTx(tx);
     setIsSuccess(true);
-    onSuccess(tx);
+    onSuccess(tx, {
+      buktiGambarUrl: buktiGambarUrl || SAMPLE_TRANSFER_PROOF_SVG,
+      pesanPembayaran: pesanPembayaran || `Pembayaran iuran ${MONTH_NAMES[selectedBulan - 1]} ${selectedTahun}`,
+      catatanAdmin: catatan || 'Diinput & diverifikasi langsung oleh Admin.',
+      bulan: selectedBulan,
+      tahun: selectedTahun,
+    });
   };
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full border border-slate-200 overflow-hidden">
         {/* Header */}
-        <div className="bg-gradient-to-r from-slate-900 to-blue-900 px-6 py-4 flex items-center justify-between text-white">
+        <div className="bg-[#090e17] px-6 py-4 flex items-center justify-between text-white border-b border-slate-800">
           <div>
-            <h2 className="text-lg font-bold tracking-tight">
-              {isSuccess ? 'SPORTKIT 1' : title}
-            </h2>
-            <p className="text-xs text-blue-200 font-medium">
-              {isSuccess ? 'Transaksi Berhasil Dicatat' : 'Sistem Pembayaran Kasir & Verifikasi'}
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              <h2 className="text-base font-display font-bold tracking-tight text-white">
+                {isSuccess ? 'Pembayaran Berhasil' : title}
+              </h2>
+            </div>
+            <p className="text-xs text-slate-400 mt-0.5">
+              {isSuccess ? 'Kuitansi resmi telah otomatis terbit' : 'Pencatatan kasir & kuitansi resmi akademi'}
             </p>
           </div>
           <button
             onClick={onClose}
-            className="p-1 rounded-lg text-slate-300 hover:text-white hover:bg-white/10 transition-colors"
+            className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
+        {/* Success View */}
         {isSuccess && createdTx ? (
-          /* Success Screen matching video timestamp 01:01 */
-          <div className="p-8 text-center space-y-6">
-            <div className="p-4 rounded-xl bg-emerald-600 text-white font-bold text-lg flex items-center justify-center gap-2 shadow-md">
-              <CheckCircle2 className="w-6 h-6" />
-              <span>Pembayaran berhasil.</span>
+          <div className="p-6 text-center space-y-4">
+            <div className="w-14 h-14 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center mx-auto border border-emerald-100">
+              <CheckCircle2 className="w-8 h-8" />
             </div>
 
-            <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 text-left space-y-2 text-xs">
-              <div className="flex justify-between">
-                <span className="text-slate-500">No. Kuitansi:</span>
-                <span className="font-mono font-bold text-slate-800">{createdTx.nomorKuitansi}</span>
-              </div>
+            <div>
+              <h3 className="text-xl font-display font-bold text-slate-900">
+                Transaksi Berhasil Dicatat!
+              </h3>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Kuitansi <span className="font-mono font-bold text-slate-800">{createdTx.nomorKuitansi}</span> telah tersimpan di sistem
+              </p>
+            </div>
+
+            <div className="p-4 rounded-xl bg-slate-50 border border-slate-200/80 text-left text-xs space-y-1.5">
               <div className="flex justify-between">
                 <span className="text-slate-500">Nama Siswa:</span>
-                <span className="font-semibold text-slate-800">{createdTx.siswaNama} ({createdTx.kelasNama})</span>
+                <span className="font-bold text-slate-900">{createdTx.siswaNama} ({createdTx.kelasNama})</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-slate-500">Nominal:</span>
-                <span className="font-bold text-blue-900 text-sm">{formatRupiah(createdTx.nominal)}</span>
+                <span className="text-slate-500">Jumlah Dibayar:</span>
+                <span className="font-bold text-emerald-600 font-mono text-sm">{formatRupiah(createdTx.nominal)}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-500">Metode:</span>
                 <span className="font-medium text-slate-800">{createdTx.metodePembayaran}</span>
               </div>
+              <div className="pt-2 border-t border-slate-200 text-[11px] text-slate-600 italic">
+                "{createdTx.terbilang}"
+              </div>
             </div>
 
-            <div className="flex items-center justify-center gap-3 pt-2">
+            <div className="flex items-center gap-3 pt-2">
               <button
                 onClick={onClose}
-                className="px-5 py-2.5 rounded-xl border border-slate-300 text-slate-700 hover:bg-slate-100 text-xs font-semibold flex items-center gap-2 transition-colors"
+                className="w-1/2 py-2.5 rounded-xl border border-slate-300 text-slate-700 text-xs font-semibold hover:bg-slate-50 transition-colors"
               >
-                <ArrowLeft className="w-4 h-4" />
-                <span>Dashboard</span>
+                Tutup
               </button>
               <button
                 onClick={() => {
                   onClose();
                   onViewReceipt(createdTx);
                 }}
-                className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold flex items-center gap-2 shadow-md transition-colors"
+                className="w-1/2 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-sm transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
               >
                 <Receipt className="w-4 h-4" />
-                <span>Cetak Kuitansi</span>
+                <span>Lihat / Cetak Kuitansi</span>
               </button>
             </div>
           </div>
         ) : (
           /* Payment Form */
           <form onSubmit={handleSubmit} className="p-6 space-y-4">
-            {/* Student Banner */}
-            <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between">
-              <div>
-                <h3 className="font-bold text-slate-900 text-base">{siswaNama}</h3>
-                <div className="flex items-center gap-2 mt-0.5">
-                  <span className="text-xs font-semibold px-2 py-0.5 rounded bg-blue-100 text-blue-800">
-                    {kelasNama}
-                  </span>
-                  <span className="text-xs text-slate-500 font-medium">📞 {noHp}</span>
-                </div>
+            {/* Student Info Card */}
+            <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 text-xs space-y-1">
+              <div className="flex justify-between items-center">
+                <span className="text-slate-500">Siswa / Atlet:</span>
+                <span className="font-bold text-slate-900">{siswaNama}</span>
               </div>
-              <div className="text-right">
-                <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Total Tagihan</span>
-                <span className="text-base font-black text-slate-900">{formatRupiah(nominalAwal)}</span>
+              <div className="flex justify-between items-center">
+                <span className="text-slate-500">Kelas:</span>
+                <span className="font-semibold text-slate-800">{kelasNama}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-slate-500">Keperluan:</span>
+                <span className="font-semibold text-emerald-700">{keterangan}</span>
               </div>
             </div>
 
-            {/* Price breakdown if registration */}
-            {biayaPendaftaran !== undefined && iuranBulanan !== undefined && (
-              <div className="p-3 rounded-lg bg-blue-50/60 border border-blue-100 text-xs space-y-1.5 text-slate-700">
-                <div className="flex justify-between">
-                  <span>Biaya Pendaftaran:</span>
-                  <span className="font-semibold">{formatRupiah(biayaPendaftaran)}</span>
+            {/* Target Periode (Bulan & Tahun) for Iuran Rutin */}
+            {tipe === 'Iuran Rutin' && (
+              <div className="p-3.5 rounded-2xl bg-emerald-50/70 border border-emerald-200 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold text-emerald-800 uppercase tracking-wider flex items-center gap-1.5">
+                    <Calendar className="w-3.5 h-3.5 text-emerald-600" />
+                    Target Periode Iuran Bulanan
+                  </span>
+                  <span className="text-xs font-mono font-bold text-emerald-900">
+                    {MONTH_NAMES[selectedBulan - 1]} {selectedTahun}
+                  </span>
                 </div>
-                <div className="flex justify-between">
-                  <span>Iuran Bulanan:</span>
-                  <span className="font-semibold">{formatRupiah(iuranBulanan)}</span>
-                </div>
-                <div className="flex justify-between border-t border-blue-200/80 pt-1 font-bold text-blue-950">
-                  <span>Total Biaya Pendaftaran:</span>
-                  <span>{formatRupiah(nominalAwal)}</span>
+                <div className="grid grid-cols-2 gap-3 pt-1">
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                      Bulan:
+                    </label>
+                    <select
+                      value={selectedBulan}
+                      onChange={(e) => {
+                        const b = Number(e.target.value);
+                        setSelectedBulan(b);
+                        setPesanPembayaran(
+                          `Pembayaran iuran bulan ${MONTH_NAMES[b - 1]} ${selectedTahun} untuk ${siswaNama}`
+                        );
+                      }}
+                      className="w-full text-xs rounded-xl border border-slate-300 bg-white px-3 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer font-semibold"
+                    >
+                      {MONTH_NAMES.map((m, idx) => (
+                        <option key={idx} value={idx + 1}>
+                          {m}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                      Tahun:
+                    </label>
+                    <select
+                      value={selectedTahun}
+                      onChange={(e) => {
+                        const y = Number(e.target.value);
+                        setSelectedTahun(y);
+                        setPesanPembayaran(
+                          `Pembayaran iuran bulan ${MONTH_NAMES[selectedBulan - 1]} ${y} untuk ${siswaNama}`
+                        );
+                      }}
+                      className="w-full text-xs rounded-xl border border-slate-300 bg-white px-3 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer font-bold font-mono"
+                    >
+                      {[2022, 2023, 2024, 2025, 2026, 2027].map((y) => (
+                        <option key={y} value={y}>
+                          {y}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
               </div>
             )}
 
-            {/* Date and Period */}
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Tanggal Bayar
-                </label>
-                <input
-                  type="date"
-                  required
-                  value={tanggal}
-                  onChange={(e) => setTanggal(e.target.value)}
-                  className="w-full text-xs rounded-lg border border-slate-300 px-3 py-2 text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Periode / Keperluan
-                </label>
-                <input
-                  type="text"
-                  readOnly
-                  value={periodeInfo || keterangan}
-                  className="w-full text-xs rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-slate-600 font-medium cursor-not-allowed"
-                />
-              </div>
-            </div>
-
-            {/* Jumlah Bayar */}
+            {/* Input Nominal Bayar */}
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Jumlah Bayar (Rp) *
+                Jumlah yang Dibayarkan (Rp)
               </label>
-              <div className="relative">
-                <span className="absolute left-3 top-2 text-xs font-bold text-slate-500">Rp</span>
-                <input
-                  type="number"
-                  required
-                  min={1000}
-                  value={jumlahBayar}
-                  onChange={(e) => setJumlahBayar(Number(e.target.value))}
-                  className="w-full text-sm font-bold rounded-lg border border-slate-300 pl-9 pr-3 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-              <p className="text-[11px] text-blue-800 italic mt-1 font-medium">
-                {numberToWordsId(Number(jumlahBayar))}
+              <input
+                type="number"
+                required
+                value={jumlahBayar}
+                onChange={(e) => setJumlahBayar(Number(e.target.value))}
+                className="w-full text-base font-display font-bold rounded-xl border border-slate-300 px-3.5 py-2.5 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 font-mono"
+              />
+              <p className="text-[11px] text-slate-500 mt-1 italic">
+                Terbilang: {numberToWordsId(Number(jumlahBayar))}
               </p>
             </div>
 
             {/* Metode Pembayaran */}
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Metode Pembayaran *
+                Metode Pembayaran
               </label>
-              <select
-                value={metode}
-                onChange={(e) => setMetode(e.target.value as PaymentMethod)}
-                className="w-full text-xs font-medium rounded-lg border border-slate-300 px-3 py-2 text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="Transfer BCA">Transfer BCA</option>
-                <option value="QRIS">QRIS</option>
-                <option value="Tunai">Tunai</option>
-                <option value="EDC BCA">EDC BCA</option>
-                <option value="Kartu Kredit">Kartu Kredit</option>
-                <option value="Transfer Mandiri">Transfer Mandiri</option>
-                <option value="Transfer BRI">Transfer BRI</option>
-              </select>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                {(['Tunai (Cash)', 'Transfer BCA', 'Transfer Mandiri', 'QRIS'] as PaymentMethod[]).map((m) => (
+                  <button
+                    key={m}
+                    type="button"
+                    onClick={() => setMetode(m)}
+                    className={`p-2 rounded-xl border text-xs font-semibold transition-all cursor-pointer ${
+                      metode === m
+                        ? 'border-emerald-600 bg-emerald-50 text-emerald-800'
+                        : 'border-slate-200 hover:border-slate-300 text-slate-600'
+                    }`}
+                  >
+                    {m}
+                  </button>
+                ))}
+              </div>
             </div>
 
-            {/* Catatan */}
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Catatan (Opsional)
-              </label>
-              <input
-                type="text"
-                placeholder="Contoh: Titipan transfer orang tua via m-Banking"
-                value={catatan}
-                onChange={(e) => setCatatan(e.target.value)}
-                className="w-full text-xs rounded-lg border border-slate-300 px-3 py-2 text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
+            {/* Upload Bukti Pembayaran & Pesan Siswa (Tersimpan di Sisi Admin & Siswa) */}
+            <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-3.5">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="text-xs font-display font-bold text-slate-900 flex items-center gap-1.5">
+                    <Receipt className="w-3.5 h-3.5 text-emerald-600" />
+                    Bukti Pembayaran & Pesan Siswa
+                  </h4>
+                  <p className="text-[10px] text-slate-500">
+                    Otomatis disimpan di daftar bukti admin dan dapat dilihat oleh siswa di akun portalnya.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleUseSampleProof}
+                  className="px-2.5 py-1 rounded-lg bg-emerald-100 hover:bg-emerald-200 text-emerald-800 text-[10px] font-bold transition-colors cursor-pointer flex items-center gap-1"
+                  title="Gunakan contoh struk transfer otomatis"
+                >
+                  <Sparkles className="w-3 h-3 text-emerald-600" />
+                  <span>Pakai Contoh Struk</span>
+                </button>
+              </div>
+
+              {/* Upload Input & Preview */}
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                  Foto / Gambar Bukti Transfer (Opsional / Unggah):
+                </label>
+                <div className="flex items-center gap-3">
+                  <label className="flex-1 border-2 border-dashed border-slate-300 hover:border-emerald-500 rounded-xl p-3 flex flex-col items-center justify-center cursor-pointer bg-white transition-colors">
+                    <Upload className="w-5 h-5 text-slate-400 mb-1" />
+                    <span className="text-xs font-semibold text-slate-700">Pilih Foto Struk / Bukti</span>
+                    <span className="text-[10px] text-slate-400">JPG, PNG, atau WEBP (Maks 5MB)</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleFileUpload}
+                      className="hidden"
+                    />
+                  </label>
+                  {buktiGambarUrl && (
+                    <div className="relative w-20 h-20 rounded-xl overflow-hidden border border-emerald-400 shrink-0 bg-slate-100 group">
+                      <img
+                        src={buktiGambarUrl}
+                        alt="Preview Bukti"
+                        className="w-full h-full object-cover"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setBuktiGambarUrl('')}
+                        className="absolute inset-0 bg-rose-950/70 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white transition-opacity cursor-pointer"
+                        title="Hapus Bukti"
+                      >
+                        <Trash2 className="w-4 h-4 text-white" />
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Pesan Pembayaran */}
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-700 mb-1 flex items-center gap-1">
+                  <MessageSquare className="w-3 h-3 text-slate-400" />
+                  Pesan Pembayaran dari Siswa / Wali:
+                </label>
+                <textarea
+                  rows={2}
+                  value={pesanPembayaran}
+                  onChange={(e) => setPesanPembayaran(e.target.value)}
+                  placeholder="Contoh: Bukti transfer iuran Desember via mobile banking BCA an Ibu..."
+                  className="w-full text-xs rounded-xl border border-slate-300 p-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white"
+                />
+              </div>
+            </div>
+
+            {/* Tanggal & Catatan */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Tanggal Transaksi
+                </label>
+                <input
+                  type="date"
+                  required
+                  value={tanggal}
+                  onChange={(e) => setTanggal(e.target.value)}
+                  className="w-full text-xs rounded-xl border border-slate-300 px-3 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Catatan Tambahan (Opsional)
+                </label>
+                <input
+                  type="text"
+                  placeholder="Keterangan transfer..."
+                  value={catatan}
+                  onChange={(e) => setCatatan(e.target.value)}
+                  className="w-full text-xs rounded-xl border border-slate-300 px-3 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
             </div>
 
             {/* Action Buttons */}
-            <div className="pt-3 border-t border-slate-200 flex items-center justify-end gap-2.5">
+            <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-100">
               <button
                 type="button"
                 onClick={onClose}
-                className="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors"
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100 transition-colors"
               >
                 Batal
               </button>
               <button
                 type="submit"
-                className="px-6 py-2.5 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-md hover:shadow-lg transition-all"
+                className="px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-sm transition-colors cursor-pointer"
               >
-                Simpan
+                Konfirmasi & Terbitkan Kuitansi
               </button>
             </div>
           </form>

@@ -12,7 +12,9 @@ import {
   Square,
   Phone,
   Calendar,
-  AlertTriangle
+  AlertTriangle,
+  UserPlus,
+  CreditCard
 } from 'lucide-react';
 
 interface CalonSiswaViewProps {
@@ -88,170 +90,173 @@ export const CalonSiswaView: React.FC<CalonSiswaViewProps> = ({
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="sports-card rounded-2xl p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-black text-slate-900 tracking-tight uppercase">
-              CALON SISWA
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center font-bold">
+              <UserPlus className="w-4 h-4" />
+            </div>
+            <h1 className="text-xl sm:text-2xl font-display font-bold text-slate-900 tracking-tight uppercase">
+              Verifikasi Calon Siswa
             </h1>
-            <span className="px-2.5 py-0.5 rounded-full bg-red-100 text-red-700 font-bold text-xs">
-              {applicants.length} Baru
+            <span className="px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 font-bold text-xs border border-amber-200 font-mono">
+              {applicants.length} Menunggu
             </span>
           </div>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Daftar pendaftar baru yang mendaftar mandiri via web atau datang ke loket yang belum melunasi biaya pendaftaran
+          <p className="text-xs text-slate-500 mt-1">
+            Data pendaftaran mandiri atau baru. Klik tombol "Verifikasi & Bayar" untuk mengaktifkan siswa dan menerbitkan kuitansi perdana.
           </p>
         </div>
 
-        <button
-          onClick={onNavigateNewRegistration}
-          className="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-sm transition-colors"
-        >
-          <Plus className="w-4 h-4" />
-          <span>Tambah Calon Baru</span>
-        </button>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={onNavigateNewRegistration}
+            className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs flex items-center gap-1.5 shadow-sm transition-colors cursor-pointer whitespace-nowrap"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Pendaftaran Baru</span>
+          </button>
+        </div>
       </div>
 
       {/* Filter and Bulk Action Bar */}
-      <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div className="relative max-w-md w-full">
+      <div className="sports-card rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="relative w-full sm:w-80">
+          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
           <input
             type="text"
-            placeholder="Cari nama atau nomor HP calon siswa..."
+            placeholder="Cari nama atau No. HP calon siswa..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full text-xs rounded-xl border border-slate-300 bg-slate-50 pl-9 pr-3.5 py-2.5 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full rounded-xl border border-slate-200 bg-white pl-9 pr-4 py-2 text-xs font-medium text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500"
           />
-          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-3 pointer-events-none" />
         </div>
 
-        {selectedIds.length > 0 && (
-          <div className="flex items-center gap-2.5 bg-red-50 border border-red-200 px-3.5 py-2 rounded-xl text-xs">
-            <span className="font-bold text-red-800">
-              {selectedIds.length} calon terpilih
-            </span>
+        <div className="flex items-center gap-2">
+          {selectedIds.length > 0 && (
             <button
               onClick={() => setShowBulkDeleteModal(true)}
-              className="px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-700 text-white font-bold flex items-center gap-1.5 shadow-xs transition-colors"
+              className="px-3 py-1.5 rounded-lg bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
             >
               <Trash2 className="w-3.5 h-3.5" />
-              <span>Hapus Terpilih</span>
+              <span>Hapus ({selectedIds.length}) Terpilih</span>
             </button>
-          </div>
-        )}
+          )}
+
+          {applicants.length > 0 && (
+            <button
+              onClick={toggleSelectAll}
+              className="px-3 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 text-xs font-semibold text-slate-700 flex items-center gap-1.5 transition-colors cursor-pointer"
+            >
+              {selectedIds.length === applicants.length ? (
+                <>
+                  <CheckSquare className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>Batal Pilih Semua</span>
+                </>
+              ) : (
+                <>
+                  <Square className="w-3.5 h-3.5 text-slate-400" />
+                  <span>Pilih Semua</span>
+                </>
+              )}
+            </button>
+          )}
+        </div>
       </div>
 
-      {/* Table */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+      {/* Main List */}
+      <div className="sports-card rounded-2xl overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
+          <table className="w-full text-left text-xs border-collapse">
             <thead>
-              <tr className="bg-slate-900 text-white text-xs font-bold">
-                <th className="py-3 px-3 border border-slate-800 w-10 text-center">
-                  <button
-                    type="button"
-                    onClick={toggleSelectAll}
-                    disabled={applicants.length === 0}
-                    className="text-slate-400 hover:text-white transition-colors"
-                    title={selectedIds.length === applicants.length ? 'Batal Pilih Semua' : 'Pilih Semua'}
-                  >
-                    {applicants.length > 0 && selectedIds.length === applicants.length ? (
-                      <CheckSquare className="w-4 h-4 text-blue-400" />
-                    ) : (
-                      <Square className="w-4 h-4" />
-                    )}
-                  </button>
+              <tr className="bg-slate-900 text-white font-semibold">
+                <th className="py-3 px-4 w-10 text-center">
+                  <input
+                    type="checkbox"
+                    checked={applicants.length > 0 && selectedIds.length === applicants.length}
+                    onChange={toggleSelectAll}
+                    className="rounded border-slate-700 cursor-pointer"
+                  />
                 </th>
-                <th className="py-3 px-3 border border-slate-800 w-12 text-center">No</th>
-                <th className="py-3 px-4 border border-slate-800">Nama Calon Siswa</th>
-                <th className="py-3 px-4 border border-slate-800">Kelas</th>
-                <th className="py-3 px-4 border border-slate-800">Total Pembayaran</th>
-                <th className="py-3 px-4 border border-slate-800 text-center w-36">Aksi</th>
+                <th className="py-3 px-4">Calon Siswa</th>
+                <th className="py-3 px-4">Kelompok Kelas</th>
+                <th className="py-3 px-4">Total Biaya Masuk</th>
+                <th className="py-3 px-4">Tanggal Daftar</th>
+                <th className="py-3 px-4 text-right">Aksi Verifikasi</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-200 text-xs">
+            <tbody className="divide-y divide-slate-100">
               {applicants.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="py-12 text-center text-slate-500">
-                    <UserCheck className="w-8 h-8 text-emerald-500 mx-auto mb-2 opacity-60" />
-                    <p className="font-semibold text-slate-700">Tidak ada antrian calon siswa saat ini.</p>
-                    <p className="text-[11px] text-slate-400 mt-0.5">Semua pendaftar telah terverifikasi lunas atau belum ada data calon.</p>
+                  <td colSpan={6} className="py-12 text-center text-slate-400">
+                    <UserCheck className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+                    <p className="font-semibold text-slate-700 text-sm">Tidak ada calon siswa menunggu verifikasi.</p>
+                    <p className="text-slate-400 mt-1">Semua pendaftaran telah aktif atau belum ada formulir masuk.</p>
                   </td>
                 </tr>
               ) : (
-                applicants.map((app, index) => {
-                  const cls = classes.find((c) => c.id === app.kelasId);
+                applicants.map((app) => {
                   const isChecked = selectedIds.includes(app.id);
+                  const cls = classes.find((c) => c.id === app.kelasId);
 
                   return (
-                    <tr 
-                      key={app.id} 
-                      className={`hover:bg-blue-50/40 transition-colors ${
-                        isChecked ? 'bg-blue-50/70' : ''
+                    <tr
+                      key={app.id}
+                      className={`hover:bg-slate-50/80 transition-colors ${
+                        isChecked ? 'bg-emerald-50/30' : ''
                       }`}
                     >
-                      <td className="py-4 px-3 text-center border-r border-slate-200">
-                        <button
-                          type="button"
-                          onClick={() => toggleSelectOne(app.id)}
-                          className="text-slate-400 hover:text-blue-600 transition-colors"
-                        >
-                          {isChecked ? (
-                            <CheckSquare className="w-4 h-4 text-blue-600" />
-                          ) : (
-                            <Square className="w-4 h-4" />
-                          )}
-                        </button>
+                      <td className="py-3 px-4 text-center">
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={() => toggleSelectOne(app.id)}
+                          className="rounded border-slate-300 cursor-pointer"
+                        />
                       </td>
-                      <td className="py-4 px-3 font-bold text-slate-600 text-center border-r border-slate-200">
-                        {index + 1}
-                      </td>
-                      <td className="py-4 px-4 font-bold text-blue-900 border-r border-slate-200 text-sm">
-                        <div className="flex items-center gap-2">
-                          <span>{app.nama}</span>
-                        </div>
-                        <div className="text-[11px] text-slate-400 font-normal mt-0.5 space-y-0.5">
-                          <p className="flex items-center gap-1">
-                            <Phone className="w-3 h-3 text-slate-400" />
-                            <span>{app.noHp}</span>
-                            {app.orangTua.namaAyah && (
-                              <span className="text-slate-400"> (Ortu: {app.orangTua.namaAyah})</span>
-                            )}
-                          </p>
-                          <p className="flex items-center gap-1 text-[10px]">
-                            <Calendar className="w-3 h-3 text-slate-400" />
-                            <span>Didaftarkan: {app.tanggalBergabung}</span>
-                            {app.catatan && (
-                              <span className="italic text-slate-500 truncate max-w-xs"> • "{app.catatan}"</span>
-                            )}
-                          </p>
+                      <td className="py-3 px-4">
+                        <p className="font-bold text-slate-900 text-sm">{app.nama}</p>
+                        <div className="flex items-center gap-2 text-[11px] text-slate-500 mt-0.5">
+                          <span className="flex items-center gap-1 font-mono">
+                            <Phone className="w-3 h-3" />
+                            {app.noHp}
+                          </span>
+                          <span aria-hidden="true">·</span>
+                          <span>Ortu: {app.orangTua.namaAyah}</span>
                         </div>
                       </td>
-                      <td className="py-4 px-4 font-semibold text-slate-800 border-r border-slate-200">
-                        <span className="px-2.5 py-1 rounded-md bg-slate-100 text-slate-800 font-bold inline-block">
-                          {cls ? cls.nama : app.kelasId.toUpperCase()}
+                      <td className="py-3 px-4">
+                        <span className="font-semibold text-slate-800">
+                          {cls?.nama || app.kelasId.toUpperCase()}
                         </span>
+                        <p className="text-[10px] text-slate-400">
+                          Iuran: {formatRupiah(cls?.iuranBulanan || 100000)}/bln
+                        </p>
                       </td>
-                      <td className="py-4 px-4 font-black text-slate-900 border-r border-slate-200 text-sm">
-                        {formatRupiah(app.totalBiayaPendaftaran)}
-                        <span className="block text-[10px] text-slate-400 font-normal">
-                          (Pendaftaran + Iuran 1 Bln)
+                      <td className="py-3 px-4">
+                        <span className="font-bold text-slate-900 font-mono tabular-nums">
+                          {formatRupiah(app.totalBiayaPendaftaran)}
                         </span>
+                        <p className="text-[10px] text-slate-400">
+                          Termasuk pendaftaran & SPP bulan pertama
+                        </p>
                       </td>
-                      <td className="py-4 px-4 text-center">
-                        <div className="flex items-center justify-center gap-2">
+                      <td className="py-3 px-4 text-slate-500 font-mono">
+                        {app.tanggalBergabung}
+                      </td>
+                      <td className="py-3 px-4 text-right">
+                        <div className="flex items-center justify-end gap-2">
                           <button
                             onClick={() => handlePayClick(app)}
-                            className="px-3 py-1.5 rounded-xl bg-gradient-to-tr from-blue-700 to-indigo-600 hover:from-blue-600 hover:to-indigo-500 text-white flex items-center justify-center gap-1 shadow-sm hover:scale-105 active:scale-95 transition-all text-xs font-bold"
-                            title="Proses Pembayaran & Aktivasi Siswa"
+                            className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs shadow-xs flex items-center gap-1 transition-colors cursor-pointer whitespace-nowrap"
                           >
-                            <span className="font-black text-xs">Rp</span>
-                            <span>Aktivasi</span>
+                            <CreditCard className="w-3.5 h-3.5" />
+                            <span>Verifikasi & Bayar</span>
                           </button>
                           <button
                             onClick={() => setApplicantToDelete(app)}
-                            className="p-2 rounded-xl bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 shadow-xs hover:scale-105 active:scale-95 transition-all"
-                            title="Hapus Calon Siswa"
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                            title="Hapus calon siswa"
                           >
                             <Trash2 className="w-4 h-4" />
                           </button>
@@ -266,149 +271,63 @@ export const CalonSiswaView: React.FC<CalonSiswaViewProps> = ({
         </div>
       </div>
 
-      {/* Single Applicant Delete Confirmation Modal */}
-      {applicantToDelete && (() => {
-        const cls = classes.find((c) => c.id === applicantToDelete.kelasId);
-
-        return (
-          <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-            <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl border border-slate-200 overflow-hidden">
-              <div className="bg-slate-900 px-6 py-4 flex items-center justify-between text-white border-b border-slate-800">
-                <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 rounded-lg bg-red-600/20 text-red-400 border border-red-500/30 flex items-center justify-center">
-                    <Trash2 className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <h3 className="font-bold text-sm">Hapus Calon Siswa</h3>
-                    <p className="text-[11px] text-slate-400 font-normal">Batalkan berkas pendaftaran</p>
-                  </div>
-                </div>
-                <button
-                  onClick={() => setApplicantToDelete(null)}
-                  className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-
-              <div className="p-6 space-y-4 text-xs">
-                {/* Details box */}
-                <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <span className="font-black text-slate-900 text-sm">{applicantToDelete.nama}</span>
-                      <p className="text-[11px] text-slate-500">
-                        Kelas: <span className="font-bold text-slate-700">{cls ? cls.nama : applicantToDelete.kelasId.toUpperCase()}</span>
-                      </p>
-                    </div>
-                    <span className="px-2 py-0.5 rounded-full bg-red-100 text-red-700 font-bold text-[10px]">
-                      Calon Siswa
-                    </span>
-                  </div>
-
-                  <div className="pt-2 border-t border-slate-200/70 grid grid-cols-2 gap-2 text-[11px] text-slate-600">
-                    <div>
-                      <span className="text-slate-400 block text-[10px]">Nomor Kontak:</span>
-                      <span className="font-medium text-slate-800">{applicantToDelete.noHp}</span>
-                    </div>
-                    <div>
-                      <span className="text-slate-400 block text-[10px]">Total Biaya:</span>
-                      <span className="font-black text-slate-900">{formatRupiah(applicantToDelete.totalBiayaPendaftaran)}</span>
-                    </div>
-                  </div>
-
-                  {applicantToDelete.alamat && (
-                    <div className="text-[11px] text-slate-600 pt-1">
-                      <span className="text-slate-400 block text-[10px]">Alamat:</span>
-                      <span className="text-slate-700">{applicantToDelete.alamat}</span>
-                    </div>
-                  )}
-                </div>
-
-                <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-red-900 flex items-start gap-2.5">
-                  <AlertTriangle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
-                  <div>
-                    <p className="font-bold">Konfirmasi Pembatalan Pendaftaran</p>
-                    <p className="text-[11px] text-red-700 mt-0.5">
-                      Apakah Anda yakin ingin menghapus data calon siswa ini? Formulir pendaftaran akan dihapus secara permanen dari antrian.
-                    </p>
-                  </div>
-                </div>
-
-                <div className="pt-3 border-t border-slate-200 flex items-center justify-end gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setApplicantToDelete(null)}
-                    className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-xl font-semibold transition-colors"
-                  >
-                    Batal
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleConfirmSingleDelete}
-                    className="px-5 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold shadow-md transition-colors flex items-center gap-1.5"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                    <span>Ya, Hapus Calon Siswa</span>
-                  </button>
-                </div>
-              </div>
+      {/* Delete Single Confirmation Modal */}
+      {applicantToDelete && (
+        <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-sm w-full p-6 shadow-2xl border border-slate-200">
+            <div className="w-12 h-12 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center mx-auto mb-4 border border-rose-100">
+              <AlertTriangle className="w-6 h-6" />
             </div>
-          </div>
-        );
-      })()}
-
-      {/* Bulk Delete Confirmation Modal */}
-      {showBulkDeleteModal && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl border border-slate-200 overflow-hidden">
-            <div className="bg-slate-900 px-6 py-4 flex items-center justify-between text-white border-b border-slate-800">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-lg bg-red-600/20 text-red-400 border border-red-500/30 flex items-center justify-center">
-                  <Trash2 className="w-4 h-4" />
-                </div>
-                <div>
-                  <h3 className="font-bold text-sm">Hapus Masal Calon Siswa</h3>
-                  <p className="text-[11px] text-slate-400 font-normal">Hapus beberapa berkas sekaligus</p>
-                </div>
-              </div>
+            <h3 className="text-base font-display font-bold text-slate-900 text-center mb-1">
+              Hapus Data Calon Siswa?
+            </h3>
+            <p className="text-xs text-slate-500 text-center mb-6">
+              Data pendaftaran <span className="font-bold text-slate-800">{applicantToDelete.nama}</span> akan dihapus permanen dari sistem.
+            </p>
+            <div className="flex items-center gap-3">
               <button
-                onClick={() => setShowBulkDeleteModal(false)}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+                onClick={() => setApplicantToDelete(null)}
+                className="w-1/2 py-2 rounded-xl border border-slate-300 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors"
               >
-                <X className="w-4 h-4" />
+                Batal
+              </button>
+              <button
+                onClick={handleConfirmSingleDelete}
+                className="w-1/2 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold shadow-sm transition-colors cursor-pointer"
+              >
+                Ya, Hapus
               </button>
             </div>
+          </div>
+        </div>
+      )}
 
-            <div className="p-6 space-y-4 text-xs">
-              <div className="p-3.5 rounded-xl bg-red-50 border border-red-200 text-red-900 flex items-start gap-2.5">
-                <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
-                <div>
-                  <p className="font-bold">Hapus {selectedIds.length} Calon Siswa Terpilih</p>
-                  <p className="text-[11px] text-red-700 mt-0.5">
-                    Apakah Anda yakin ingin menghapus sebanyak <span className="font-bold">{selectedIds.length} berkas pendaftaran calon siswa</span>?
-                    Tindakan ini tidak dapat dibatalkan.
-                  </p>
-                </div>
-              </div>
-
-              <div className="pt-3 border-t border-slate-200 flex items-center justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setShowBulkDeleteModal(false)}
-                  className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-xl font-semibold transition-colors"
-                >
-                  Batal
-                </button>
-                <button
-                  type="button"
-                  onClick={handleConfirmBulkDelete}
-                  className="px-5 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold shadow-md transition-colors flex items-center gap-1.5"
-                >
-                  <Trash2 className="w-4 h-4" />
-                  <span>Hapus {selectedIds.length} Calon Siswa</span>
-                </button>
-              </div>
+      {/* Bulk Delete Modal */}
+      {showBulkDeleteModal && (
+        <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-sm w-full p-6 shadow-2xl border border-slate-200">
+            <div className="w-12 h-12 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center mx-auto mb-4 border border-rose-100">
+              <AlertTriangle className="w-6 h-6" />
+            </div>
+            <h3 className="text-base font-display font-bold text-slate-900 text-center mb-1">
+              Hapus {selectedIds.length} Calon Siswa Terpilih?
+            </h3>
+            <p className="text-xs text-slate-500 text-center mb-6">
+              Semua calon siswa yang dicentang akan dihapus permanen. Tindakan ini tidak dapat dibatalkan.
+            </p>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => setShowBulkDeleteModal(false)}
+                className="w-1/2 py-2 rounded-xl border border-slate-300 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors"
+              >
+                Batal
+              </button>
+              <button
+                onClick={handleConfirmBulkDelete}
+                className="w-1/2 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold shadow-sm transition-colors cursor-pointer"
+              >
+                Hapus Terpilih
+              </button>
             </div>
           </div>
         </div>

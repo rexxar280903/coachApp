@@ -13,9 +13,14 @@ import {
   CreditCard, 
   BarChart3, 
   Clock, 
-  Award,
-  PhoneCall,
-  Layers
+  Award, 
+  PhoneCall, 
+  Layers, 
+  ShieldCheck, 
+  UserCheck,
+  GraduationCap,
+  Upload,
+  CheckCircle2
 } from 'lucide-react';
 
 export type ActiveNav = 
@@ -23,6 +28,7 @@ export type ActiveNav =
   | 'kelas'
   | 'iuran-rutin'
   | 'iuran-insidentil'
+  | 'verifikasi-pembayaran'
   | 'angsuran'
   | 'laporan-iuran'
   | 'calon-siswa'
@@ -33,12 +39,14 @@ export type ActiveNav =
   | 'profil-siswa'
   | 'sesi-absensi'
   | 'laporan-absensi'
+  | 'student-portal'
   | 'pengaturan';
 
 interface SidebarProps {
   currentNav: ActiveNav;
   onSelectNav: (nav: ActiveNav) => void;
   calonCount: number;
+  pendingVerificationsCount?: number;
   currentRole: UserRole;
   isOpenMobile: boolean;
   onCloseMobile: () => void;
@@ -48,6 +56,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   currentNav,
   onSelectNav,
   calonCount,
+  pendingVerificationsCount = 0,
   currentRole,
   isOpenMobile,
   onCloseMobile,
@@ -61,156 +70,235 @@ export const Sidebar: React.FC<SidebarProps> = ({
     onCloseMobile();
   };
 
+  const isNavActive = (nav: ActiveNav) => currentNav === nav;
+
   return (
     <>
       {/* Mobile Backdrop */}
       {isOpenMobile && (
         <div
           onClick={onCloseMobile}
-          className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs z-40 lg:hidden"
+          className="fixed inset-0 bg-slate-950/70 backdrop-blur-xs z-40 lg:hidden"
         />
       )}
 
       {/* Sidebar Container */}
       <aside
-        className={`fixed top-0 bottom-0 left-0 z-40 w-64 bg-[#0a2745] text-slate-100 flex flex-col transition-transform duration-300 ease-in-out border-r border-[#123860] lg:translate-x-0 ${
+        className={`fixed top-0 bottom-0 left-0 z-40 w-64 bg-[#090e17] text-slate-300 flex flex-col transition-transform duration-300 ease-in-out border-r border-slate-800/80 lg:translate-x-0 ${
           isOpenMobile ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
         {/* Brand Banner */}
-        <div className="p-5 border-b border-[#133d69] bg-gradient-to-b from-[#0e355c] to-[#0a2745]">
+        <div className="p-5 border-b border-slate-800/80 bg-gradient-to-b from-[#0f172a] to-[#090e17]">
           <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-xl bg-gradient-to-tr from-blue-700 via-blue-600 to-indigo-800 p-0.5 shadow-lg border border-blue-400/30 flex items-center justify-center">
-              <div className="text-center">
-                <div className="text-[8px] font-black text-blue-200 tracking-wider">★★★</div>
-                <div className="text-xs font-black text-white tracking-tight uppercase">SPORTKIT</div>
-                <div className="text-[7px] font-bold text-sky-300 tracking-widest">CLUB</div>
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-500 via-teal-600 to-slate-900 p-0.5 shadow-md flex items-center justify-center border border-emerald-400/30">
+              <div className="text-center font-display">
+                <span className="text-[11px] font-black text-white tracking-wider uppercase">SPORT</span>
               </div>
             </div>
             <div>
-              <h1 className="text-sm font-black tracking-tight text-white uppercase leading-none">
-                SPORTKIT
-              </h1>
-              <p className="text-[10px] font-bold tracking-widest text-sky-400 uppercase mt-0.5">
-                CLUB ADMINISTRATION
-              </p>
-              <div className="mt-1 flex items-center gap-1.5 text-[9px] text-slate-400 font-mono">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                <span>ONLINE PORTAL</span>
+              <div className="flex items-center gap-1">
+                <h1 className="text-sm font-display font-black tracking-tight text-white uppercase leading-none">
+                  SPORTKIT
+                </h1>
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
               </div>
+              <p className="text-[10px] font-medium tracking-wider text-slate-400 uppercase mt-0.5">
+                CLUB & ACADEMY ERP
+              </p>
             </div>
           </div>
         </div>
 
         {/* Coach Mode Notice if role is coach */}
         {currentRole === 'coach' && (
-          <div className="mx-3 mt-3 p-2.5 rounded-xl bg-blue-900/50 border border-blue-600/40 text-[11px] text-blue-200">
-            <p className="font-bold flex items-center gap-1.5 text-white">
-              <CalendarCheck className="w-3.5 h-3.5 text-sky-400" />
-              <span>Akses Mode Pelatih</span>
+          <div className="mx-3 mt-3 p-3 rounded-xl bg-slate-900 border border-slate-800 text-xs text-slate-300">
+            <p className="font-semibold flex items-center gap-1.5 text-sky-400">
+              <UserCheck className="w-3.5 h-3.5" />
+              <span>Akses Pelatih Aktif</span>
             </p>
-            <p className="text-[10px] text-slate-300 mt-0.5">
-              Hanya menu Absensi yang ditampilkan untuk pengisian sesi & rekap harian.
+            <p className="text-[11px] text-slate-400 mt-1 leading-snug">
+              Halaman dibatasi khusus absensi harian dan rekap kehadiran siswa.
+            </p>
+          </div>
+        )}
+
+        {/* Student Mode Notice if role is student */}
+        {currentRole === 'student' && (
+          <div className="mx-3 mt-3 p-3 rounded-xl bg-emerald-950/40 border border-emerald-800/50 text-xs text-emerald-200">
+            <p className="font-semibold flex items-center gap-1.5 text-emerald-400">
+              <GraduationCap className="w-4 h-4" />
+              <span>Portal Akun Siswa</span>
+            </p>
+            <p className="text-[11px] text-slate-300 mt-1 leading-snug">
+              Akses biodata atlet, presensi latihan, dan upload bukti kuitansi bayar.
             </p>
           </div>
         )}
 
         {/* Menu Items */}
-        <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-1.5 text-xs font-medium">
-          {/* Admin Mode gets all menus */}
+        <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-1 text-xs font-medium">
+          {/* STUDENT ROLE MENUS */}
+          {currentRole === 'student' && (
+            <>
+              <div className="px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                Menu Siswa
+              </div>
+
+              <button
+                onClick={() => handleNavClick('student-portal')}
+                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all relative ${
+                  isNavActive('student-portal')
+                    ? 'bg-slate-800 text-white font-semibold shadow-xs'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+                }`}
+              >
+                {isNavActive('student-portal') && (
+                  <span className="absolute left-0 top-2 bottom-2 w-1 rounded-r-md bg-emerald-500" />
+                )}
+                <GraduationCap className="w-4 h-4 text-emerald-400" />
+                <span>Portal Siswa & Kuitansi</span>
+              </button>
+            </>
+          )}
+
+          {/* ADMIN ROLE MENUS */}
           {currentRole === 'admin' && (
             <>
+              <div className="px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                Utama
+              </div>
+
               {/* Dashboard */}
               <button
                 onClick={() => handleNavClick('dashboard')}
-                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all ${
-                  currentNav === 'dashboard'
-                    ? 'bg-blue-600 text-white font-bold shadow-md'
-                    : 'text-slate-300 hover:text-white hover:bg-[#113963]'
+                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all relative ${
+                  isNavActive('dashboard')
+                    ? 'bg-slate-800 text-white font-semibold shadow-xs'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
                 }`}
               >
-                <LayoutDashboard className="w-4 h-4 text-sky-400" />
+                {isNavActive('dashboard') && (
+                  <span className="absolute left-0 top-2 bottom-2 w-1 rounded-r-md bg-emerald-500" />
+                )}
+                <LayoutDashboard className="w-4 h-4 text-emerald-400" />
                 <span>Dashboard</span>
               </button>
 
-              {/* Kelas (Kelompok Kelas) */}
+              {/* Kelompok Kelas */}
               <button
                 onClick={() => handleNavClick('kelas')}
-                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all ${
-                  currentNav === 'kelas'
-                    ? 'bg-blue-600 text-white font-bold shadow-md'
-                    : 'text-slate-300 hover:text-white hover:bg-[#113963]'
+                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all relative ${
+                  isNavActive('kelas')
+                    ? 'bg-slate-800 text-white font-semibold shadow-xs'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
                 }`}
               >
+                {isNavActive('kelas') && (
+                  <span className="absolute left-0 top-2 bottom-2 w-1 rounded-r-md bg-emerald-500" />
+                )}
                 <Layers className="w-4 h-4 text-sky-400" />
                 <span>Kelompok Kelas</span>
               </button>
 
-              {/* IURAN (Expandable) */}
-              <div>
+              {/* IURAN & KEUANGAN (Expandable) */}
+              <div className="pt-2">
                 <button
                   onClick={() => setOpenIuran(!openIuran)}
-                  className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl transition-colors ${
-                    currentNav.startsWith('iuran') || currentNav === 'angsuran' || currentNav === 'laporan-iuran'
-                      ? 'text-white bg-[#103761] font-semibold'
-                      : 'text-slate-300 hover:text-white hover:bg-[#113963]'
+                  className={`w-full flex items-center justify-between px-3 py-2 rounded-xl transition-colors ${
+                    currentNav.startsWith('iuran') || 
+                    currentNav === 'angsuran' || 
+                    currentNav === 'laporan-iuran' ||
+                    currentNav === 'verifikasi-pembayaran'
+                      ? 'text-white font-semibold bg-slate-800/60'
+                      : 'text-slate-400 hover:text-white hover:bg-slate-800/40'
                   }`}
                 >
                   <div className="flex items-center gap-3">
-                    <Wallet className="w-4 h-4 text-sky-400" />
-                    <span>Iuran</span>
+                    <Wallet className="w-4 h-4 text-emerald-400" />
+                    <span>Keuangan & Iuran</span>
                   </div>
-                  {openIuran ? (
-                    <ChevronDown className="w-4 h-4 text-slate-400" />
-                  ) : (
-                    <ChevronRight className="w-4 h-4 text-slate-400" />
-                  )}
+                  <div className="flex items-center gap-1.5">
+                    {pendingVerificationsCount > 0 && (
+                      <span className="px-1.5 py-0.2 rounded-full bg-emerald-500 text-slate-950 font-mono font-black text-[10px]">
+                        {pendingVerificationsCount}
+                      </span>
+                    )}
+                    {openIuran ? (
+                      <ChevronDown className="w-3.5 h-3.5 text-slate-500" />
+                    ) : (
+                      <ChevronRight className="w-3.5 h-3.5 text-slate-500" />
+                    )}
+                  </div>
                 </button>
 
                 {openIuran && (
-                  <div className="ml-7 mt-1 space-y-1 border-l border-blue-900/60 pl-2">
+                  <div className="ml-5 mt-1 space-y-0.5 border-l border-slate-800 pl-2">
+                    {/* Verifikasi Pembayaran (Highlighted) */}
+                    <button
+                      onClick={() => handleNavClick('verifikasi-pembayaran')}
+                      className={`w-full text-left px-3 py-2 rounded-lg transition-colors flex items-center justify-between ${
+                        isNavActive('verifikasi-pembayaran')
+                          ? 'bg-emerald-950/60 text-emerald-300 font-semibold border border-emerald-500/40'
+                          : 'text-emerald-400 hover:text-emerald-300 hover:bg-slate-800/40 font-medium'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                        <span>Verifikasi Bukti Bayar</span>
+                      </div>
+                      {pendingVerificationsCount > 0 && (
+                        <span className="px-1.5 py-0.2 rounded-full bg-emerald-500 text-slate-950 font-bold text-[10px] font-mono">
+                          {pendingVerificationsCount}
+                        </span>
+                      )}
+                    </button>
+
                     <button
                       onClick={() => handleNavClick('iuran-rutin')}
                       className={`w-full text-left px-3 py-2 rounded-lg transition-colors flex items-center gap-2 ${
-                        currentNav === 'iuran-rutin'
-                          ? 'bg-blue-600/90 text-white font-bold'
-                          : 'text-slate-300 hover:text-white hover:bg-[#133f6d]'
+                        isNavActive('iuran-rutin')
+                          ? 'bg-slate-800 text-white font-semibold'
+                          : 'text-slate-400 hover:text-white hover:bg-slate-800/40'
                       }`}
                     >
-                      <CreditCard className="w-3.5 h-3.5 text-blue-300" />
+                      <CreditCard className="w-3.5 h-3.5 text-slate-400" />
                       <span>Iuran Rutin</span>
                     </button>
+
                     <button
                       onClick={() => handleNavClick('iuran-insidentil')}
                       className={`w-full text-left px-3 py-2 rounded-lg transition-colors flex items-center gap-2 ${
-                        currentNav === 'iuran-insidentil'
-                          ? 'bg-blue-600/90 text-white font-bold'
-                          : 'text-slate-300 hover:text-white hover:bg-[#133f6d]'
+                        isNavActive('iuran-insidentil')
+                          ? 'bg-slate-800 text-white font-semibold'
+                          : 'text-slate-400 hover:text-white hover:bg-slate-800/40'
                       }`}
                     >
-                      <Award className="w-3.5 h-3.5 text-blue-300" />
+                      <Award className="w-3.5 h-3.5 text-slate-400" />
                       <span>Iuran Insidentil</span>
                     </button>
+
                     <button
                       onClick={() => handleNavClick('angsuran')}
                       className={`w-full text-left px-3 py-2 rounded-lg transition-colors flex items-center gap-2 ${
-                        currentNav === 'angsuran'
-                          ? 'bg-blue-600/90 text-white font-bold'
-                          : 'text-slate-300 hover:text-white hover:bg-[#133f6d]'
+                        isNavActive('angsuran')
+                          ? 'bg-slate-800 text-white font-semibold'
+                          : 'text-slate-400 hover:text-white hover:bg-slate-800/40'
                       }`}
                     >
-                      <Clock className="w-3.5 h-3.5 text-blue-300" />
+                      <Clock className="w-3.5 h-3.5 text-slate-400" />
                       <span>Angsuran</span>
                     </button>
+
                     <button
                       onClick={() => handleNavClick('laporan-iuran')}
                       className={`w-full text-left px-3 py-2 rounded-lg transition-colors flex items-center gap-2 ${
-                        currentNav === 'laporan-iuran'
-                          ? 'bg-blue-600/90 text-white font-bold'
-                          : 'text-slate-300 hover:text-white hover:bg-[#133f6d]'
+                        isNavActive('laporan-iuran')
+                          ? 'bg-slate-800 text-white font-semibold'
+                          : 'text-slate-400 hover:text-white hover:bg-slate-800/40'
                       }`}
                     >
-                      <BarChart3 className="w-3.5 h-3.5 text-blue-300" />
+                      <BarChart3 className="w-3.5 h-3.5 text-slate-400" />
                       <span>Laporan Iuran</span>
                     </button>
                   </div>
@@ -218,79 +306,82 @@ export const Sidebar: React.FC<SidebarProps> = ({
               </div>
 
               {/* SISWA (Expandable) */}
-              <div>
+              <div className="pt-2">
                 <button
                   onClick={() => setOpenSiswa(!openSiswa)}
-                  className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl transition-colors ${
-                    currentNav.startsWith('siswa') || currentNav === 'calon-siswa' || currentNav === 'pendaftaran-baru'
-                      ? 'text-white bg-[#103761] font-semibold'
-                      : 'text-slate-300 hover:text-white hover:bg-[#113963]'
+                  className={`w-full flex items-center justify-between px-3 py-2 rounded-xl transition-colors ${
+                    currentNav.startsWith('siswa') || currentNav === 'calon-siswa' || currentNav === 'pendaftaran-baru' || currentNav === 'profil-siswa'
+                      ? 'text-white font-semibold bg-slate-800/60'
+                      : 'text-slate-400 hover:text-white hover:bg-slate-800/40'
                   }`}
                 >
                   <div className="flex items-center gap-3">
                     <Users className="w-4 h-4 text-sky-400" />
-                    <span>Siswa</span>
+                    <span>Data Siswa</span>
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1.5">
                     {calonCount > 0 && (
-                      <span className="px-1.5 py-0.5 rounded-full bg-red-500 text-white text-[10px] font-bold">
+                      <span className="px-1.5 py-0.2 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 text-[10px] font-mono font-bold">
                         {calonCount}
                       </span>
                     )}
                     {openSiswa ? (
-                      <ChevronDown className="w-4 h-4 text-slate-400" />
+                      <ChevronDown className="w-3.5 h-3.5 text-slate-500" />
                     ) : (
-                      <ChevronRight className="w-4 h-4 text-slate-400" />
+                      <ChevronRight className="w-3.5 h-3.5 text-slate-500" />
                     )}
                   </div>
                 </button>
 
                 {openSiswa && (
-                  <div className="ml-7 mt-1 space-y-1 border-l border-blue-900/60 pl-2">
+                  <div className="ml-5 mt-1 space-y-0.5 border-l border-slate-800 pl-2">
                     <button
                       onClick={() => handleNavClick('calon-siswa')}
                       className={`w-full text-left px-3 py-2 rounded-lg transition-colors flex items-center justify-between ${
-                        currentNav === 'calon-siswa'
-                          ? 'bg-blue-600/90 text-white font-bold'
-                          : 'text-slate-300 hover:text-white hover:bg-[#133f6d]'
+                        isNavActive('calon-siswa')
+                          ? 'bg-slate-800 text-white font-semibold'
+                          : 'text-slate-400 hover:text-white hover:bg-slate-800/40'
                       }`}
                     >
                       <div className="flex items-center gap-2">
-                        <UserPlus className="w-3.5 h-3.5 text-blue-300" />
+                        <UserPlus className="w-3.5 h-3.5 text-slate-400" />
                         <span>Calon Siswa</span>
                       </div>
                       {calonCount > 0 && (
-                        <span className="w-5 h-5 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center">
+                        <span className="px-1.5 py-0.2 rounded-full bg-rose-500 text-white text-[10px] font-bold font-mono">
                           {calonCount}
                         </span>
                       )}
                     </button>
+
                     <button
                       onClick={() => handleNavClick('siswa-aktif')}
                       className={`w-full text-left px-3 py-2 rounded-lg transition-colors ${
-                        currentNav === 'siswa-aktif'
-                          ? 'bg-blue-600/90 text-white font-bold'
-                          : 'text-slate-300 hover:text-white hover:bg-[#133f6d]'
+                        isNavActive('siswa-aktif')
+                          ? 'bg-slate-800 text-white font-semibold'
+                          : 'text-slate-400 hover:text-white hover:bg-slate-800/40'
                       }`}
                     >
                       <span>Siswa Aktif</span>
                     </button>
+
                     <button
                       onClick={() => handleNavClick('siswa-cuti')}
                       className={`w-full text-left px-3 py-2 rounded-lg transition-colors ${
-                        currentNav === 'siswa-cuti'
-                          ? 'bg-blue-600/90 text-white font-bold'
-                          : 'text-slate-300 hover:text-white hover:bg-[#133f6d]'
+                        isNavActive('siswa-cuti')
+                          ? 'bg-slate-800 text-white font-semibold'
+                          : 'text-slate-400 hover:text-white hover:bg-slate-800/40'
                       }`}
                     >
                       <span>Siswa Cuti</span>
                     </button>
+
                     <button
                       onClick={() => handleNavClick('siswa-nonaktif')}
                       className={`w-full text-left px-3 py-2 rounded-lg transition-colors ${
-                        currentNav === 'siswa-nonaktif'
-                          ? 'bg-blue-600/90 text-white font-bold'
-                          : 'text-slate-300 hover:text-white hover:bg-[#133f6d]'
+                        isNavActive('siswa-nonaktif')
+                          ? 'bg-slate-800 text-white font-semibold'
+                          : 'text-slate-400 hover:text-white hover:bg-slate-800/40'
                       }`}
                     >
                       <span>Siswa Nonaktif</span>
@@ -301,80 +392,93 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </>
           )}
 
-          {/* ABSENSI (Shown for both Admin and Coach) */}
-          <div>
-            <button
-              onClick={() => setOpenAbsensi(!openAbsensi)}
-              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl transition-colors ${
-                currentNav.includes('absensi')
-                  ? 'text-white bg-[#103761] font-semibold'
-                  : 'text-slate-300 hover:text-white hover:bg-[#113963]'
-              }`}
-            >
-              <div className="flex items-center gap-3">
-                <CalendarCheck className="w-4 h-4 text-sky-400" />
-                <span>Absensi</span>
+          {/* ABSENSI (Shown for Admin and Coach) */}
+          {(currentRole === 'admin' || currentRole === 'coach') && (
+            <div className="pt-2">
+              <div className="px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                Presensi
               </div>
-              {openAbsensi ? (
-                <ChevronDown className="w-4 h-4 text-slate-400" />
-              ) : (
-                <ChevronRight className="w-4 h-4 text-slate-400" />
-              )}
-            </button>
+              <button
+                onClick={() => setOpenAbsensi(!openAbsensi)}
+                className={`w-full flex items-center justify-between px-3 py-2 rounded-xl transition-colors ${
+                  currentNav.includes('absensi')
+                    ? 'text-white font-semibold bg-slate-800/60'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-800/40'
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <CalendarCheck className="w-4 h-4 text-emerald-400" />
+                  <span>Absensi Latihan</span>
+                </div>
+                {openAbsensi ? (
+                  <ChevronDown className="w-3.5 h-3.5 text-slate-500" />
+                ) : (
+                  <ChevronRight className="w-3.5 h-3.5 text-slate-500" />
+                )}
+              </button>
 
-            {openAbsensi && (
-              <div className="ml-7 mt-1 space-y-1 border-l border-blue-900/60 pl-2">
-                <button
-                  onClick={() => handleNavClick('sesi-absensi')}
-                  className={`w-full text-left px-3 py-2 rounded-lg transition-colors flex items-center gap-2 ${
-                    currentNav === 'sesi-absensi'
-                      ? 'bg-blue-600/90 text-white font-bold'
-                      : 'text-slate-300 hover:text-white hover:bg-[#133f6d]'
-                  }`}
-                >
-                  <CalendarCheck className="w-3.5 h-3.5 text-blue-300" />
-                  <span>Sesi</span>
-                </button>
-                <button
-                  onClick={() => handleNavClick('laporan-absensi')}
-                  className={`w-full text-left px-3 py-2 rounded-lg transition-colors flex items-center gap-2 ${
-                    currentNav === 'laporan-absensi'
-                      ? 'bg-blue-600/90 text-white font-bold'
-                      : 'text-slate-300 hover:text-white hover:bg-[#133f6d]'
-                  }`}
-                >
-                  <FileText className="w-3.5 h-3.5 text-blue-300" />
-                  <span>Laporan Absensi</span>
-                </button>
-              </div>
-            )}
-          </div>
+              {openAbsensi && (
+                <div className="ml-5 mt-1 space-y-0.5 border-l border-slate-800 pl-2">
+                  <button
+                    onClick={() => handleNavClick('sesi-absensi')}
+                    className={`w-full text-left px-3 py-2 rounded-lg transition-colors flex items-center gap-2 ${
+                      isNavActive('sesi-absensi')
+                        ? 'bg-slate-800 text-white font-semibold'
+                        : 'text-slate-400 hover:text-white hover:bg-slate-800/40'
+                    }`}
+                  >
+                    <CalendarCheck className="w-3.5 h-3.5 text-slate-400" />
+                    <span>Sesi Latihan</span>
+                  </button>
+                  <button
+                    onClick={() => handleNavClick('laporan-absensi')}
+                    className={`w-full text-left px-3 py-2 rounded-lg transition-colors flex items-center gap-2 ${
+                      isNavActive('laporan-absensi')
+                        ? 'bg-slate-800 text-white font-semibold'
+                        : 'text-slate-400 hover:text-white hover:bg-slate-800/40'
+                    }`}
+                  >
+                    <FileText className="w-3.5 h-3.5 text-slate-400" />
+                    <span>Rekap Absensi</span>
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* PENGATURAN (Admin only) */}
           {currentRole === 'admin' && (
-            <button
-              onClick={() => handleNavClick('pengaturan')}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all ${
-                currentNav === 'pengaturan'
-                  ? 'bg-blue-600 text-white font-bold shadow-md'
-                  : 'text-slate-300 hover:text-white hover:bg-[#113963]'
-              }`}
-            >
-              <Settings className="w-4 h-4 text-sky-400" />
-              <span>Pengaturan</span>
-            </button>
+            <div className="pt-2">
+              <div className="px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                Sistem
+              </div>
+              <button
+                onClick={() => handleNavClick('pengaturan')}
+                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all relative ${
+                  isNavActive('pengaturan')
+                    ? 'bg-slate-800 text-white font-semibold shadow-xs'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+                }`}
+              >
+                {isNavActive('pengaturan') && (
+                  <span className="absolute left-0 top-2 bottom-2 w-1 rounded-r-md bg-emerald-500" />
+                )}
+                <Settings className="w-4 h-4 text-slate-400" />
+                <span>Pengaturan Klub</span>
+              </button>
+            </div>
           )}
         </nav>
 
-        {/* Footer Support Info (matching video WhatsApp contact banner) */}
-        <div className="p-4 border-t border-[#133d69] bg-[#071c33]">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-emerald-600/30 border border-emerald-500/50 flex items-center justify-center text-emerald-400">
-              <PhoneCall className="w-4 h-4" />
+        {/* Footer Support Info */}
+        <div className="p-3 border-t border-slate-800/80 bg-[#060a12]">
+          <div className="p-2.5 rounded-xl bg-slate-900/80 border border-slate-800/80 flex items-center gap-2.5">
+            <div className="w-7 h-7 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 shrink-0">
+              <PhoneCall className="w-3.5 h-3.5" />
             </div>
-            <div>
-              <p className="text-[10px] text-slate-400 uppercase font-semibold">Helpdesk & Support</p>
-              <p className="text-xs font-mono font-bold text-white tracking-wide">0897-2488-333</p>
+            <div className="min-w-0">
+              <p className="text-[9px] text-slate-400 uppercase font-semibold truncate">Bantuan & WhatsApp</p>
+              <p className="text-xs font-mono font-bold text-slate-200 tracking-tight truncate">0897-2488-333</p>
             </div>
           </div>
         </div>

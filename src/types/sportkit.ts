@@ -120,4 +120,31 @@ export interface ClubProfile {
   logoUrl?: string;
 }
 
-export type UserRole = 'admin' | 'coach' | 'public';
+export type UserRole = 'admin' | 'coach' | 'student' | 'public';
+
+export type SubmissionStatus = 'pending' | 'verified' | 'rejected';
+
+export interface PaymentSubmission {
+  id: string;
+  siswaId: string;
+  siswaNama: string;
+  kelasId: string;
+  kelasNama: string;
+  tipe: 'Iuran Rutin' | 'Iuran Insidentil' | 'Pendaftaran';
+  bulan?: number; // 1-12
+  tahun?: number;
+  eventId?: string;
+  eventNama?: string;
+  nominal: number;
+  metodePembayaran: PaymentMethod;
+  tanggalTransfer: string;
+  buktiGambarUrl: string;
+  pesanSiswa?: string;
+  status: SubmissionStatus;
+  tanggalKirim: string;
+  tanggalVerifikasi?: string;
+  diverifikasiOleh?: string;
+  catatanAdmin?: string;
+  kuitansiId?: string;
+  transactionId?: string;
+}

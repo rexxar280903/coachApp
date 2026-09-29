@@ -6,13 +6,14 @@ import {
   UserPlus, 
   Wallet, 
   CreditCard, 
-  CalendarCheck, 
-  Search, 
   ChevronRight, 
   Receipt,
-  ArrowUpRight,
   TrendingUp,
-  Sparkles
+  ArrowRight,
+  ShieldCheck,
+  CalendarDays,
+  Sparkles,
+  CheckCircle2
 } from 'lucide-react';
 
 interface DashboardViewProps {
@@ -20,6 +21,8 @@ interface DashboardViewProps {
   classes: ClassGroup[];
   events: ClubEvent[];
   transactions: PaymentTransaction[];
+  pendingSubmissionsCount?: number;
+  onNavigateVerifikasi?: () => void;
   onSelectStudent: (studentId: string) => void;
   onSelectClassIuran: (classId: string) => void;
   onSelectEventIuran: (eventId: string) => void;
@@ -34,6 +37,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   classes,
   events,
   transactions,
+  pendingSubmissionsCount = 0,
+  onNavigateVerifikasi,
   onSelectStudent,
   onSelectClassIuran,
   onSelectEventIuran,
@@ -48,6 +53,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
   const activeStudents = students.filter((s) => s.status === 'Aktif');
   const calonStudents = students.filter((s) => s.status === 'Calon');
+  const totalRevenue = transactions.reduce((sum, t) => sum + t.nominal, 0);
 
   const handleStudentChange = (id: string) => {
     setSelectedStudentId(id);
@@ -72,88 +78,149 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
   return (
     <div className="space-y-6">
-      {/* Welcome Banner */}
-      <div className="bg-gradient-to-r from-[#0b294a] via-[#103b68] to-[#144b82] rounded-2xl p-6 text-white shadow-lg relative overflow-hidden">
-        <div className="absolute right-0 top-0 bottom-0 w-1/3 bg-radial from-blue-400/10 to-transparent pointer-events-none" />
-        <div className="relative z-10 max-w-2xl">
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-500/20 text-sky-300 text-xs font-semibold mb-3 border border-blue-400/30">
-            <Sparkles className="w-3.5 h-3.5" />
-            <span>Sistem Administrasi Klub Berbasis Website</span>
+      {/* Welcome Banner: Modern Athletic Obsidian / Pitch Canvas */}
+      <div className="bg-[#090e17] border border-slate-800/80 rounded-2xl p-6 text-white shadow-sm relative overflow-hidden">
+        {/* Subtle Pitch Grid Pattern Overlay */}
+        <div className="absolute inset-0 bg-pitch-pattern opacity-40 pointer-events-none" />
+        
+        {/* Dynamic Glow */}
+        <div className="absolute -right-20 -top-20 w-80 h-80 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
+        <div className="absolute -left-20 -bottom-20 w-80 h-80 bg-sky-500/10 rounded-full blur-3xl pointer-events-none" />
+
+        <div className="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+          <div className="max-w-2xl">
+            <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-md bg-slate-800/90 text-emerald-400 text-xs font-semibold mb-3 border border-slate-700/60">
+              <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
+              <span>Sistem Manajemen Akademi & Keuangan Klub</span>
+            </div>
+            <h1 className="text-2xl sm:text-3xl font-display font-bold tracking-tight text-white">
+              Dashboard Administrasi Klub
+            </h1>
+            <p className="mt-1.5 text-xs sm:text-sm text-slate-300 leading-relaxed max-w-xl">
+              Pencatatan data siswa, penerbitan kuitansi resmi pendaftaran, iuran rutin bulanan, iuran insidentil kejuaraan, serta absensi presensi latihan.
+            </p>
           </div>
-          <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-white">
-            Selamat Datang di SportKit Club Administration
-          </h1>
-          <p className="mt-2 text-sm text-slate-200 leading-relaxed">
-            Platform modern untuk mencatat pendaftaran siswa baru, iuran rutin bulanan, iuran insidentil turnamen, serta absensi latihan harian secara instan.
-          </p>
+
+          <div className="flex flex-wrap sm:flex-nowrap items-center gap-3">
+            <button
+              onClick={onNavigateNewRegistration}
+              className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold transition-all shadow-sm flex items-center justify-center gap-2 whitespace-nowrap cursor-pointer"
+            >
+              <UserPlus className="w-4 h-4" />
+              <span>+ Pendaftaran Baru</span>
+            </button>
+            <button
+              onClick={onNavigateKelas}
+              className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-slate-700 transition-all flex items-center justify-center gap-2 whitespace-nowrap cursor-pointer"
+            >
+              <ShieldCheck className="w-4 h-4 text-slate-400" />
+              <span>Kelola Kelas</span>
+            </button>
+          </div>
         </div>
       </div>
 
-      {/* Two Hero Main Cards (matching exact video layout timestamp 00:02 & 01:10) */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* CARD 1: SISWA */}
-        <div className="bg-gradient-to-b from-[#0d345c] to-[#092542] rounded-2xl p-6 text-white shadow-xl border border-blue-900/60 flex flex-col justify-between relative overflow-hidden">
-          {/* Subtle Background Art / Illustration Silhouette */}
-          <div className="absolute right-4 top-4 opacity-15 pointer-events-none">
-            <Users className="w-40 h-40 text-blue-300" />
+      {/* Alert Card: Pending Payment Verifications */}
+      {pendingSubmissionsCount > 0 && (
+        <div className="bg-gradient-to-r from-emerald-950 via-slate-900 to-slate-900 border border-emerald-500/40 p-4 sm:p-5 rounded-2xl text-white flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-sm">
+          <div className="flex items-center gap-3.5">
+            <div className="w-10 h-10 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center justify-center shrink-0">
+              <CheckCircle2 className="w-5 h-5 animate-pulse" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded bg-emerald-500 text-slate-950 font-mono">
+                  {pendingSubmissionsCount} MENUNGGU
+                </span>
+                <h3 className="font-display font-bold text-sm text-slate-100">
+                  Bukti Pembayaran Siswa Menunggu Verifikasi
+                </h3>
+              </div>
+              <p className="text-xs text-slate-300 mt-0.5">
+                Ada bukti transfer yang telah dikirim dari akun siswa. Cek mutasi bank dan verifikasi ceklist lunas.
+              </p>
+            </div>
           </div>
+          {onNavigateVerifikasi && (
+            <button
+              onClick={onNavigateVerifikasi}
+              className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-md transition-all flex items-center justify-center gap-2 shrink-0 cursor-pointer"
+            >
+              <span>Buka Verifikasi Bukti</span>
+              <ArrowRight className="w-4 h-4" />
+            </button>
+          )}
+        </div>
+      )}
 
+      {/* Two Main Action Cards: Siswa & Status Iuran */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* CARD 1: PUSAT DATA SISWA */}
+        <div className="sports-card sports-card-hover rounded-2xl p-6 flex flex-col justify-between">
           <div>
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-2xl font-black tracking-tight text-white flex items-center gap-2">
-                <span>Siswa</span>
-              </h2>
-              <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md bg-blue-500/30 text-sky-200 border border-blue-400/30">
-                Pusat Siswa
+            <div className="flex items-center justify-between pb-4 border-b border-slate-100">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-600 border border-emerald-100 flex items-center justify-center">
+                  <Users className="w-5 h-5" />
+                </div>
+                <div>
+                  <h2 className="text-base font-display font-bold text-slate-900">
+                    Pusat Data Siswa
+                  </h2>
+                  <p className="text-xs text-slate-500">Pencarian & manajemen profil atlet</p>
+                </div>
+              </div>
+              <span className="text-xs font-semibold text-slate-600 bg-slate-100 px-2.5 py-1 rounded-lg">
+                {activeStudents.length} Siswa Aktif
               </span>
             </div>
 
-            {/* Dropdown: Cari Siswa Aktif */}
-            <div className="mb-6">
-              <label className="block text-xs font-semibold text-slate-200 mb-1.5 flex items-center justify-between">
-                <span>Cari Siswa Aktif</span>
-                <span className="text-[11px] text-sky-300 font-normal">Pilih profil siswa</span>
+            {/* Quick Selector */}
+            <div className="mt-5 mb-6">
+              <label className="block text-xs font-semibold text-slate-700 mb-2">
+                Pilih Profil Siswa:
               </label>
               <div className="relative">
                 <select
                   value={selectedStudentId}
                   onChange={(e) => handleStudentChange(e.target.value)}
-                  className="w-full bg-[#133f6d] border border-blue-400/40 text-white rounded-xl px-4 py-3 text-sm font-semibold appearance-none focus:outline-none focus:ring-2 focus:ring-sky-400 cursor-pointer shadow-inner"
+                  className="w-full bg-slate-50 hover:bg-slate-100/80 border border-slate-200 text-slate-800 rounded-xl px-4 py-3 text-xs sm:text-sm font-medium appearance-none focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white transition-colors cursor-pointer"
                 >
-                  <option value="" className="bg-slate-900 text-slate-300">
-                    Nama
-                  </option>
+                  <option value="">-- Pilih Siswa untuk Buka Profil --</option>
                   {activeStudents.map((std) => (
-                    <option key={std.id} value={std.id} className="bg-slate-900 text-white">
-                      {std.nama} ({std.kelasId.toUpperCase()})
+                    <option key={std.id} value={std.id}>
+                      {std.nama} — Kelas {std.kelasId.toUpperCase()}
                     </option>
                   ))}
                 </select>
-                <div className="absolute right-3.5 top-3.5 pointer-events-none text-sky-300">
-                  <ChevronRight className="w-5 h-5 rotate-90" />
+                <div className="absolute right-3.5 top-3.5 pointer-events-none text-slate-400">
+                  <ChevronRight className="w-4 h-4 rotate-90" />
                 </div>
               </div>
+              <p className="text-[11px] text-slate-400 mt-1.5">
+                Pilih siswa untuk langsung memeriksa kartu iuran, kuitansi, riwayat hadir, dan kontak orang tua.
+              </p>
             </div>
           </div>
 
-          {/* Bottom Action Buttons: Pendaftaran Baru & Calon Siswa */}
-          <div className="grid grid-cols-2 gap-3 pt-3 border-t border-blue-800/60">
+          {/* Action Row */}
+          <div className="grid grid-cols-2 gap-3 pt-4 border-t border-slate-100">
             <button
               onClick={onNavigateNewRegistration}
-              className="flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-[#144272] hover:bg-[#1b5591] text-white text-xs font-bold transition-all shadow-md hover:shadow-blue-500/20 border border-blue-400/30"
+              className="flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200/80 text-xs font-semibold transition-colors"
             >
-              <UserPlus className="w-4 h-4 text-sky-300" />
-              <span>Pendaftaran Baru</span>
+              <UserPlus className="w-4 h-4" />
+              <span>Input Siswa Baru</span>
             </button>
 
             <button
               onClick={onNavigateCalonSiswa}
-              className="relative flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-[#144272] hover:bg-[#1b5591] text-white text-xs font-bold transition-all shadow-md hover:shadow-blue-500/20 border border-blue-400/30"
+              className="relative flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 text-xs font-semibold transition-colors"
             >
-              <Users className="w-4 h-4 text-sky-300" />
+              <Users className="w-4 h-4 text-slate-500" />
               <span>Calon Siswa</span>
               {calonStudents.length > 0 && (
-                <span className="w-5 h-5 rounded-full bg-red-500 text-white text-[10px] font-black flex items-center justify-center shadow-xs">
+                <span className="w-5 h-5 rounded-full bg-amber-500 text-white text-[10px] font-mono font-bold flex items-center justify-center shadow-xs">
                   {calonStudents.length}
                 </span>
               )}
@@ -161,214 +228,247 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </div>
         </div>
 
-        {/* CARD 2: STATUS IURAN */}
-        <div className="bg-gradient-to-b from-[#0d345c] to-[#092542] rounded-2xl p-6 text-white shadow-xl border border-blue-900/60 flex flex-col justify-between relative overflow-hidden">
-          {/* Subtle Background Art */}
-          <div className="absolute right-4 top-4 opacity-15 pointer-events-none">
-            <Wallet className="w-40 h-40 text-blue-300" />
-          </div>
-
+        {/* CARD 2: STATUS & KEUANGAN IURAN */}
+        <div className="sports-card sports-card-hover rounded-2xl p-6 flex flex-col justify-between">
           <div>
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-2xl font-black tracking-tight text-white flex items-center gap-2">
-                <span>Status Iuran</span>
-              </h2>
-              <div className="w-8 h-8 rounded-lg bg-emerald-500/20 text-emerald-300 border border-emerald-400/40 flex items-center justify-center font-bold text-xs">
-                Rp
-              </div>
-            </div>
-
-            {/* Dropdown 1: Iuran Rutin by Kelas */}
-            <div className="mb-4">
-              <label className="block text-xs font-semibold text-slate-200 mb-1.5 flex items-center justify-between">
-                <span>Iuran Rutin</span>
-                <span className="text-[11px] text-sky-300 font-normal">Lihat matriks kelas</span>
-              </label>
-              <div className="relative">
-                <select
-                  value={selectedClassId}
-                  onChange={(e) => handleClassChange(e.target.value)}
-                  className="w-full bg-[#133f6d] border border-blue-400/40 text-white rounded-xl px-4 py-3 text-sm font-semibold appearance-none focus:outline-none focus:ring-2 focus:ring-sky-400 cursor-pointer shadow-inner"
-                >
-                  <option value="" className="bg-slate-900 text-slate-300">
-                    Kelas
-                  </option>
-                  {classes.map((cls) => (
-                    <option key={cls.id} value={cls.id} className="bg-slate-900 text-white">
-                      {cls.nama}
-                    </option>
-                  ))}
-                </select>
-                <div className="absolute right-3.5 top-3.5 pointer-events-none text-sky-300">
-                  <ChevronRight className="w-5 h-5 rotate-90" />
+            <div className="flex items-center justify-between pb-4 border-b border-slate-100">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-sky-50 text-sky-600 border border-sky-100 flex items-center justify-center">
+                  <Wallet className="w-5 h-5" />
+                </div>
+                <div>
+                  <h2 className="text-base font-display font-bold text-slate-900">
+                    Status Matriks Iuran
+                  </h2>
+                  <p className="text-xs text-slate-500">Iuran bulanan & partisipasi turnamen</p>
                 </div>
               </div>
+              <div className="flex items-center gap-1.5 text-xs text-slate-500">
+                <span className="inline-block w-2 h-2 rounded-full bg-emerald-500" />
+                <span>Lunas</span>
+                <span className="text-slate-300">·</span>
+                <span className="inline-block w-2 h-2 rounded-full bg-rose-500" />
+                <span>Belum</span>
+              </div>
             </div>
 
-            {/* Dropdown 2: Iuran Insidentil by Event */}
-            <div>
-              <label className="block text-xs font-semibold text-slate-200 mb-1.5 flex items-center justify-between">
-                <span>Iuran Insidentil</span>
-                <span className="text-[11px] text-sky-300 font-normal">Turnamen & kegiatan</span>
-              </label>
-              <div className="relative">
-                <select
-                  value={selectedEventId}
-                  onChange={(e) => handleEventChange(e.target.value)}
-                  className="w-full bg-[#133f6d] border border-blue-400/40 text-white rounded-xl px-4 py-3 text-sm font-semibold appearance-none focus:outline-none focus:ring-2 focus:ring-sky-400 cursor-pointer shadow-inner"
-                >
-                  <option value="" className="bg-slate-900 text-slate-300">
-                    Event
-                  </option>
-                  {events.map((evt) => (
-                    <option key={evt.id} value={evt.id} className="bg-slate-900 text-white">
-                      {evt.nama} ({formatRupiah(evt.nominal)})
-                    </option>
-                  ))}
-                </select>
-                <div className="absolute right-3.5 top-3.5 pointer-events-none text-sky-300">
-                  <ChevronRight className="w-5 h-5 rotate-90" />
+            {/* Matrix Selectors */}
+            <div className="mt-5 space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5 flex items-center justify-between">
+                  <span>Matriks Iuran Rutin (Per Kelas)</span>
+                  <span className="text-[11px] text-slate-400 font-normal">Pilih kelompok</span>
+                </label>
+                <div className="relative">
+                  <select
+                    value={selectedClassId}
+                    onChange={(e) => handleClassChange(e.target.value)}
+                    className="w-full bg-slate-50 hover:bg-slate-100/80 border border-slate-200 text-slate-800 rounded-xl px-4 py-2.5 text-xs sm:text-sm font-medium appearance-none focus:outline-none focus:ring-2 focus:ring-sky-500 focus:bg-white transition-colors cursor-pointer"
+                  >
+                    <option value="">-- Pilih Kelas untuk Buka Matriks --</option>
+                    {classes.map((cls) => (
+                      <option key={cls.id} value={cls.id}>
+                        {cls.nama} — {formatRupiah(cls.iuranBulanan)}/bln
+                      </option>
+                    ))}
+                  </select>
+                  <div className="absolute right-3.5 top-3 pointer-events-none text-slate-400">
+                    <ChevronRight className="w-4 h-4 rotate-90" />
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5 flex items-center justify-between">
+                  <span>Iuran Insidentil (Turnamen / Jersey)</span>
+                  <span className="text-[11px] text-slate-400 font-normal">Pilih kegiatan</span>
+                </label>
+                <div className="relative">
+                  <select
+                    value={selectedEventId}
+                    onChange={(e) => handleEventChange(e.target.value)}
+                    className="w-full bg-slate-50 hover:bg-slate-100/80 border border-slate-200 text-slate-800 rounded-xl px-4 py-2.5 text-xs sm:text-sm font-medium appearance-none focus:outline-none focus:ring-2 focus:ring-sky-500 focus:bg-white transition-colors cursor-pointer"
+                  >
+                    <option value="">-- Pilih Event / Kejuaraan --</option>
+                    {events.map((evt) => (
+                      <option key={evt.id} value={evt.id}>
+                        {evt.nama} ({formatRupiah(evt.nominal)})
+                      </option>
+                    ))}
+                  </select>
+                  <div className="absolute right-3.5 top-3 pointer-events-none text-slate-400">
+                    <ChevronRight className="w-4 h-4 rotate-90" />
+                  </div>
                 </div>
               </div>
             </div>
           </div>
 
-          <div className="pt-4 mt-4 border-t border-blue-800/60 flex items-center justify-between text-xs text-slate-300">
-            <span>Visualisasi status warna:</span>
-            <div className="flex items-center gap-2">
-              <span className="inline-flex items-center gap-1 text-[11px]">
-                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500"></span> Lunas
-              </span>
-              <span className="inline-flex items-center gap-1 text-[11px]">
-                <span className="w-2.5 h-2.5 rounded-full bg-red-500"></span> Belum Bayar
-              </span>
-            </div>
+          <div className="pt-4 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
+            <span>Sistem Kuitansi: Cetak PDF & Bagikan ke WhatsApp</span>
+            <button
+              onClick={() => onSelectClassIuran(classes[0]?.id || 'ku-10')}
+              className="text-xs font-semibold text-emerald-600 hover:text-emerald-700 flex items-center gap-1"
+            >
+              <span>Buka Matriks</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </button>
           </div>
         </div>
       </div>
 
-      {/* Quick Summary Statistics */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+      {/* Quick Summary KPIs */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {/* KPI 1 */}
         <div 
           onClick={onNavigateKelas}
-          className="bg-white rounded-xl p-4 border border-slate-200 shadow-xs hover:border-blue-300 hover:shadow-md cursor-pointer transition-all group"
-          title="Klik untuk kelola & buat kelompok kelas baru"
+          className="sports-card sports-card-hover rounded-xl p-4 cursor-pointer group"
+          title="Klik untuk kelola kelompok kelas"
         >
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider group-hover:text-blue-600 transition-colors">
+            <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider group-hover:text-emerald-600 transition-colors">
               Kelompok Kelas
             </span>
-            <div className="p-2 rounded-lg bg-blue-50 text-blue-600 group-hover:bg-blue-600 group-hover:text-white transition-colors">
+            <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center">
               <Users className="w-4 h-4" />
             </div>
           </div>
-          <div className="mt-2 text-2xl font-black text-slate-900 group-hover:text-blue-700 transition-colors">
-            {classes.length} Kelas
+          <div className="mt-2 text-2xl font-display font-bold text-slate-900 tabular-nums">
+            {classes.length} <span className="text-xs font-medium text-slate-500">Kelas</span>
           </div>
-          <p className="text-[11px] text-blue-600 font-semibold mt-0.5 flex items-center gap-1">
-            <span>+ Buat / Atur Kelas</span>
+          <p className="text-[11px] text-emerald-600 font-medium mt-0.5 flex items-center gap-1">
+            <span>Atur kelompok kelas →</span>
           </p>
         </div>
 
-        <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-xs">
+        {/* KPI 2 */}
+        <div 
+          onClick={onNavigateCalonSiswa}
+          className="sports-card sports-card-hover rounded-xl p-4 cursor-pointer"
+        >
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Calon Siswa</span>
-            <div className="p-2 rounded-lg bg-amber-50 text-amber-600">
+            <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
+              Calon Siswa
+            </span>
+            <div className="w-8 h-8 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center">
               <UserPlus className="w-4 h-4" />
             </div>
           </div>
-          <div className="mt-2 text-2xl font-black text-slate-900">
-            {calonStudents.length}
+          <div className="mt-2 text-2xl font-display font-bold text-slate-900 tabular-nums">
+            {calonStudents.length} <span className="text-xs font-medium text-slate-500">Siswa</span>
           </div>
-          <p className="text-[11px] text-amber-600 font-semibold mt-0.5">Menunggu verifikasi</p>
+          <p className="text-[11px] text-amber-600 font-medium mt-0.5">
+            {calonStudents.length > 0 ? 'Menunggu konfirmasi pembayaran' : 'Semua sudah diverifikasi'}
+          </p>
         </div>
 
-        <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-xs">
+        {/* KPI 3 */}
+        <div className="sports-card sports-card-hover rounded-xl p-4">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Iuran Masuk</span>
-            <div className="p-2 rounded-lg bg-emerald-50 text-emerald-600">
+            <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
+              Kas Iuran Masuk
+            </span>
+            <div className="w-8 h-8 rounded-lg bg-teal-50 text-teal-600 flex items-center justify-center">
               <TrendingUp className="w-4 h-4" />
             </div>
           </div>
-          <div className="mt-2 text-xl font-black text-slate-900">
-            {formatRupiah(transactions.reduce((sum, t) => sum + t.nominal, 0))}
+          <div className="mt-2 text-xl font-display font-bold text-slate-900 tabular-nums">
+            {formatRupiah(totalRevenue)}
           </div>
-          <p className="text-[11px] text-emerald-600 font-semibold mt-0.5">Tercatat di sistem</p>
+          <p className="text-[11px] text-teal-600 font-medium mt-0.5">
+            {transactions.length} transaksi resmi
+          </p>
         </div>
 
-        <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-xs">
+        {/* KPI 4 */}
+        <div className="sports-card sports-card-hover rounded-xl p-4">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Event Aktif</span>
-            <div className="p-2 rounded-lg bg-purple-50 text-purple-600">
+            <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
+              Event Turnamen
+            </span>
+            <div className="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center">
               <CreditCard className="w-4 h-4" />
             </div>
           </div>
-          <div className="mt-2 text-2xl font-black text-slate-900">
-            {events.length}
+          <div className="mt-2 text-2xl font-display font-bold text-slate-900 tabular-nums">
+            {events.length} <span className="text-xs font-medium text-slate-500">Event</span>
           </div>
-          <p className="text-[11px] text-slate-500 mt-0.5">Turnamen & kejuaraan</p>
+          <p className="text-[11px] text-indigo-600 font-medium mt-0.5">
+            Kejuaraan & kompetisi aktif
+          </p>
         </div>
       </div>
 
       {/* Recent Payment Receipts */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+      <div className="sports-card rounded-2xl overflow-hidden">
         <div className="p-5 border-b border-slate-100 flex items-center justify-between">
           <div>
-            <h3 className="font-bold text-slate-900 text-sm">Transaksi Pembayaran Terbaru</h3>
-            <p className="text-xs text-slate-500">Kuitansi resmi yang telah diterbitkan otomatis</p>
+            <h3 className="font-display font-bold text-slate-900 text-sm">
+              Transaksi Pembayaran & Kuitansi Terbaru
+            </h3>
+            <p className="text-xs text-slate-500">
+              Riwayat kuitansi resmi yang tercatat dan siap dicetak atau dikirim ke WhatsApp
+            </p>
           </div>
-          <span className="text-xs font-semibold text-blue-600">
+          <span className="text-xs font-mono font-semibold text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-lg">
             {transactions.length} Kuitansi
           </span>
         </div>
 
         <div className="divide-y divide-slate-100 overflow-x-auto">
           {transactions.length === 0 ? (
-            <div className="p-8 text-center text-slate-500 text-xs">
-              <Receipt className="w-8 h-8 text-slate-300 mx-auto mb-2" />
-              <p className="font-semibold text-slate-700">Belum ada transaksi pembayaran.</p>
-              <p className="text-slate-400 mt-0.5">
-                Kuitansi resmi akan otomatis tercatat di sini setelah pendaftaran siswa baru atau pembayaran iuran dilakukan.
+            <div className="p-10 text-center text-slate-500 text-xs">
+              <Receipt className="w-10 h-10 text-slate-300 mx-auto mb-2" />
+              <p className="font-semibold text-slate-700 text-sm">Belum ada riwayat transaksi pembayaran.</p>
+              <p className="text-slate-400 mt-1 max-w-sm mx-auto">
+                Kuitansi resmi akan tercatat di sini setelah pendaftaran siswa disetujui atau iuran dibayarkan.
               </p>
             </div>
           ) : (
-            transactions.map((tx) => (
-            <div
-              key={tx.id}
-              className="p-4 flex items-center justify-between gap-4 hover:bg-slate-50/80 transition-colors"
-            >
-              <div className="flex items-center gap-3.5">
-                <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-700 flex items-center justify-center font-bold text-xs">
-                  <Receipt className="w-5 h-5" />
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="font-bold text-slate-900 text-sm">{tx.siswaNama}</span>
-                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-slate-100 text-slate-700">
-                      {tx.kelasNama}
-                    </span>
+            transactions.slice(0, 8).map((tx) => (
+              <div
+                key={tx.id}
+                className="p-4 flex items-center justify-between gap-4 hover:bg-slate-50/80 transition-colors"
+              >
+                <div className="flex items-center gap-3.5">
+                  <div className="w-10 h-10 rounded-xl bg-slate-100 text-slate-700 flex items-center justify-center font-bold text-xs shrink-0">
+                    <Receipt className="w-5 h-5 text-slate-600" />
                   </div>
-                  <p className="text-xs text-slate-500 mt-0.5">
-                    {tx.tipe} • <span className="font-mono text-slate-600">{tx.nomorKuitansi}</span> • {tx.tanggal}
-                  </p>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-semibold text-slate-900 text-sm">{tx.siswaNama}</span>
+                      <span className="text-[10px] font-medium px-2 py-0.5 rounded bg-slate-100 text-slate-600">
+                        {tx.kelasNama}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 text-xs text-slate-500 mt-0.5">
+                      <span>{tx.tipe}</span>
+                      <span aria-hidden="true">·</span>
+                      <span className="font-mono text-slate-600">{tx.nomorKuitansi}</span>
+                      <span aria-hidden="true">·</span>
+                      <span>{tx.tanggal}</span>
+                    </div>
+                  </div>
                 </div>
-              </div>
 
-              <div className="flex items-center gap-4">
-                <div className="text-right">
-                  <p className="text-sm font-black text-slate-900">{formatRupiah(tx.nominal)}</p>
-                  <p className="text-[11px] text-slate-500">{tx.metodePembayaran}</p>
+                <div className="flex items-center gap-4">
+                  <div className="text-right">
+                    <p className="text-sm font-bold text-slate-900 font-mono tabular-nums">
+                      {formatRupiah(tx.nominal)}
+                    </p>
+                    <p className="text-[11px] text-slate-500">{tx.metodePembayaran}</p>
+                  </div>
+                  <button
+                    onClick={() => onViewReceipt(tx)}
+                    className="px-3 py-1.5 rounded-lg border border-slate-200 hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-700 text-slate-700 text-xs font-medium flex items-center gap-1.5 transition-colors whitespace-nowrap"
+                  >
+                    <Receipt className="w-3.5 h-3.5" />
+                    <span>Lihat Kuitansi</span>
+                  </button>
                 </div>
-                <button
-                  onClick={() => onViewReceipt(tx)}
-                  className="px-3 py-1.5 rounded-lg border border-slate-300 hover:bg-blue-50 hover:text-blue-700 text-slate-700 text-xs font-semibold flex items-center gap-1.5 transition-colors"
-                >
-                  <Receipt className="w-3.5 h-3.5" />
-                  <span>Cetak Kuitansi</span>
-                </button>
               </div>
-            </div>
-          )))}
+            ))
+          )}
         </div>
       </div>
     </div>

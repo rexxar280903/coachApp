@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Student, ClassGroup, Gender, ParentInfo } from '../types/sportkit';
 import { formatRupiah } from '../utils/numberToWordsId';
-import { CheckCircle2, UserPlus, Sparkles, ArrowLeft } from 'lucide-react';
+import { CheckCircle2, UserPlus, Sparkles, ArrowLeft, ShieldCheck, CreditCard, Layers } from 'lucide-react';
 
 interface PendaftaranViewProps {
   classes: ClassGroup[];
@@ -20,7 +20,6 @@ export const PendaftaranView: React.FC<PendaftaranViewProps> = ({
   onCancel,
   onNavigateKelas,
 }) => {
-  // Form fields matching video timestamp 00:21 & 00:34
   const [nama, setNama] = useState<string>('');
   const [alamat, setAlamat] = useState<string>('');
   const [jenisKelamin, setJenisKelamin] = useState<Gender>('Laki-laki');
@@ -79,117 +78,148 @@ export const PendaftaranView: React.FC<PendaftaranViewProps> = ({
       totalBiayaPendaftaran: totalBiaya,
     };
 
+    onRegisterSubmit(newStudent, autoPay);
+
     if (isPublicMode) {
       setSuccessBanner(true);
-      onRegisterSubmit(newStudent, false);
-      // Reset form after delay
-      setTimeout(() => {
-        setNama('');
-        setAlamat('');
-        setNoHp('');
-        setNamaAyah('');
-        setNoHpAyah('');
-        setNamaIbu('');
-        setNoHpIbu('');
-      }, 1000);
-    } else {
-      onRegisterSubmit(newStudent, autoPay);
     }
   };
 
+  if (successBanner) {
+    return (
+      <div className="sports-card rounded-2xl p-8 max-w-xl mx-auto text-center space-y-4 my-8">
+        <div className="w-16 h-16 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center mx-auto border border-emerald-200">
+          <CheckCircle2 className="w-10 h-10" />
+        </div>
+        <h2 className="text-2xl font-display font-bold text-slate-900">
+          Pendaftaran Berhasil Terkirim!
+        </h2>
+        <p className="text-xs text-slate-600 leading-relaxed">
+          Terima kasih telah mendaftar di akademi kami. Data Anda telah masuk ke sistem pengurus dengan status <span className="font-semibold text-amber-600">Menunggu Verifikasi</span>.
+        </p>
+        <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 text-left text-xs space-y-1">
+          <p><span className="text-slate-400 font-medium">Nama:</span> <strong className="text-slate-800">{nama}</strong></p>
+          <p><span className="text-slate-400 font-medium">Kelas:</span> <strong className="text-slate-800">{selectedClass?.nama}</strong></p>
+          <p><span className="text-slate-400 font-medium">Total Biaya Masuk:</span> <strong className="text-emerald-700 font-mono">{formatRupiah(totalBiaya)}</strong></p>
+        </div>
+        <button
+          onClick={() => {
+            setSuccessBanner(false);
+            setNama('');
+            setNoHp('');
+          }}
+          className="px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition-colors shadow-sm"
+        >
+          Daftarkan Siswa Lainnya
+        </button>
+      </div>
+    );
+  }
+
   return (
-    <div className={`max-w-3xl mx-auto space-y-6 ${isPublicMode ? 'py-8 px-4' : ''}`}>
-      {/* Brand Header for Public Registration Mode (matching video timestamp 00:33) */}
-      {isPublicMode && (
-        <div className="text-center space-y-2 mb-6">
-          <div className="inline-flex w-16 h-16 rounded-2xl bg-gradient-to-tr from-blue-900 to-indigo-700 items-center justify-center text-white shadow-lg border border-blue-400/40 mx-auto">
-            <div className="text-center">
-              <div className="text-[9px] font-black text-blue-200">★★★</div>
-              <div className="text-xs font-black">SPORTKIT</div>
+    <div className="space-y-6 max-w-4xl mx-auto">
+      {/* Header */}
+      <div className="sports-card rounded-2xl p-6">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold">
+              <UserPlus className="w-5 h-5" />
             </div>
-          </div>
-          <h1 className="text-2xl font-black text-slate-900 uppercase tracking-tight">
-            Pendaftaran Baru
-          </h1>
-          <p className="text-xs text-slate-500">
-            Formulir pendaftaran mandiri calon siswa akademi olahraga
-          </p>
-        </div>
-      )}
-
-      {/* Success Banner (matching video timestamp 00:43) */}
-      {successBanner && (
-        <div className="p-4 rounded-xl bg-emerald-600 text-white font-bold text-sm flex items-center justify-center gap-2 shadow-lg animate-fade-in">
-          <CheckCircle2 className="w-5 h-5" />
-          <span>Pendaftaran Siswa Baru Berhasil! Admin kami akan segera menghubungi Anda.</span>
-        </div>
-      )}
-
-      <div className="bg-white rounded-2xl p-6 sm:p-8 border border-slate-200 shadow-sm space-y-6">
-        {!isPublicMode && (
-          <div className="flex items-center justify-between pb-4 border-b border-slate-100">
             <div>
-              <h2 className="text-2xl font-black text-slate-900 tracking-tight uppercase">
-                TAMBAH SISWA
-              </h2>
+              <h1 className="text-xl sm:text-2xl font-display font-bold text-slate-900 tracking-tight uppercase">
+                {isPublicMode ? 'Formulir Pendaftaran Siswa Baru' : 'Input Pendaftaran Siswa Baru'}
+              </h1>
               <p className="text-xs text-slate-500">
-                Pendaftaran siswa baru ke dalam sistem administrasi
+                Lengkapi biodata siswa, pilihan kelompok kelas, dan kontak orang tua
               </p>
             </div>
-            {onCancel && (
-              <button
-                onClick={onCancel}
-                className="px-3.5 py-1.5 rounded-lg border border-slate-300 text-slate-600 text-xs font-semibold hover:bg-slate-50 flex items-center gap-1.5"
-              >
-                <ArrowLeft className="w-3.5 h-3.5" />
-                <span>Kembali</span>
-              </button>
-            )}
           </div>
-        )}
 
-        {/* SECTION 1: DATA SISWA (matching video timestamp 00:21) */}
+          {!isPublicMode && onCancel && (
+            <button
+              onClick={onCancel}
+              className="px-3.5 py-1.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-xs font-semibold text-slate-600 flex items-center gap-1.5 transition-colors"
+            >
+              <ArrowLeft className="w-3.5 h-3.5" />
+              <span>Kembali</span>
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Main Form */}
+      <div className="sports-card rounded-2xl p-6 sm:p-8 space-y-8">
+        {/* Section 1: Pilihan Kelompok Kelas & Biaya */}
         <div>
-          <h3 className="text-base font-bold text-slate-900 mb-3 pb-1 border-b border-slate-100">
-            Data Siswa
-          </h3>
+          <h2 className="text-sm font-display font-bold text-slate-900 uppercase tracking-wider pb-2 border-b border-slate-100 flex items-center gap-2">
+            <Layers className="w-4 h-4 text-emerald-600" />
+            <span>1. Pilihan Kelompok Kelas & Rincian Biaya</span>
+          </h2>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+          <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block font-semibold text-slate-700 mb-1">
-                Nama *
+              <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                Kelompok Kelas <span className="text-rose-500">*</span>
+              </label>
+              <select
+                value={selectedClassId}
+                onChange={(e) => setSelectedClassId(e.target.value)}
+                className="w-full text-xs font-semibold rounded-xl border border-slate-300 bg-slate-50 px-3.5 py-2.5 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer"
+              >
+                {classes.map((cls) => (
+                  <option key={cls.id} value={cls.id}>
+                    {cls.nama} — {cls.deskripsi} (SPP: {formatRupiah(cls.iuranBulanan)}/bln)
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Fee summary breakdown */}
+            <div className="p-4 rounded-xl bg-emerald-50/50 border border-emerald-200/80 text-xs flex flex-col justify-between">
+              <div className="flex items-center justify-between text-slate-700">
+                <span>Biaya Pendaftaran Awal:</span>
+                <span className="font-mono font-bold">{formatRupiah(biayaPendaftaran)}</span>
+              </div>
+              <div className="flex items-center justify-between text-slate-700 mt-1">
+                <span>Iuran SPP Perdana:</span>
+                <span className="font-mono font-bold">{formatRupiah(iuranBulanan)}</span>
+              </div>
+              <div className="flex items-center justify-between pt-2 mt-2 border-t border-emerald-200 text-emerald-900 font-bold">
+                <span>Total Biaya Masuk:</span>
+                <span className="font-mono text-sm">{formatRupiah(totalBiaya)}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Section 2: Biodata Calon Siswa */}
+        <div>
+          <h2 className="text-sm font-display font-bold text-slate-900 uppercase tracking-wider pb-2 border-b border-slate-100 flex items-center gap-2">
+            <Sparkles className="w-4 h-4 text-emerald-600" />
+            <span>2. Biodata Lengkap Atlet / Siswa</span>
+          </h2>
+
+          <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+            <div className="sm:col-span-2">
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Nama Lengkap Siswa <span className="text-rose-500">*</span>
               </label>
               <input
                 type="text"
                 required
-                placeholder="Nama Lengkap Siswa"
+                placeholder="Contoh: Muhammad Kevin Al-Farizi"
                 value={nama}
                 onChange={(e) => setNama(e.target.value)}
-                className="w-full rounded-xl border border-slate-300 bg-slate-50/50 px-3.5 py-2.5 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 font-semibold"
+                className="w-full text-xs rounded-xl border border-slate-300 px-3.5 py-2.5 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
               />
             </div>
 
             <div>
-              <label className="block font-semibold text-slate-700 mb-1">
-                Alamat
-              </label>
-              <input
-                type="text"
-                placeholder="Alamat Domisili"
-                value={alamat}
-                onChange={(e) => setAlamat(e.target.value)}
-                className="w-full rounded-xl border border-slate-300 bg-slate-50/50 px-3.5 py-2.5 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-
-            <div>
-              <label className="block font-semibold text-slate-700 mb-1">
-                Jenis Kelamin *
-              </label>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Jenis Kelamin</label>
               <select
                 value={jenisKelamin}
                 onChange={(e) => setJenisKelamin(e.target.value as Gender)}
-                className="w-full rounded-xl border border-slate-300 bg-slate-50/50 px-3.5 py-2.5 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 font-semibold"
+                className="w-full text-xs rounded-xl border border-slate-300 px-3 py-2.5 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white"
               >
                 <option value="Laki-laki">Laki-laki</option>
                 <option value="Perempuan">Perempuan</option>
@@ -197,208 +227,142 @@ export const PendaftaranView: React.FC<PendaftaranViewProps> = ({
             </div>
 
             <div>
-              <label className="block font-semibold text-slate-700 mb-1">
-                Tempat & Tanggal Lahir *
-              </label>
-              <div className="grid grid-cols-2 gap-2">
-                <input
-                  type="text"
-                  placeholder="Tempat Lahir"
-                  value={tempatLahir}
-                  onChange={(e) => setTempatLahir(e.target.value)}
-                  className="rounded-xl border border-slate-300 bg-slate-50/50 px-3 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-                <input
-                  type="date"
-                  value={tanggalLahir}
-                  onChange={(e) => setTanggalLahir(e.target.value)}
-                  className="rounded-xl border border-slate-300 bg-slate-50/50 px-3 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Tempat Lahir</label>
+              <input
+                type="text"
+                value={tempatLahir}
+                onChange={(e) => setTempatLahir(e.target.value)}
+                className="w-full text-xs rounded-xl border border-slate-300 px-3 py-2.5 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              />
             </div>
 
             <div>
-              <label className="block font-semibold text-slate-700 mb-1">
-                No HP Siswa
-              </label>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Tanggal Lahir</label>
               <input
-                type="tel"
-                placeholder="08xxxxxxxxxx"
+                type="date"
+                value={tanggalLahir}
+                onChange={(e) => setTanggalLahir(e.target.value)}
+                className="w-full text-xs rounded-xl border border-slate-300 px-3 py-2.5 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">No. WhatsApp Siswa</label>
+              <input
+                type="text"
+                placeholder="08123456789"
                 value={noHp}
                 onChange={(e) => setNoHp(e.target.value)}
-                className="w-full rounded-xl border border-slate-300 bg-slate-50/50 px-3.5 py-2.5 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium"
+                className="w-full text-xs rounded-xl border border-slate-300 px-3 py-2.5 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 font-mono"
+              />
+            </div>
+
+            <div className="sm:col-span-2">
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Alamat Rumah</label>
+              <input
+                type="text"
+                placeholder="Alamat lengkap domisili"
+                value={alamat}
+                onChange={(e) => setAlamat(e.target.value)}
+                className="w-full text-xs rounded-xl border border-slate-300 px-3 py-2.5 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
               />
             </div>
 
             <div>
-              <label className="block font-semibold text-slate-700 mb-1">
-                Catatan
-              </label>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Email Siswa/Ortu</label>
               <input
-                type="text"
-                placeholder="Riwayat penyakit / alergi / prestasi sebelumnya"
-                value={catatan}
-                onChange={(e) => setCatatan(e.target.value)}
-                className="w-full rounded-xl border border-slate-300 bg-slate-50/50 px-3.5 py-2.5 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                type="email"
+                placeholder="email@example.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="w-full text-xs rounded-xl border border-slate-300 px-3 py-2.5 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
               />
             </div>
           </div>
         </div>
 
-        {/* SECTION 2: DATA ORANG TUA (matching video timestamp 00:23) */}
+        {/* Section 3: Kontak Orang Tua / Wali */}
         <div>
-          <h3 className="text-base font-bold text-slate-900 mb-3 pb-1 border-b border-slate-100">
-            Data Orang Tua
-          </h3>
+          <h2 className="text-sm font-display font-bold text-slate-900 uppercase tracking-wider pb-2 border-b border-slate-100 flex items-center gap-2">
+            <ShieldCheck className="w-4 h-4 text-emerald-600" />
+            <span>3. Informasi Kontak Orang Tua / Wali</span>
+          </h2>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+          <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block font-semibold text-slate-700 mb-1">
-                Nama Ayah/Wali
-              </label>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Nama Ayah / Wali</label>
               <input
                 type="text"
-                placeholder="Nama Ayah/Wali"
+                placeholder="Nama ayah"
                 value={namaAyah}
                 onChange={(e) => setNamaAyah(e.target.value)}
-                className="w-full rounded-xl border border-slate-300 bg-slate-50/50 px-3.5 py-2.5 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full text-xs rounded-xl border border-slate-300 px-3 py-2.5 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
               />
             </div>
 
             <div>
-              <label className="block font-semibold text-slate-700 mb-1">
-                Nama Ibu/Wali
-              </label>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">No. WhatsApp Ayah / Wali</label>
               <input
                 type="text"
-                placeholder="Nama Ibu/Wali"
-                value={namaIbu}
-                onChange={(e) => setNamaIbu(e.target.value)}
-                className="w-full rounded-xl border border-slate-300 bg-slate-50/50 px-3.5 py-2.5 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-
-            <div>
-              <label className="block font-semibold text-slate-700 mb-1">
-                No HP Ayah/Wali
-              </label>
-              <input
-                type="tel"
-                placeholder="No HP Ayah/Wali"
+                placeholder="08xxxxxxxxxx"
                 value={noHpAyah}
                 onChange={(e) => setNoHpAyah(e.target.value)}
-                className="w-full rounded-xl border border-slate-300 bg-slate-50/50 px-3.5 py-2.5 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full text-xs rounded-xl border border-slate-300 px-3 py-2.5 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 font-mono"
               />
             </div>
 
             <div>
-              <label className="block font-semibold text-slate-700 mb-1">
-                No HP Ibu/Wali
-              </label>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Nama Ibu / Wali</label>
               <input
-                type="tel"
-                placeholder="No HP Ibu/Wali"
-                value={noHpIbu}
-                onChange={(e) => setNoHpIbu(e.target.value)}
-                className="w-full rounded-xl border border-slate-300 bg-slate-50/50 px-3.5 py-2.5 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                type="text"
+                placeholder="Nama ibu"
+                value={namaIbu}
+                onChange={(e) => setNamaIbu(e.target.value)}
+                className="w-full text-xs rounded-xl border border-slate-300 px-3 py-2.5 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
               />
             </div>
-          </div>
-        </div>
 
-        {/* SECTION 3: KELAS & BIAYA (matching video timestamp 00:41) */}
-        <div>
-          <div className="flex items-center justify-between mb-1.5">
-            <label className="block font-bold text-slate-800 text-sm">
-              Kelas *
-            </label>
-            {!isPublicMode && onNavigateKelas && (
-              <button
-                type="button"
-                onClick={onNavigateKelas}
-                className="text-xs text-blue-600 hover:text-blue-800 font-bold flex items-center gap-1 cursor-pointer"
-              >
-                + Buat / Kelola Kelompok Kelas Baru
-              </button>
-            )}
-          </div>
-
-          {classes.length === 0 ? (
-            <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div>
-                <p className="font-bold">Belum ada kelompok kelas yang dibuat.</p>
-                <p className="text-amber-700 text-[11px] mt-0.5">
-                  Admin perlu membuat kelas terlebih dahulu untuk menentukan tarif iuran dan pelatih.
-                </p>
-              </div>
-              {!isPublicMode && onNavigateKelas && (
-                <button
-                  type="button"
-                  onClick={onNavigateKelas}
-                  className="px-3.5 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-bold whitespace-nowrap shadow-xs"
-                >
-                  + Buat Kelas Sekarang
-                </button>
-              )}
-            </div>
-          ) : (
-            <select
-              value={selectedClassId}
-              onChange={(e) => setSelectedClassId(e.target.value)}
-              className="w-full rounded-xl border border-slate-300 bg-slate-50/50 px-3.5 py-2.5 text-sm font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              {classes.map((cls) => (
-                <option key={cls.id} value={cls.id}>
-                  {cls.nama} - {cls.deskripsi}
-                </option>
-              ))}
-            </select>
-          )}
-
-          {/* Fee Calculation Breakdown (matching video timestamp 00:41) */}
-          <div className="mt-4 p-4 rounded-xl bg-slate-50 border border-slate-200 text-xs space-y-2">
-            <div className="flex justify-between text-slate-600">
-              <span>Biaya pendaftaran:</span>
-              <span className="font-semibold text-slate-800">{formatRupiah(biayaPendaftaran)}</span>
-            </div>
-            <div className="flex justify-between text-slate-600">
-              <span>Iuran Bulanan:</span>
-              <span className="font-semibold text-slate-800">{formatRupiah(iuranBulanan)}</span>
-            </div>
-            <div className="flex justify-between text-sm font-black text-slate-900 border-t border-slate-300 pt-2">
-              <span>Total:</span>
-              <span className="text-blue-900">{formatRupiah(totalBiaya)}</span>
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">No. WhatsApp Ibu / Wali</label>
+              <input
+                type="text"
+                placeholder="08xxxxxxxxxx"
+                value={noHpIbu}
+                onChange={(e) => setNoHpIbu(e.target.value)}
+                className="w-full text-xs rounded-xl border border-slate-300 px-3 py-2.5 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 font-mono"
+              />
             </div>
           </div>
         </div>
 
         {/* Action Buttons */}
-        <div className="pt-4 border-t border-slate-200">
+        <div className="pt-6 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-end gap-3">
           {isPublicMode ? (
             <button
               type="button"
               onClick={() => handleSubmit(false)}
-              className="w-full py-3.5 rounded-xl bg-gradient-to-r from-blue-700 via-blue-800 to-indigo-800 hover:from-blue-600 hover:to-indigo-700 text-white font-black text-sm tracking-wide shadow-lg hover:shadow-xl transition-all"
+              className="w-full sm:w-auto px-8 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-md transition-all cursor-pointer"
             >
-              Daftar Sekarang
+              Kirim Formulir Pendaftaran
             </button>
           ) : (
-            <div className="flex flex-col sm:flex-row items-center justify-end gap-3">
+            <>
               <button
                 type="button"
                 onClick={() => handleSubmit(false)}
-                className="w-full sm:w-auto px-5 py-2.5 rounded-xl border border-slate-300 text-slate-700 hover:bg-slate-100 text-xs font-bold transition-colors"
+                className="w-full sm:w-auto px-5 py-2.5 rounded-xl border border-slate-300 hover:bg-slate-50 text-slate-700 font-semibold text-xs transition-colors cursor-pointer"
               >
-                Simpan ke Calon Siswa
+                Simpan Sebagai Calon Siswa (Verifikasi Nanti)
               </button>
               <button
                 type="button"
                 onClick={() => handleSubmit(true)}
-                className="w-full sm:w-auto px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-black shadow-md hover:shadow-lg transition-all"
+                className="w-full sm:w-auto px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-md transition-all flex items-center justify-center gap-1.5 cursor-pointer"
               >
-                Simpan & Bayar Langsung
+                <CreditCard className="w-4 h-4" />
+                <span>Simpan & Bayar Langsung (Aktifkan)</span>
               </button>
-            </div>
+            </>
           )}
         </div>
       </div>

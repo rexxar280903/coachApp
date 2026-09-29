@@ -7,7 +7,8 @@ import {
   AttendanceSession, 
   PaymentTransaction, 
   ClubProfile,
-  FeeStatus 
+  FeeStatus,
+  PaymentSubmission 
 } from '../types/sportkit';
 import { numberToWordsId } from '../utils/numberToWordsId';
 
@@ -20,6 +21,7 @@ const STORAGE_KEYS = {
   ATTENDANCE: 'sportkit_attendance_v2',
   TRANSACTIONS: 'sportkit_transactions_v2',
   PROFILE: 'sportkit_profile_v2',
+  PAYMENT_SUBMISSIONS: 'sportkit_payment_submissions_v2',
 };
 
 export const INITIAL_CLASSES: ClassGroup[] = [
@@ -420,6 +422,92 @@ function generateSeedData() {
   };
 }
 
+export const SAMPLE_TRANSFER_PROOF_SVG = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="400" height="520" viewBox="0 0 400 520" fill="none"><rect width="400" height="520" rx="16" fill="%23FFFFFF"/><rect width="400" height="80" rx="16" fill="%2300529C"/><text x="20" y="48" fill="%23FFFFFF" font-family="sans-serif" font-weight="bold" font-size="20">m-Transfer BCA BERHASIL</text><circle cx="200" cy="140" r="32" fill="%2310B981"/><path d="M188 140l8 8 16-16" stroke="%23FFFFFF" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/><text x="200" y="200" text-anchor="middle" fill="%231E293B" font-family="sans-serif" font-weight="bold" font-size="16">TRANSFER BERHASIL</text><text x="200" y="235" text-anchor="middle" fill="%23059669" font-family="sans-serif" font-weight="900" font-size="24">Rp 100.000</text><line x1="30" y1="265" x2="370" y2="265" stroke="%23E2E8F0" stroke-width="2" stroke-dasharray="4 4"/><text x="40" y="300" fill="%2364748B" font-family="sans-serif" font-size="12">Tanggal</text><text x="360" y="300" text-anchor="end" fill="%230F172A" font-family="sans-serif" font-weight="600" font-size="12">28/09/2026 14:22 WIB</text><text x="40" y="335" fill="%2364748B" font-family="sans-serif" font-size="12">Penerima</text><text x="360" y="335" text-anchor="end" fill="%230F172A" font-family="sans-serif" font-weight="600" font-size="12">CLS SURABAYA ACADEMY</text><text x="40" y="370" fill="%2364748B" font-family="sans-serif" font-size="12">No. Rekening Tujuan</text><text x="360" y="370" text-anchor="end" fill="%230F172A" font-family="monospace" font-weight="bold" font-size="12">088-294-8833</text><text x="40" y="405" fill="%2364748B" font-family="sans-serif" font-size="12">Berita / Catatan</text><text x="360" y="405" text-anchor="end" fill="%23059669" font-family="sans-serif" font-weight="bold" font-size="12">SPP Nov Kamila Syahira</text><rect x="30" y="445" width="340" height="45" rx="8" fill="%23F8FAFC" stroke="%23E2E8F0"/><text x="200" y="472" text-anchor="middle" fill="%2364748B" font-family="monospace" font-size="11">REF: BCA-TRX-948271049281</text></svg>`;
+
+export const INITIAL_SUBMISSIONS: PaymentSubmission[] = [
+  {
+    id: 'sub-1',
+    siswaId: 'std-16',
+    siswaNama: 'Kamila Syahira',
+    kelasId: 'ku-10',
+    kelasNama: 'KU-10',
+    tipe: 'Iuran Rutin',
+    bulan: 11,
+    tahun: 2024,
+    nominal: 100000,
+    metodePembayaran: 'Transfer BCA',
+    tanggalTransfer: '2024-11-06',
+    buktiGambarUrl: SAMPLE_TRANSFER_PROOF_SVG,
+    pesanSiswa: 'Halo Admin CLS, ini bukti transfer m-BCA dari Bpk. Syahira untuk iuran rutin bulan November. Mohon dicek dan diverifikasi ya, terima kasih!',
+    status: 'pending',
+    tanggalKirim: '2024-11-06 10:15',
+  },
+  {
+    id: 'sub-2',
+    siswaId: 'std-16',
+    siswaNama: 'Kamila Syahira',
+    kelasId: 'ku-10',
+    kelasNama: 'KU-10',
+    tipe: 'Iuran Rutin',
+    bulan: 10,
+    tahun: 2024,
+    nominal: 100000,
+    metodePembayaran: 'Transfer BCA',
+    tanggalTransfer: '2024-10-05',
+    buktiGambarUrl: SAMPLE_TRANSFER_PROOF_SVG,
+    pesanSiswa: 'Iuran bulan Oktober via m-BCA a.n Syahira Senior.',
+    status: 'verified',
+    tanggalKirim: '2024-10-05 08:30',
+    tanggalVerifikasi: '2024-10-05 09:15',
+    diverifikasiOleh: 'Super Admin',
+    catatanAdmin: 'Dana Rp 100.000 sudah masuk rekening BCA klub. Terverifikasi.',
+    kuitansiId: 'INVSP-241005-007',
+    transactionId: 'tx-2',
+  },
+  {
+    id: 'sub-3',
+    siswaId: 'std-16',
+    siswaNama: 'Kamila Syahira',
+    kelasId: 'ku-10',
+    kelasNama: 'KU-10',
+    tipe: 'Iuran Insidentil',
+    nominal: 400000,
+    metodePembayaran: 'Transfer BCA',
+    tanggalTransfer: '2024-11-05',
+    buktiGambarUrl: SAMPLE_TRANSFER_PROOF_SVG,
+    pesanSiswa: 'Biaya pendaftaran Turnamen Familia Cup 2024.',
+    status: 'verified',
+    tanggalKirim: '2024-11-05 13:00',
+    tanggalVerifikasi: '2024-11-05 14:00',
+    diverifikasiOleh: 'Super Admin',
+    catatanAdmin: 'Turnamen Familia Cup terverifikasi lunas.',
+    kuitansiId: 'INVSP-241105-008',
+    transactionId: 'tx-3',
+  },
+  {
+    id: 'sub-4',
+    siswaId: 'std-2',
+    siswaNama: 'Alyaa Bening Bestari',
+    kelasId: 'ku-10',
+    kelasNama: 'KU-10',
+    tipe: 'Iuran Rutin',
+    bulan: 10,
+    tahun: 2024,
+    nominal: 100000,
+    metodePembayaran: 'QRIS',
+    tanggalTransfer: '2024-10-05',
+    buktiGambarUrl: SAMPLE_TRANSFER_PROOF_SVG,
+    pesanSiswa: 'Pembayaran SPP Oktober sudah lunas via QRIS.',
+    status: 'verified',
+    tanggalKirim: '2024-10-05 09:30',
+    tanggalVerifikasi: '2024-10-05 10:00',
+    diverifikasiOleh: 'Super Admin',
+    catatanAdmin: 'Dana masuk rekening BCA verified. Kuitansi resmi diterbitkan.',
+    kuitansiId: 'INVSP-241005-001',
+    transactionId: 'tx-alyaa-oct',
+  },
+];
+
 export function initializeStorage() {
   if (!localStorage.getItem(STORAGE_KEYS.STUDENTS)) {
     // Start database completely clean from zero (kosong)
@@ -431,6 +519,7 @@ export function initializeStorage() {
     localStorage.setItem(STORAGE_KEYS.ATTENDANCE, JSON.stringify([]));
     localStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify([]));
     localStorage.setItem(STORAGE_KEYS.PROFILE, JSON.stringify(INITIAL_PROFILE));
+    localStorage.setItem(STORAGE_KEYS.PAYMENT_SUBMISSIONS, JSON.stringify([]));
   }
 }
 
@@ -443,6 +532,7 @@ export function clearDatabaseToZero() {
   localStorage.setItem(STORAGE_KEYS.ATTENDANCE, JSON.stringify([]));
   localStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify([]));
   localStorage.setItem(STORAGE_KEYS.PROFILE, JSON.stringify(INITIAL_PROFILE));
+  localStorage.setItem(STORAGE_KEYS.PAYMENT_SUBMISSIONS, JSON.stringify([]));
 }
 
 export function resetToSeedData() {
@@ -455,6 +545,7 @@ export function resetToSeedData() {
   localStorage.setItem(STORAGE_KEYS.ATTENDANCE, JSON.stringify(seed.attendanceSessions));
   localStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(seed.transactions));
   localStorage.setItem(STORAGE_KEYS.PROFILE, JSON.stringify(seed.profile));
+  localStorage.setItem(STORAGE_KEYS.PAYMENT_SUBMISSIONS, JSON.stringify(INITIAL_SUBMISSIONS));
 }
 
 // Data Getters & Setters
@@ -545,4 +636,22 @@ export function generateReceiptNumber(): string {
   const dd = now.getDate().toString().padStart(2, '0');
   const rand = Math.floor(100 + Math.random() * 900);
   return `INVSP-${yy}${mm}${dd}-${rand}`;
+}
+
+export function getPaymentSubmissions(): PaymentSubmission[] {
+  initializeStorage();
+  const raw = localStorage.getItem(STORAGE_KEYS.PAYMENT_SUBMISSIONS);
+  if (!raw || raw === '[]') {
+    const rawStudents = localStorage.getItem(STORAGE_KEYS.STUDENTS);
+    if (rawStudents && JSON.parse(rawStudents).length > 0) {
+      localStorage.setItem(STORAGE_KEYS.PAYMENT_SUBMISSIONS, JSON.stringify(INITIAL_SUBMISSIONS));
+      return INITIAL_SUBMISSIONS;
+    }
+    return [];
+  }
+  return JSON.parse(raw);
+}
+
+export function savePaymentSubmissions(submissions: PaymentSubmission[]) {
+  localStorage.setItem(STORAGE_KEYS.PAYMENT_SUBMISSIONS, JSON.stringify(submissions));
 }

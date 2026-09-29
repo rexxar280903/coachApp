@@ -12,6 +12,8 @@ import {
   EventParticipant, 
   AttendanceSession, 
   PaymentTransaction, 
+  PaymentSubmission,
+  PaymentMethod,
   ClubProfile, 
   UserRole,
   StudentStatus 
@@ -33,9 +35,14 @@ import {
   saveTransactions,
   getClubProfile,
   saveClubProfile,
+  getPaymentSubmissions,
+  savePaymentSubmissions,
+  generateReceiptNumber,
   clearDatabaseToZero,
   resetToSeedData,
+  SAMPLE_TRANSFER_PROOF_SVG,
 } from './services/storage';
+import { numberToWordsId } from './utils/numberToWordsId';
 
 import { Header } from './components/Header';
 import { Sidebar, ActiveNav } from './components/Sidebar';
@@ -54,6 +61,8 @@ import { SiswaListView } from './views/SiswaListView';
 import { PengaturanView } from './views/PengaturanView';
 import { AngsuranLaporanView } from './views/AngsuranLaporanView';
 import { KelasManagerView } from './views/KelasManagerView';
+import { VerifikasiPembayaranView } from './views/VerifikasiPembayaranView';
+import { StudentPortalView } from './views/StudentPortalView';
 
 export default function App() {
   // Global Data State
@@ -64,12 +73,23 @@ export default function App() {
   const [eventParticipants, setEventParticipants] = useState<EventParticipant[]>([]);
   const [attendanceSessions, setAttendanceSessions] = useState<AttendanceSession[]>([]);
   const [transactions, setTransactions] = useState<PaymentTransaction[]>([]);
+  const [submissions, setSubmissions] = useState<PaymentSubmission[]>([]);
   const [profile, setProfile] = useState<ClubProfile>(getClubProfile());
 
   // UI Navigation & Role State
   const [currentRole, setCurrentRole] = useState<UserRole>('admin');
   const [currentNav, setCurrentNav] = useState<ActiveNav>('dashboard');
   const [sidebarMobileOpen, setSidebarMobileOpen] = useState<boolean>(false);
+
+  // Ensure default signature palette from photo 2 is always active
+  useEffect(() => {
+    try {
+      localStorage.removeItem('sportkit_theme');
+      document.documentElement.removeAttribute('data-theme');
+    } catch (e) {
+      // Ignore
+    }
+  }, []);
 
   // Selected Entities
   const [selectedStudentId, setSelectedStudentId] = useState<string>('');
@@ -82,6 +102,7 @@ export default function App() {
     title: string;
     siswaNama: string;
     siswaId: string;
+    kelasId?: string;
     kelasNama: string;
     noHp?: string;
     nominalAwal: number;
@@ -93,6 +114,8 @@ export default function App() {
     targetDueId?: string;
     targetParticipantId?: string;
     isApplicantApproval?: boolean;
+    bulan?: number;
+    tahun?: number;
   }>({
     isOpen: false,
     title: '',
@@ -120,6 +143,7 @@ export default function App() {
     const atts = getAttendanceSessions();
     const txs = getTransactions();
     const prof = getClubProfile();
+    const subs = getPaymentSubmissions();
 
     setStudents(stds);
     setClasses(cls);
@@ -129,6 +153,7 @@ export default function App() {
     setAttendanceSessions(atts);
     setTransactions(txs);
     setProfile(prof);
+    setSubmissions(subs);
 
     if (stds.length > 0 && !selectedStudentId) {
       // Default to Kamila Syahira or first student
@@ -142,6 +167,7 @@ export default function App() {
       clearDatabaseToZero();
       loadAllData();
       setSelectedStudentId('');
+      setSubmissions([]);
       alert('Database sekarang telah kosong (mulai dari nol). Anda siap menginput data baru.');
     }
   };
@@ -160,6 +186,8 @@ export default function App() {
       setCurrentNav('sesi-absensi');
     } else if (newRole === 'public') {
       setCurrentNav('pendaftaran-baru');
+    } else if (newRole === 'student') {
+      setCurrentNav('student-portal');
     } else {
       setCurrentNav('dashboard');
     }
@@ -197,6 +225,7 @@ export default function App() {
       title: 'Pembayaran Iuran Rutin',
       siswaNama: student.nama,
       siswaId: student.id,
+      kelasId: classGroup.id,
       kelasNama: classGroup.nama,
       noHp: student.noHp,
       nominalAwal: due.nominal - (due.terbayar || 0),
@@ -204,6 +233,8 @@ export default function App() {
       keterangan: `Iuran Rutin ${monthNames[due.bulan - 1]} ${due.tahun}`,
       periodeInfo: `${monthNames[due.bulan - 1]} ${due.tahun}`,
       targetDueId: due.id,
+      bulan: due.bulan,
+      tahun: due.tahun,
     });
   };
 
@@ -247,28 +278,95 @@ export default function App() {
   };
 
   // On Successful Payment Submission in Modal
-  const handlePaymentSuccess = (tx: PaymentTransaction) => {
+  const handlePaymentSuccess = (
+    tx: PaymentTransaction,
+    proofData?: {
+      buktiGambarUrl?: string;
+      pesanPembayaran?: string;
+      catatanAdmin?: string;
+      bulan?: number;
+      tahun?: number;
+    }
+  ) => {
+    const today = new Date().toISOString().slice(0, 10);
+    const time = new Date().toTimeString().slice(0, 5);
+
     // 1. Save Transaction
     const updatedTxs = [tx, ...transactions];
     setTransactions(updatedTxs);
     saveTransactions(updatedTxs);
 
-    // 2. If it was Monthly Due
-    if (paymentModalState.targetDueId) {
+    // 2. If it was Monthly Due (or Iuran Rutin)
+    const targetBulan = proofData?.bulan || paymentModalState.bulan;
+    const targetTahun = proofData?.tahun || paymentModalState.tahun || 2024;
+
+    if (paymentModalState.targetDueId || paymentModalState.tipe === 'Iuran Rutin' || targetBulan) {
+      let found = false;
       const updatedDues = monthlyDues.map((d) => {
-        if (d.id === paymentModalState.targetDueId) {
+        if (
+          (paymentModalState.targetDueId && d.id === paymentModalState.targetDueId) ||
+          (d.siswaId === tx.siswaId && d.bulan === targetBulan && d.tahun === targetTahun)
+        ) {
+          found = true;
           return {
             ...d,
             status: 'lunas' as const,
-            terbayar: d.nominal,
-            tanggalBayar: tx.tanggal,
+            nominal: tx.nominal,
+            terbayar: tx.nominal,
+            tanggalBayar: tx.tanggal || today,
             kuitansiId: tx.nomorKuitansi,
           };
         }
         return d;
       });
+
+      if (!found && targetBulan) {
+        const newDue: MonthlyDueRecord = {
+          id: `due-${tx.siswaId}-${targetTahun}-${targetBulan}`,
+          siswaId: tx.siswaId,
+          bulan: targetBulan,
+          tahun: targetTahun,
+          nominal: tx.nominal,
+          terbayar: tx.nominal,
+          status: 'lunas',
+          tanggalBayar: tx.tanggal || today,
+          kuitansiId: tx.nomorKuitansi,
+        };
+        updatedDues.push(newDue);
+      }
+
       setMonthlyDues(updatedDues);
       saveMonthlyDues(updatedDues);
+
+      // Create & Save verified submission proof record
+      const studentClass = classes.find((c) => c.nama === tx.kelasNama || c.id === paymentModalState.kelasId);
+      const subId = `sub-${Date.now()}`;
+      const newSub: PaymentSubmission = {
+        id: subId,
+        siswaId: tx.siswaId,
+        siswaNama: tx.siswaNama,
+        kelasId: studentClass?.id || paymentModalState.kelasId || 'ku-10',
+        kelasNama: tx.kelasNama,
+        tipe: 'Iuran Rutin',
+        bulan: targetBulan,
+        tahun: targetTahun,
+        nominal: tx.nominal,
+        metodePembayaran: tx.metodePembayaran,
+        tanggalTransfer: tx.tanggal || today,
+        buktiGambarUrl: proofData?.buktiGambarUrl || SAMPLE_TRANSFER_PROOF_SVG,
+        pesanSiswa: proofData?.pesanPembayaran || tx.keterangan,
+        status: 'verified',
+        tanggalKirim: `${today} ${time}`,
+        tanggalVerifikasi: today,
+        diverifikasiOleh: 'Super Admin',
+        catatanAdmin: proofData?.catatanAdmin || 'Diinput & diverifikasi langsung oleh Admin.',
+        kuitansiId: tx.nomorKuitansi,
+        transactionId: tx.id,
+      };
+
+      const updatedSubs = [newSub, ...submissions];
+      setSubmissions(updatedSubs);
+      savePaymentSubmissions(updatedSubs);
     }
 
     // 3. If it was Event Participant
@@ -438,8 +536,278 @@ export default function App() {
     saveStudents(updated);
   };
 
+  // Submit payment proof from student account
+  const handleSubmitPaymentProof = (
+    newSub: Omit<PaymentSubmission, 'id' | 'status' | 'tanggalKirim'>
+  ) => {
+    const id = `sub-${Date.now()}`;
+    const now = new Date();
+    const dateStr = now.toISOString().slice(0, 10);
+    const timeStr = now.toTimeString().slice(0, 5);
+    const submissionItem: PaymentSubmission = {
+      ...newSub,
+      id,
+      status: 'pending',
+      tanggalKirim: `${dateStr} ${timeStr}`,
+    };
+
+    const updated = [submissionItem, ...submissions];
+    setSubmissions(updated);
+    savePaymentSubmissions(updated);
+  };
+
+  // Verify payment submission by admin
+  const handleVerifySubmission = (submissionId: string, catatanAdmin: string) => {
+    const sub = submissions.find((s) => s.id === submissionId);
+    if (!sub) return;
+
+    const receiptNo = generateReceiptNumber();
+    const txId = `tx-${Date.now()}`;
+    const now = new Date();
+    const today = now.toISOString().slice(0, 10);
+
+    const monthNames = [
+      'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+      'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
+    ];
+    const periodLabel = sub.bulan && sub.tahun 
+      ? `Iuran Rutin ${monthNames[sub.bulan - 1]} ${sub.tahun}`
+      : sub.tipe;
+
+    // Create official transaction
+    const newTx: PaymentTransaction = {
+      id: txId,
+      nomorKuitansi: receiptNo,
+      siswaId: sub.siswaId,
+      siswaNama: sub.siswaNama,
+      kelasNama: sub.kelasNama,
+      tanggal: today,
+      nominal: sub.nominal,
+      terbilang: numberToWordsId(sub.nominal) + ' Rupiah',
+      metodePembayaran: sub.metodePembayaran,
+      tipe: 'Iuran Rutin',
+      keterangan: `${periodLabel} (Verifikasi Bukti Transfer Siswa)`,
+      catatan: catatanAdmin,
+    };
+
+    const updatedTxs = [newTx, ...transactions];
+    setTransactions(updatedTxs);
+    saveTransactions(updatedTxs);
+
+    // Update monthly due record if it is a monthly due
+    if (sub.bulan && sub.tahun) {
+      let found = false;
+      const updatedDues = monthlyDues.map((d) => {
+        if (d.siswaId === sub.siswaId && d.bulan === sub.bulan && d.tahun === sub.tahun) {
+          found = true;
+          return {
+            ...d,
+            status: 'lunas' as const,
+            terbayar: sub.nominal,
+            tanggalBayar: sub.tanggalTransfer || today,
+            kuitansiId: receiptNo,
+          };
+        }
+        return d;
+      });
+
+      if (!found) {
+        // Create new monthly due record
+        const newDue: MonthlyDueRecord = {
+          id: `due-${sub.siswaId}-${sub.bulan}-${sub.tahun}`,
+          siswaId: sub.siswaId,
+          bulan: sub.bulan,
+          tahun: sub.tahun,
+          nominal: sub.nominal,
+          terbayar: sub.nominal,
+          status: 'lunas',
+          tanggalBayar: sub.tanggalTransfer || today,
+          kuitansiId: receiptNo,
+        };
+        updatedDues.push(newDue);
+      }
+
+      setMonthlyDues(updatedDues);
+      saveMonthlyDues(updatedDues);
+    }
+
+    // Update submission record
+    const updatedSubs = submissions.map((s) => {
+      if (s.id === submissionId) {
+        return {
+          ...s,
+          status: 'verified' as const,
+          tanggalVerifikasi: today,
+          diverifikasiOleh: 'Super Admin',
+          catatanAdmin: catatanAdmin,
+          kuitansiId: receiptNo,
+          transactionId: txId,
+        };
+      }
+      return s;
+    });
+
+    setSubmissions(updatedSubs);
+    savePaymentSubmissions(updatedSubs);
+
+    // Show instant receipt confirmation
+    setReceiptModalTx(newTx);
+  };
+
+  // Reject payment submission by admin
+  const handleRejectSubmission = (submissionId: string, alasan: string) => {
+    const today = new Date().toISOString().slice(0, 10);
+    const updatedSubs = submissions.map((s) => {
+      if (s.id === submissionId) {
+        return {
+          ...s,
+          status: 'rejected' as const,
+          catatanAdmin: alasan,
+          tanggalVerifikasi: today,
+        };
+      }
+      return s;
+    });
+
+    setSubmissions(updatedSubs);
+    savePaymentSubmissions(updatedSubs);
+  };
+
+  // Admin directly records payment with uploaded proof & message
+  const handleAdminRecordPaymentWithProof = ({
+    siswaId,
+    siswaNama,
+    kelasId,
+    kelasNama,
+    bulan,
+    tahun,
+    nominal,
+    metodePembayaran,
+    tanggalTransfer,
+    buktiGambarUrl,
+    pesanPembayaran,
+    catatanAdmin,
+  }: {
+    siswaId: string;
+    siswaNama: string;
+    kelasId: string;
+    kelasNama: string;
+    bulan: number;
+    tahun: number;
+    nominal: number;
+    metodePembayaran: PaymentMethod;
+    tanggalTransfer: string;
+    buktiGambarUrl: string;
+    pesanPembayaran?: string;
+    catatanAdmin?: string;
+  }) => {
+    const receiptNo = generateReceiptNumber();
+    const txId = `tx-${Date.now()}`;
+    const now = new Date();
+    const today = now.toISOString().slice(0, 10);
+    const time = now.toTimeString().slice(0, 5);
+
+    const monthNames = [
+      'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+      'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
+    ];
+    const periodLabel = `Iuran Rutin ${monthNames[bulan - 1]} ${tahun}`;
+
+    // 1. Transaction
+    const newTx: PaymentTransaction = {
+      id: txId,
+      nomorKuitansi: receiptNo,
+      siswaId,
+      siswaNama,
+      kelasNama,
+      tanggal: tanggalTransfer || today,
+      nominal,
+      terbilang: numberToWordsId(nominal) + ' Rupiah',
+      metodePembayaran,
+      tipe: 'Iuran Rutin',
+      keterangan: `${periodLabel} (Diinput oleh Admin)`,
+      catatan: catatanAdmin || pesanPembayaran || 'Pembayaran dicatat & disahkan Admin.',
+    };
+
+    const updatedTxs = [newTx, ...transactions];
+    setTransactions(updatedTxs);
+    saveTransactions(updatedTxs);
+
+    // 2. Update or Create Monthly Due
+    let found = false;
+    const updatedDues = monthlyDues.map((d) => {
+      if (d.siswaId === siswaId && d.bulan === bulan && d.tahun === tahun) {
+        found = true;
+        return {
+          ...d,
+          status: 'lunas' as const,
+          nominal: nominal,
+          terbayar: nominal,
+          tanggalBayar: tanggalTransfer || today,
+          kuitansiId: receiptNo,
+        };
+      }
+      return d;
+    });
+
+    if (!found) {
+      const newDue: MonthlyDueRecord = {
+        id: `due-${siswaId}-${tahun}-${bulan}`,
+        siswaId,
+        bulan,
+        tahun,
+        nominal,
+        terbayar: nominal,
+        status: 'lunas',
+        tanggalBayar: tanggalTransfer || today,
+        kuitansiId: receiptNo,
+      };
+      updatedDues.push(newDue);
+    }
+    setMonthlyDues(updatedDues);
+    saveMonthlyDues(updatedDues);
+
+    // 3. Create Submission record (status: 'verified')
+    const subId = `sub-${Date.now()}`;
+    const newSub: PaymentSubmission = {
+      id: subId,
+      siswaId,
+      siswaNama,
+      kelasId,
+      kelasNama,
+      tipe: 'Iuran Rutin',
+      bulan,
+      tahun,
+      nominal,
+      metodePembayaran,
+      tanggalTransfer: tanggalTransfer || today,
+      buktiGambarUrl: buktiGambarUrl || SAMPLE_TRANSFER_PROOF_SVG,
+      pesanSiswa: pesanPembayaran || `Pembayaran iuran ${monthNames[bulan - 1]} ${tahun}`,
+      status: 'verified',
+      tanggalKirim: `${today} ${time}`,
+      tanggalVerifikasi: today,
+      diverifikasiOleh: 'Super Admin',
+      catatanAdmin: catatanAdmin || 'Pembayaran diinput & diverifikasi langsung oleh Admin.',
+      kuitansiId: receiptNo,
+      transactionId: txId,
+    };
+
+    const updatedSubs = [newSub, ...submissions];
+    setSubmissions(updatedSubs);
+    savePaymentSubmissions(updatedSubs);
+
+    // 4. Pop up official receipt
+    setReceiptModalTx(newTx);
+  };
+
   // Count pending calon siswa
   const calonCount = students.filter((s) => s.status === 'Calon').length;
+
+  // Count pending submissions
+  const pendingSubmissionsCount = submissions.filter((s) => s.status === 'pending').length;
+
+  // Active student for student portal
+  const activeStudent = students.find((s) => s.id === selectedStudentId) || students[0];
 
   // View Receipt Handler
   const handleViewReceipt = (tx: PaymentTransaction) => {
@@ -447,16 +815,18 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-[#f3f6fa] text-slate-800 font-sans flex flex-col antialiased">
+    <div className="min-h-screen bg-slate-50 text-slate-800 font-sans flex flex-col antialiased">
       {/* Top Header */}
       <Header
         currentRole={currentRole}
         onChangeRole={handleRoleChange}
         clubProfile={profile}
         calonCount={calonCount}
-        onResetData={handleClearToZero}
+        pendingVerificationsCount={pendingSubmissionsCount}
+        activeStudentName={activeStudent?.nama}
         onToggleSidebar={() => setSidebarMobileOpen(!sidebarMobileOpen)}
         onNavigateCalon={() => setCurrentNav('calon-siswa')}
+        onNavigateVerifikasi={() => setCurrentNav('verifikasi-pembayaran')}
       />
 
       <div className="flex-1 flex overflow-hidden">
@@ -466,6 +836,7 @@ export default function App() {
             currentNav={currentNav}
             onSelectNav={setCurrentNav}
             calonCount={calonCount}
+            pendingVerificationsCount={pendingSubmissionsCount}
             currentRole={currentRole}
             isOpenMobile={sidebarMobileOpen}
             onCloseMobile={() => setSidebarMobileOpen(false)}
@@ -489,7 +860,7 @@ export default function App() {
               </div>
               <button
                 onClick={() => handleRoleChange('admin')}
-                className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs shadow-sm transition-colors"
+                className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs shadow-sm transition-colors cursor-pointer"
               >
                 Kembali ke Dashboard Admin
               </button>
@@ -503,6 +874,32 @@ export default function App() {
               isPublicMode={true}
               onRegisterSubmit={handleRegisterSubmit}
             />
+          ) : currentRole === 'student' || currentNav === 'student-portal' ? (
+            activeStudent ? (
+              <StudentPortalView
+                currentStudent={activeStudent}
+                students={students}
+                classes={classes}
+                monthlyDues={monthlyDues}
+                attendanceSessions={attendanceSessions}
+                transactions={transactions}
+                submissions={submissions}
+                clubProfile={profile}
+                onSelectStudent={(id) => setSelectedStudentId(id)}
+                onSubmitPaymentProof={handleSubmitPaymentProof}
+                onViewReceipt={handleViewReceipt}
+              />
+            ) : (
+              <div className="bg-white rounded-3xl p-12 text-center border border-slate-200">
+                <p className="text-sm font-bold text-slate-700">Belum ada data siswa dalam database.</p>
+                <button
+                  onClick={handleLoadSeedData}
+                  className="mt-3 px-4 py-2 bg-emerald-600 text-white rounded-xl text-xs font-bold cursor-pointer"
+                >
+                  Muat Data Demo Siswa
+                </button>
+              </div>
+            )
           ) : (
             <>
               {currentNav === 'dashboard' && (
@@ -511,6 +908,8 @@ export default function App() {
                   classes={classes}
                   events={events}
                   transactions={transactions}
+                  pendingSubmissionsCount={pendingSubmissionsCount}
+                  onNavigateVerifikasi={() => setCurrentNav('verifikasi-pembayaran')}
                   onSelectStudent={handleSelectStudent}
                   onSelectClassIuran={handleSelectClassIuran}
                   onSelectEventIuran={handleSelectEventIuran}
@@ -518,6 +917,19 @@ export default function App() {
                   onNavigateCalonSiswa={() => setCurrentNav('calon-siswa')}
                   onNavigateKelas={() => setCurrentNav('kelas')}
                   onViewReceipt={handleViewReceipt}
+                />
+              )}
+
+              {currentNav === 'verifikasi-pembayaran' && (
+                <VerifikasiPembayaranView
+                  submissions={submissions}
+                  students={students}
+                  classes={classes}
+                  monthlyDues={monthlyDues}
+                  onVerifySubmission={handleVerifySubmission}
+                  onRejectSubmission={handleRejectSubmission}
+                  onViewReceipt={handleViewReceipt}
+                  transactions={transactions}
                 />
               )}
 
@@ -544,10 +956,16 @@ export default function App() {
                   eventParticipants={eventParticipants}
                   attendanceSessions={attendanceSessions}
                   selectedStudentId={selectedStudentId}
+                  submissions={submissions}
+                  transactions={transactions}
                   onSelectStudent={setSelectedStudentId}
                   onOpenPaymentModal={handleOpenMonthlyPaymentModal}
                   onOpenEventPaymentModal={handleOpenEventPaymentModal}
                   onUpdateStudent={handleUpdateStudent}
+                  onVerifySubmission={handleVerifySubmission}
+                  onRejectSubmission={handleRejectSubmission}
+                  onViewReceipt={handleViewReceipt}
+                  onAdminRecordPaymentWithProof={handleAdminRecordPaymentWithProof}
                 />
               )}
 
@@ -556,6 +974,7 @@ export default function App() {
                   students={students}
                   classes={classes}
                   monthlyDues={monthlyDues}
+                  submissions={submissions}
                   initialClassId={selectedClassId}
                   onOpenPaymentModal={handleOpenMonthlyPaymentModal}
                   onSelectStudent={handleSelectStudent}
@@ -703,6 +1122,7 @@ export default function App() {
         title={paymentModalState.title}
         siswaNama={paymentModalState.siswaNama}
         siswaId={paymentModalState.siswaId}
+        kelasId={paymentModalState.kelasId}
         kelasNama={paymentModalState.kelasNama}
         noHp={paymentModalState.noHp}
         nominalAwal={paymentModalState.nominalAwal}
@@ -711,6 +1131,8 @@ export default function App() {
         biayaPendaftaran={paymentModalState.biayaPendaftaran}
         iuranBulanan={paymentModalState.iuranBulanan}
         periodeInfo={paymentModalState.periodeInfo}
+        bulan={paymentModalState.bulan}
+        tahun={paymentModalState.tahun}
         onSuccess={handlePaymentSuccess}
         onViewReceipt={(tx) => setReceiptModalTx(tx)}
       />
