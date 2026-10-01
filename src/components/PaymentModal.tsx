@@ -92,7 +92,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
       setIsSuccess(false);
       setCreatedTx(null);
       setCatatan('');
-      setMetode('Transfer BCA');
+      setMetode('Tunai');
       setSelectedBulan(initialBulan || 12);
       setSelectedTahun(initialTahun || 2024);
       setBuktiGambarUrl('');
@@ -338,18 +338,23 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
                 Metode Pembayaran
               </label>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                {(['Tunai (Cash)', 'Transfer BCA', 'Transfer Mandiri', 'QRIS'] as PaymentMethod[]).map((m) => (
+                {([
+                  { value: 'Tunai' as PaymentMethod, label: 'Tunai (Cash)' },
+                  { value: 'Transfer BCA' as PaymentMethod, label: 'Transfer BCA' },
+                  { value: 'Transfer Mandiri' as PaymentMethod, label: 'Transfer Mandiri' },
+                  { value: 'QRIS' as PaymentMethod, label: 'QRIS' },
+                ]).map((m) => (
                   <button
-                    key={m}
+                    key={m.value}
                     type="button"
-                    onClick={() => setMetode(m)}
+                    onClick={() => setMetode(m.value)}
                     className={`p-2 rounded-xl border text-xs font-semibold transition-all cursor-pointer ${
-                      metode === m
+                      metode === m.value
                         ? 'border-emerald-600 bg-emerald-50 text-emerald-800'
                         : 'border-slate-200 hover:border-slate-300 text-slate-600'
                     }`}
                   >
-                    {m}
+                    {m.label}
                   </button>
                 ))}
               </div>

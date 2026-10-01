@@ -43,6 +43,7 @@ import {
   SAMPLE_TRANSFER_PROOF_SVG,
 } from './services/storage';
 import { numberToWordsId } from './utils/numberToWordsId';
+import { MONTH_NAMES, getCurrentYear, getCurrentMonth, getTodayISO, getCurrentTime } from './utils/constants';
 
 import { Header } from './components/Header';
 import { Sidebar, ActiveNav } from './components/Sidebar';
@@ -215,10 +216,6 @@ export default function App() {
     student: Student,
     classGroup: ClassGroup
   ) => {
-    const monthNames = [
-      'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
-      'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
-    ];
 
     setPaymentModalState({
       isOpen: true,
@@ -230,8 +227,8 @@ export default function App() {
       noHp: student.noHp,
       nominalAwal: due.nominal - (due.terbayar || 0),
       tipe: 'Iuran Rutin',
-      keterangan: `Iuran Rutin ${monthNames[due.bulan - 1]} ${due.tahun}`,
-      periodeInfo: `${monthNames[due.bulan - 1]} ${due.tahun}`,
+      keterangan: `Iuran Rutin ${MONTH_NAMES[due.bulan - 1]} ${due.tahun}`,
+      periodeInfo: `${MONTH_NAMES[due.bulan - 1]} ${due.tahun}`,
       targetDueId: due.id,
       bulan: due.bulan,
       tahun: due.tahun,
@@ -288,8 +285,8 @@ export default function App() {
       tahun?: number;
     }
   ) => {
-    const today = new Date().toISOString().slice(0, 10);
-    const time = new Date().toTimeString().slice(0, 5);
+    const today = getTodayISO();
+    const time = getCurrentTime();
 
     // 1. Save Transaction
     const updatedTxs = [tx, ...transactions];
@@ -298,7 +295,7 @@ export default function App() {
 
     // 2. If it was Monthly Due (or Iuran Rutin)
     const targetBulan = proofData?.bulan || paymentModalState.bulan;
-    const targetTahun = proofData?.tahun || paymentModalState.tahun || 2024;
+    const targetTahun = proofData?.tahun || paymentModalState.tahun || getCurrentYear();
 
     if (paymentModalState.targetDueId || paymentModalState.tipe === 'Iuran Rutin' || targetBulan) {
       let found = false;
@@ -411,12 +408,15 @@ export default function App() {
       setStudents(updatedStudents);
       saveStudents(updatedStudents);
 
-      // Also ensure student has monthly dues initialized for November
+      // Also ensure student has monthly dues initialized for the current month
+      const now = new Date();
+      const currentMonth = now.getMonth() + 1;
+      const currentYear = now.getFullYear();
       const newDue: MonthlyDueRecord = {
-        id: `due-${tx.siswaId}-2024-11`,
+        id: `due-${tx.siswaId}-${currentYear}-${currentMonth}`,
         siswaId: tx.siswaId,
-        tahun: 2024,
-        bulan: 11,
+        tahun: currentYear,
+        bulan: currentMonth,
         status: 'lunas',
         nominal: 100000,
         terbayar: 100000,
@@ -564,14 +564,10 @@ export default function App() {
     const receiptNo = generateReceiptNumber();
     const txId = `tx-${Date.now()}`;
     const now = new Date();
-    const today = now.toISOString().slice(0, 10);
+    const today = getTodayISO();
 
-    const monthNames = [
-      'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
-      'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
-    ];
     const periodLabel = sub.bulan && sub.tahun 
-      ? `Iuran Rutin ${monthNames[sub.bulan - 1]} ${sub.tahun}`
+      ? `Iuran Rutin ${MONTH_NAMES[sub.bulan - 1]} ${sub.tahun}`
       : sub.tipe;
 
     // Create official transaction
@@ -583,7 +579,7 @@ export default function App() {
       kelasNama: sub.kelasNama,
       tanggal: today,
       nominal: sub.nominal,
-      terbilang: numberToWordsId(sub.nominal) + ' Rupiah',
+      terbilang: numberToWordsId(sub.nominal),
       metodePembayaran: sub.metodePembayaran,
       tipe: 'Iuran Rutin',
       keterangan: `${periodLabel} (Verifikasi Bukti Transfer Siswa)`,
@@ -612,9 +608,8 @@ export default function App() {
       });
 
       if (!found) {
-        // Create new monthly due record
         const newDue: MonthlyDueRecord = {
-          id: `due-${sub.siswaId}-${sub.bulan}-${sub.tahun}`,
+          id: `due-${sub.siswaId}-${sub.tahun}-${sub.bulan}`,
           siswaId: sub.siswaId,
           bulan: sub.bulan,
           tahun: sub.tahun,
@@ -656,7 +651,7 @@ export default function App() {
 
   // Reject payment submission by admin
   const handleRejectSubmission = (submissionId: string, alasan: string) => {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = getTodayISO();
     const updatedSubs = submissions.map((s) => {
       if (s.id === submissionId) {
         return {
@@ -704,14 +699,10 @@ export default function App() {
     const receiptNo = generateReceiptNumber();
     const txId = `tx-${Date.now()}`;
     const now = new Date();
-    const today = now.toISOString().slice(0, 10);
-    const time = now.toTimeString().slice(0, 5);
+    const today = getTodayISO();
+    const time = getCurrentTime();
 
-    const monthNames = [
-      'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
-      'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
-    ];
-    const periodLabel = `Iuran Rutin ${monthNames[bulan - 1]} ${tahun}`;
+    const periodLabel = `Iuran Rutin ${MONTH_NAMES[bulan - 1]} ${tahun}`;
 
     // 1. Transaction
     const newTx: PaymentTransaction = {
@@ -722,7 +713,7 @@ export default function App() {
       kelasNama,
       tanggal: tanggalTransfer || today,
       nominal,
-      terbilang: numberToWordsId(nominal) + ' Rupiah',
+      terbilang: numberToWordsId(nominal),
       metodePembayaran,
       tipe: 'Iuran Rutin',
       keterangan: `${periodLabel} (Diinput oleh Admin)`,
@@ -782,7 +773,7 @@ export default function App() {
       metodePembayaran,
       tanggalTransfer: tanggalTransfer || today,
       buktiGambarUrl: buktiGambarUrl || SAMPLE_TRANSFER_PROOF_SVG,
-      pesanSiswa: pesanPembayaran || `Pembayaran iuran ${monthNames[bulan - 1]} ${tahun}`,
+      pesanSiswa: pesanPembayaran || `Pembayaran iuran ${MONTH_NAMES[bulan - 1]} ${tahun}`,
       status: 'verified',
       tanggalKirim: `${today} ${time}`,
       tanggalVerifikasi: today,

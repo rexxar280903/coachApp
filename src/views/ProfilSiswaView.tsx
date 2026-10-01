@@ -210,7 +210,7 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
         kelasNama: sub.kelasNama,
         tanggal: sub.tanggalTransfer || sub.tanggalVerifikasi || new Date().toISOString().slice(0, 10),
         nominal: sub.nominal,
-        terbilang: numberToWordsId(sub.nominal) + ' Rupiah',
+        terbilang: numberToWordsId(sub.nominal),
         metodePembayaran: sub.metodePembayaran,
         tipe: 'Iuran Rutin',
         keterangan: sub.pesanSiswa || `Iuran Rutin ${sub.bulan ? FULL_MONTH_NAMES[sub.bulan - 1] : ''} ${sub.tahun || ''}`,
@@ -1875,7 +1875,7 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
                     placeholder="100000"
                   />
                   <p className="text-[10px] text-slate-500 mt-0.5 italic">
-                    Terbilang: {numberToWordsId(Number(inputNominal))} Rupiah
+                    Terbilang: {numberToWordsId(Number(inputNominal))}
                   </p>
                 </div>
 
@@ -1892,7 +1892,7 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
                     <option value="Transfer Mandiri">Transfer Mandiri</option>
                     <option value="Transfer BRI">Transfer BRI</option>
                     <option value="QRIS">QRIS</option>
-                    <option value="Tunai (Cash)">Tunai (Cash)</option>
+                    <option value="Tunai">Tunai (Cash)</option>
                   </select>
                 </div>
               </div>

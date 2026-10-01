@@ -1,10 +1,10 @@
 /**
- * Converts a number to Indonesian terbilang words.
- * Example: 1100000 -> "Satu Juta Seratus Ribu Rupiah"
+ * Converts a number to Indonesian terbilang words (WITHOUT "Rupiah" suffix).
+ * Example: 1100000 -> "Satu Juta Seratus Ribu"
  */
-export function numberToWordsId(nominal: number): string {
-  if (nominal === 0) return 'Nol Rupiah';
-  if (nominal < 0) return 'Minus ' + numberToWordsId(Math.abs(nominal));
+export function terbilangId(nominal: number): string {
+  if (nominal === 0) return 'Nol';
+  if (nominal < 0) return 'Minus ' + terbilangId(Math.abs(nominal));
 
   const bilangan = [
     '',
@@ -50,7 +50,15 @@ export function numberToWordsId(nominal: number): string {
   }
 
   const result = terbilangSatuan(Math.floor(nominal)).trim();
-  return (result ? result : 'Nol') + ' Rupiah';
+  return (result ? result : 'Nol');
+}
+
+/**
+ * Returns the number in words WITH "Rupiah" suffix.
+ * Example: 1100000 -> "Satu Juta Seratus Ribu Rupiah"
+ */
+export function numberToWordsId(nominal: number): string {
+  return terbilangId(nominal) + ' Rupiah';
 }
 
 export function formatRupiah(amount: number): string {
