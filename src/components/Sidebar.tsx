@@ -26,6 +26,7 @@ import {
 export type ActiveNav = 
   | 'dashboard'
   | 'kelas'
+  | 'pelatih'
   | 'iuran-rutin'
   | 'iuran-insidentil'
   | 'verifikasi-pembayaran'
@@ -199,6 +200,22 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 )}
                 <Layers className="w-4 h-4 text-sky-400" />
                 <span>Kelompok Kelas</span>
+              </button>
+
+              {/* PELATIH */}
+              <button
+                onClick={() => handleNavClick('pelatih')}
+                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all relative ${
+                  isNavActive('pelatih')
+                    ? 'bg-slate-800 text-white font-semibold shadow-xs'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+                }`}
+              >
+                {isNavActive('pelatih') && (
+                  <span className="absolute left-0 top-2 bottom-2 w-1 rounded-r-md bg-sky-500" />
+                )}
+                <UserCheck className="w-4 h-4 text-sky-400" />
+                <span>Data Pelatih</span>
               </button>
 
               {/* IURAN & KEUANGAN (Expandable) */}

@@ -2,6 +2,20 @@ export type Gender = 'Laki-laki' | 'Perempuan';
 
 export type StudentStatus = 'Calon' | 'Aktif' | 'Cuti' | 'Nonaktif';
 
+export type CoachStatus = 'Aktif' | 'Nonaktif';
+
+export interface Coach {
+  id: string;
+  nama: string;           // e.g. "Coach Dimas"
+  noHp: string;
+  email?: string;
+  spesialisasi: string;   // e.g. "Basket", "Renang", "Atletik"
+  status: CoachStatus;
+  catatan?: string;
+  tanggalBergabung: string; // YYYY-MM-DD
+  foto?: string;
+}
+
 export type PaymentMethod = 
   | 'Transfer BCA' 
   | 'QRIS' 

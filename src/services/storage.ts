@@ -1,5 +1,6 @@
 import { 
   Student, 
+  Coach,
   ClassGroup, 
   MonthlyDueRecord, 
   ClubEvent, 
@@ -14,6 +15,7 @@ import {
 
 const STORAGE_KEYS = {
   STUDENTS: 'sportkit_students_v2',
+  COACHES: 'sportkit_coaches_v1',
   CLASSES: 'sportkit_classes_v2',
   MONTHLY_DUES: 'sportkit_monthly_dues_v2',
   EVENTS: 'sportkit_events_v2',
@@ -654,4 +656,82 @@ export function getPaymentSubmissions(): PaymentSubmission[] {
 
 export function savePaymentSubmissions(submissions: PaymentSubmission[]) {
   localStorage.setItem(STORAGE_KEYS.PAYMENT_SUBMISSIONS, JSON.stringify(submissions));
+}
+
+// ─── COACHES ─────────────────────────────────────────────────────────────────
+
+export const INITIAL_COACHES: Coach[] = [
+  {
+    id: 'coach-dimas',
+    nama: 'Coach Dimas',
+    noHp: '0812-3456-7890',
+    email: 'dimas@sportkit.id',
+    spesialisasi: 'Basket & Atletik',
+    status: 'Aktif',
+    tanggalBergabung: '2022-01-15',
+    catatan: 'Pelatih utama KU-10 & KU-12. Berpengalaman 8 tahun.',
+  },
+  {
+    id: 'coach-rian',
+    nama: 'Coach Rian',
+    noHp: '0813-9876-5432',
+    email: 'rian@sportkit.id',
+    spesialisasi: 'Basket',
+    status: 'Aktif',
+    tanggalBergabung: '2022-03-01',
+    catatan: 'Asisten pelatih KU-10. Spesialis teknik dribbling.',
+  },
+  {
+    id: 'coach-wahyu',
+    nama: 'Coach Wahyu',
+    noHp: '0857-1234-5678',
+    email: 'wahyu@sportkit.id',
+    spesialisasi: 'Basket Kompetisi',
+    status: 'Aktif',
+    tanggalBergabung: '2021-06-10',
+    catatan: 'Pelatih KU-12. Fokus persiapan kejuaraan antar sekolah.',
+  },
+  {
+    id: 'coach-hendra',
+    nama: 'Coach Hendra',
+    noHp: '0878-8765-4321',
+    email: 'hendra@sportkit.id',
+    spesialisasi: 'Akademi Prestasi',
+    status: 'Aktif',
+    tanggalBergabung: '2020-09-01',
+    catatan: 'Pelatih senior KU-14. Mantan atlet nasional.',
+  },
+  {
+    id: 'coach-sarah',
+    nama: 'Coach Sarah',
+    noHp: '0819-1122-3344',
+    email: 'sarah@sportkit.id',
+    spesialisasi: 'Renang',
+    status: 'Aktif',
+    tanggalBergabung: '2021-01-20',
+    catatan: 'Pelatih Renang ACM 1 & 2. Sertifikasi PRSI Level 2.',
+  },
+  {
+    id: 'coach-michael',
+    nama: 'Coach Michael',
+    noHp: '0856-5544-3322',
+    email: 'michael@sportkit.id',
+    spesialisasi: 'English Sport Academy',
+    status: 'Aktif',
+    tanggalBergabung: '2023-02-01',
+    catatan: 'Pelatih English Class. Native speaker, lulusan luar negeri.',
+  },
+];
+
+export function getCoaches(): Coach[] {
+  const raw = localStorage.getItem(STORAGE_KEYS.COACHES);
+  if (!raw) {
+    localStorage.setItem(STORAGE_KEYS.COACHES, JSON.stringify(INITIAL_COACHES));
+    return INITIAL_COACHES;
+  }
+  return JSON.parse(raw);
+}
+
+export function saveCoaches(coaches: Coach[]) {
+  localStorage.setItem(STORAGE_KEYS.COACHES, JSON.stringify(coaches));
 }

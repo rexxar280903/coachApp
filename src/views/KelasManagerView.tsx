@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ClassGroup, Student } from '../types/sportkit';
+import { ClassGroup, Student, Coach } from '../types/sportkit';
 import { formatRupiah } from '../utils/numberToWordsId';
 import { 
   Plus, 
@@ -19,6 +19,7 @@ import {
 interface KelasManagerViewProps {
   classes: ClassGroup[];
   students: Student[];
+  coaches: Coach[];
   onAddClass: (newClass: ClassGroup) => void;
   onUpdateClass: (updatedClass: ClassGroup) => void;
   onDeleteClass: (classId: string, reassignClassId?: string) => void;
@@ -28,6 +29,7 @@ interface KelasManagerViewProps {
 export const KelasManagerView: React.FC<KelasManagerViewProps> = ({
   classes,
   students,
+  coaches,
   onAddClass,
   onUpdateClass,
   onDeleteClass,
@@ -275,13 +277,30 @@ export const KelasManagerView: React.FC<KelasManagerViewProps> = ({
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
                   Pelatih Penanggung Jawab
                 </label>
-                <input
-                  type="text"
-                  value={pelatih}
-                  onChange={(e) => setPelatih(e.target.value)}
-                  placeholder="Coach Dimas"
-                  className="w-full text-xs rounded-xl border border-slate-300 px-3 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                />
+                {coaches.filter((c) => c.status === 'Aktif').length > 0 ? (
+                  <select
+                    value={pelatih}
+                    onChange={(e) => setPelatih(e.target.value)}
+                    className="w-full text-xs rounded-xl border border-slate-300 px-3 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer"
+                  >
+                    <option value="">-- Pilih Pelatih --</option>
+                    {coaches
+                      .filter((c) => c.status === 'Aktif')
+                      .map((c) => (
+                        <option key={c.id} value={c.nama}>
+                          {c.nama} — {c.spesialisasi}
+                        </option>
+                      ))}
+                  </select>
+                ) : (
+                  <input
+                    type="text"
+                    value={pelatih}
+                    onChange={(e) => setPelatih(e.target.value)}
+                    placeholder="Coach Dimas (belum ada pelatih terdaftar)"
+                    className="w-full text-xs rounded-xl border border-slate-300 px-3 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-3">

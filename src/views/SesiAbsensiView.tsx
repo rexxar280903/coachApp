@@ -1,11 +1,13 @@
 import React, { useState } from 'react';
-import { AttendanceSession, Student, ClassGroup } from '../types/sportkit';
+import { AttendanceSession, Student, ClassGroup, Coach } from '../types/sportkit';
 import { Search, Plus, Edit2, CheckSquare, Square, Check, X, ArrowLeft, Trash2, CalendarCheck, UserCheck, Clock } from 'lucide-react';
+import { useToast } from '../components/Toast';
 
 interface SesiAbsensiViewProps {
   sessions: AttendanceSession[];
   students: Student[];
   classes: ClassGroup[];
+  coaches: Coach[];
   onAddSession: (session: AttendanceSession) => void;
   onDeleteSession: (sessionId: string) => void;
 }
@@ -14,14 +16,17 @@ export const SesiAbsensiView: React.FC<SesiAbsensiViewProps> = ({
   sessions,
   students,
   classes,
+  coaches,
   onAddSession,
   onDeleteSession,
 }) => {
+  const { confirm } = useToast();
   const [isAdding, setIsAdding] = useState<boolean>(false);
   const [searchQuery, setSearchQuery] = useState<string>('');
 
   const [tanggal, setTanggal] = useState<string>(new Date().toISOString().split('T')[0]);
   const [selectedClassId, setSelectedClassId] = useState<string>(classes[0]?.id || 'ku-10');
+  const [selectedCoachNama, setSelectedCoachNama] = useState<string>(coaches.find(c => c.status === 'Aktif')?.nama || '');
   const [catatan, setCatatan] = useState<string>('Latihan teknik dasar & game simulation');
   const [kehadiranMap, setKehadiranMap] = useState<{ [sid: string]: boolean }>({});
 
@@ -60,7 +65,7 @@ export const SesiAbsensiView: React.FC<SesiAbsensiViewProps> = ({
       tanggal,
       kelasId: selectedClassId,
       catatan,
-      pelatih: 'Coach Dimas',
+      pelatih: selectedCoachNama || 'Coach Pelatih',
       kehadiran: kehadiranMap,
     };
 
@@ -171,10 +176,9 @@ export const SesiAbsensiView: React.FC<SesiAbsensiViewProps> = ({
                           </td>
                           <td className="py-3 px-4 text-right">
                             <button
-                              onClick={() => {
-                                if (confirm(`Hapus sesi latihan tanggal ${session.tanggal}?`)) {
-                                  onDeleteSession(session.id);
-                                }
+                              onClick={async () => {
+                                const ok = await confirm(`Hapus Sesi Latihan?`, `Sesi latihan tanggal ${session.tanggal} untuk kelas ${classes.find(c => c.id === session.kelasId)?.nama || ''} akan dihapus permanen.`);
+                                if (ok) onDeleteSession(session.id);
                               }}
                               className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
                               title="Hapus sesi"
@@ -242,6 +246,34 @@ export const SesiAbsensiView: React.FC<SesiAbsensiViewProps> = ({
                     </option>
                   ))}
                 </select>
+              </div>
+
+              <div className="sm:col-span-2">
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Pelatih Pencatat Absensi
+                </label>
+                {coaches.filter(c => c.status === 'Aktif').length > 0 ? (
+                  <select
+                    value={selectedCoachNama}
+                    onChange={(e) => setSelectedCoachNama(e.target.value)}
+                    className="w-full text-xs rounded-xl border border-slate-300 px-3.5 py-2.5 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer bg-white"
+                  >
+                    <option value="">-- Pilih Pelatih --</option>
+                    {coaches.filter(c => c.status === 'Aktif').map((c) => (
+                      <option key={c.id} value={c.nama}>
+                        {c.nama} — {c.spesialisasi}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    type="text"
+                    value={selectedCoachNama}
+                    onChange={(e) => setSelectedCoachNama(e.target.value)}
+                    placeholder="Nama pelatih pencatat absensi"
+                    className="w-full text-xs rounded-xl border border-slate-300 px-3.5 py-2.5 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                )}
               </div>
 
               <div className="sm:col-span-2">

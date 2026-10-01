@@ -3,9 +3,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { 
   Student, 
+  Coach,
   ClassGroup, 
   MonthlyDueRecord, 
   ClubEvent, 
@@ -23,6 +25,8 @@ import {
   saveStudents,
   getClasses,
   saveClasses,
+  getCoaches,
+  saveCoaches,
   getMonthlyDues,
   saveMonthlyDues,
   getEvents,
@@ -44,6 +48,7 @@ import {
 } from './services/storage';
 import { numberToWordsId } from './utils/numberToWordsId';
 import { MONTH_NAMES, getCurrentYear, getCurrentMonth, getTodayISO, getCurrentTime } from './utils/constants';
+import { useToast } from './components/Toast';
 
 import { Header } from './components/Header';
 import { Sidebar, ActiveNav } from './components/Sidebar';
@@ -64,10 +69,60 @@ import { AngsuranLaporanView } from './views/AngsuranLaporanView';
 import { KelasManagerView } from './views/KelasManagerView';
 import { VerifikasiPembayaranView } from './views/VerifikasiPembayaranView';
 import { StudentPortalView } from './views/StudentPortalView';
+import { PelatihView } from './views/PelatihView';
+
+// Map URL paths to ActiveNav keys
+const PATH_TO_NAV: Record<string, ActiveNav> = {
+  '/': 'dashboard',
+  '/dashboard': 'dashboard',
+  '/kelas': 'kelas',
+  '/pelatih': 'pelatih',
+  '/iuran-rutin': 'iuran-rutin',
+  '/iuran-insidentil': 'iuran-insidentil',
+  '/verifikasi-pembayaran': 'verifikasi-pembayaran',
+  '/angsuran': 'angsuran',
+  '/laporan-iuran': 'laporan-iuran',
+  '/calon-siswa': 'calon-siswa',
+  '/siswa-aktif': 'siswa-aktif',
+  '/siswa-cuti': 'siswa-cuti',
+  '/siswa-nonaktif': 'siswa-nonaktif',
+  '/pendaftaran-baru': 'pendaftaran-baru',
+  '/profil-siswa': 'profil-siswa',
+  '/sesi-absensi': 'sesi-absensi',
+  '/laporan-absensi': 'laporan-absensi',
+  '/student-portal': 'student-portal',
+  '/pengaturan': 'pengaturan',
+};
+
+const NAV_TO_PATH: Record<ActiveNav, string> = {
+  'dashboard': '/dashboard',
+  'kelas': '/kelas',
+  'pelatih': '/pelatih',
+  'iuran-rutin': '/iuran-rutin',
+  'iuran-insidentil': '/iuran-insidentil',
+  'verifikasi-pembayaran': '/verifikasi-pembayaran',
+  'angsuran': '/angsuran',
+  'laporan-iuran': '/laporan-iuran',
+  'calon-siswa': '/calon-siswa',
+  'siswa-aktif': '/siswa-aktif',
+  'siswa-cuti': '/siswa-cuti',
+  'siswa-nonaktif': '/siswa-nonaktif',
+  'pendaftaran-baru': '/pendaftaran-baru',
+  'profil-siswa': '/profil-siswa',
+  'sesi-absensi': '/sesi-absensi',
+  'laporan-absensi': '/laporan-absensi',
+  'student-portal': '/student-portal',
+  'pengaturan': '/pengaturan',
+};
 
 export default function App() {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const { toast, confirm } = useToast();
+
   // Global Data State
   const [students, setStudents] = useState<Student[]>([]);
+  const [coaches, setCoaches] = useState<Coach[]>([]);
   const [classes, setClasses] = useState<ClassGroup[]>([]);
   const [monthlyDues, setMonthlyDues] = useState<MonthlyDueRecord[]>([]);
   const [events, setEvents] = useState<ClubEvent[]>([]);
@@ -77,9 +132,16 @@ export default function App() {
   const [submissions, setSubmissions] = useState<PaymentSubmission[]>([]);
   const [profile, setProfile] = useState<ClubProfile>(getClubProfile());
 
-  // UI Navigation & Role State
+  // Derive currentNav from URL
+  const currentNav: ActiveNav = PATH_TO_NAV[location.pathname] ?? 'dashboard';
+
+  // Helper to navigate both state + URL
+  const setCurrentNav = useCallback((nav: ActiveNav) => {
+    navigate(NAV_TO_PATH[nav]);
+  }, [navigate]);
+
+  // UI Role & Sidebar State
   const [currentRole, setCurrentRole] = useState<UserRole>('admin');
-  const [currentNav, setCurrentNav] = useState<ActiveNav>('dashboard');
   const [sidebarMobileOpen, setSidebarMobileOpen] = useState<boolean>(false);
 
   // Ensure default signature palette from photo 2 is always active
@@ -137,6 +199,7 @@ export default function App() {
 
   const loadAllData = () => {
     const stds = getStudents();
+    const coachs = getCoaches();
     const cls = getClasses();
     const dues = getMonthlyDues();
     const evts = getEvents();
@@ -147,6 +210,7 @@ export default function App() {
     const subs = getPaymentSubmissions();
 
     setStudents(stds);
+    setCoaches(coachs);
     setClasses(cls);
     setMonthlyDues(dues);
     setEvents(evts);
@@ -163,21 +227,29 @@ export default function App() {
     }
   };
 
-  const handleClearToZero = () => {
-    if (confirm('Mulai database dari nol? Semua data murid, transaksi, absensi, dan iuran akan dikosongkan.')) {
+  const handleClearToZero = async () => {
+    const ok = await confirm(
+      'Kosongkan Semua Data?',
+      'Semua data murid, transaksi, absensi, dan iuran akan dihapus. Tindakan ini tidak bisa dibatalkan.'
+    );
+    if (ok) {
       clearDatabaseToZero();
       loadAllData();
       setSelectedStudentId('');
       setSubmissions([]);
-      alert('Database sekarang telah kosong (mulai dari nol). Anda siap menginput data baru.');
+      toast.success('Database dikosongkan', 'Sistem siap menerima data baru dari nol.');
     }
   };
 
-  const handleLoadSeedData = () => {
-    if (confirm('Muat data contoh demo SportKit (30+ murid KU-10, transaksi, dan absensi)?')) {
+  const handleLoadSeedData = async () => {
+    const ok = await confirm(
+      'Muat Data Demo?',
+      'Akan memuat 30+ murid KU-10 beserta transaksi dan absensi contoh. Data yang ada akan diganti.'
+    );
+    if (ok) {
       resetToSeedData();
       loadAllData();
-      alert('Data contoh demo berhasil dimuat!');
+      toast.success('Data demo berhasil dimuat!', '30+ murid KU-10 kini tersedia di sistem.');
     }
   };
 
@@ -534,6 +606,35 @@ export default function App() {
     const updated = students.map((s) => (s.id === studentId ? { ...s, status: newStatus } : s));
     setStudents(updated);
     saveStudents(updated);
+  };
+
+  // Coach CRUD Handlers
+  const handleAddCoach = (newCoach: Coach) => {
+    const updated = [...coaches, newCoach];
+    setCoaches(updated);
+    saveCoaches(updated);
+    toast.success('Pelatih ditambahkan', `${newCoach.nama} berhasil didaftarkan ke sistem.`);
+  };
+
+  const handleUpdateCoach = (updatedCoach: Coach) => {
+    const updated = coaches.map((c) => (c.id === updatedCoach.id ? updatedCoach : c));
+    setCoaches(updated);
+    saveCoaches(updated);
+    toast.success('Data pelatih diperbarui', `${updatedCoach.nama} berhasil disimpan.`);
+  };
+
+  const handleDeleteCoach = async (coachId: string) => {
+    const coach = coaches.find((c) => c.id === coachId);
+    const ok = await confirm(
+      'Hapus Data Pelatih?',
+      `Data ${coach?.nama || 'pelatih ini'} akan dihapus dari sistem. Kelas yang diampu tidak akan terpengaruh.`
+    );
+    if (ok) {
+      const updated = coaches.filter((c) => c.id !== coachId);
+      setCoaches(updated);
+      saveCoaches(updated);
+      toast.success('Pelatih dihapus', `${coach?.nama} telah dihapus dari sistem.`);
+    }
   };
 
   // Submit payment proof from student account
@@ -897,6 +998,7 @@ export default function App() {
                 <DashboardView
                   students={students}
                   classes={classes}
+                  coaches={coaches}
                   events={events}
                   transactions={transactions}
                   pendingSubmissionsCount={pendingSubmissionsCount}
@@ -907,6 +1009,7 @@ export default function App() {
                   onNavigateNewRegistration={() => setCurrentNav('pendaftaran-baru')}
                   onNavigateCalonSiswa={() => setCurrentNav('calon-siswa')}
                   onNavigateKelas={() => setCurrentNav('kelas')}
+                  onNavigatePelatih={() => setCurrentNav('pelatih')}
                   onViewReceipt={handleViewReceipt}
                 />
               )}
@@ -928,6 +1031,7 @@ export default function App() {
                 <KelasManagerView
                   classes={classes}
                   students={students}
+                  coaches={coaches}
                   onAddClass={handleAddClass}
                   onUpdateClass={handleUpdateClass}
                   onDeleteClass={handleDeleteClass}
@@ -935,6 +1039,16 @@ export default function App() {
                     if (classId) setSelectedClassId(classId);
                     setCurrentNav('pendaftaran-baru');
                   }}
+                />
+              )}
+
+              {currentNav === 'pelatih' && (
+                <PelatihView
+                  coaches={coaches}
+                  classes={classes}
+                  onAddCoach={handleAddCoach}
+                  onUpdateCoach={handleUpdateCoach}
+                  onDeleteCoach={handleDeleteCoach}
                 />
               )}
 
@@ -1015,6 +1129,7 @@ export default function App() {
                   sessions={attendanceSessions}
                   students={students}
                   classes={classes}
+                  coaches={coaches}
                   onAddSession={handleAddSession}
                   onDeleteSession={handleDeleteSession}
                 />

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Student, ClassGroup, ClubEvent, PaymentTransaction } from '../types/sportkit';
+import { Student, ClassGroup, ClubEvent, PaymentTransaction, Coach } from '../types/sportkit';
 import { formatRupiah } from '../utils/numberToWordsId';
 import { 
   Users, 
@@ -13,12 +13,16 @@ import {
   ShieldCheck,
   CalendarDays,
   Sparkles,
-  CheckCircle2
+  CheckCircle2,
+  UserCheck,
+  Award,
+  Phone
 } from 'lucide-react';
 
 interface DashboardViewProps {
   students: Student[];
   classes: ClassGroup[];
+  coaches: Coach[];
   events: ClubEvent[];
   transactions: PaymentTransaction[];
   pendingSubmissionsCount?: number;
@@ -29,12 +33,14 @@ interface DashboardViewProps {
   onNavigateNewRegistration: () => void;
   onNavigateCalonSiswa: () => void;
   onNavigateKelas: () => void;
+  onNavigatePelatih?: () => void;
   onViewReceipt: (transaction: PaymentTransaction) => void;
 }
 
 export const DashboardView: React.FC<DashboardViewProps> = ({
   students,
   classes,
+  coaches,
   events,
   transactions,
   pendingSubmissionsCount = 0,
@@ -45,6 +51,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   onNavigateNewRegistration,
   onNavigateCalonSiswa,
   onNavigateKelas,
+  onNavigatePelatih,
   onViewReceipt,
 }) => {
   const [selectedStudentId, setSelectedStudentId] = useState<string>('');
@@ -398,6 +405,57 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </p>
         </div>
       </div>
+
+      {/* Coaches Strip */}
+      {coaches.length > 0 && (
+        <div className="sports-card rounded-2xl overflow-hidden">
+          <div className="p-5 border-b border-slate-100 flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-lg bg-sky-50 text-sky-600 flex items-center justify-center">
+                <UserCheck className="w-4 h-4" />
+              </div>
+              <div>
+                <h3 className="font-display font-bold text-slate-900 text-sm">Tim Pelatih Aktif</h3>
+                <p className="text-xs text-slate-500">{coaches.filter(c => c.status === 'Aktif').length} pelatih aktif terdaftar</p>
+              </div>
+            </div>
+            {onNavigatePelatih && (
+              <button
+                onClick={onNavigatePelatih}
+                className="text-xs font-semibold text-sky-600 hover:text-sky-700 flex items-center gap-1 cursor-pointer"
+              >
+                Lihat Semua <ChevronRight className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-slate-100">
+            {coaches.filter(c => c.status === 'Aktif').slice(0, 6).map((coach) => {
+              const coachClasses = classes.filter(c => c.pelatih === coach.nama);
+              return (
+                <div key={coach.id} className="p-4 flex items-start gap-3 hover:bg-slate-50/60 transition-colors">
+                  <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-sky-500 to-emerald-500 flex items-center justify-center text-white font-bold text-sm shrink-0">
+                    {coach.nama.split(' ').slice(-1)[0]?.charAt(0) || '?'}
+                  </div>
+                  <div className="min-w-0">
+                    <p className="font-bold text-sm text-slate-900 truncate">{coach.nama}</p>
+                    <p className="text-xs text-sky-600 font-medium flex items-center gap-1">
+                      <Award className="w-3 h-3" />{coach.spesialisasi}
+                    </p>
+                    {coachClasses.length > 0 && (
+                      <p className="text-[10px] text-slate-400 mt-0.5">
+                        {coachClasses.map(c => c.nama).join(', ')}
+                      </p>
+                    )}
+                    <p className="text-[10px] font-mono text-slate-400 flex items-center gap-1 mt-0.5">
+                      <Phone className="w-2.5 h-2.5" />{coach.noHp}
+                    </p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Recent Payment Receipts */}
       <div className="sports-card rounded-2xl overflow-hidden">
