@@ -1,4 +1,6 @@
 import React, { useState } from 'react';
+import { useToast } from '../components/Toast';
+import { receiptForSubmission } from '../utils/payments';
 import { 
   PaymentSubmission, 
   Student, 
@@ -47,6 +49,7 @@ export const VerifikasiPembayaranView: React.FC<VerifikasiPembayaranViewProps> =
   onViewReceipt,
   transactions,
 }) => {
+  const { toast } = useToast();
   const [filterStatus, setFilterStatus] = useState<'all' | 'pending' | 'verified' | 'rejected'>('pending');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedClassFilter, setSelectedClassFilter] = useState<string>('all');
@@ -113,7 +116,7 @@ export const VerifikasiPembayaranView: React.FC<VerifikasiPembayaranViewProps> =
   const handleConfirmReject = () => {
     if (!rejectingSubmission) return;
     if (!rejectReason.trim()) {
-      alert('Mohon tuliskan alasan penolakan agar siswa dapat memperbaikinya.');
+      toast.error('Alasan wajib diisi', 'Mohon tuliskan alasan penolakan agar siswa dapat memperbaikinya.');
       return;
     }
     onRejectSubmission(rejectingSubmission.id, rejectReason);
@@ -442,14 +445,7 @@ export const VerifikasiPembayaranView: React.FC<VerifikasiPembayaranViewProps> =
                           {/* Open receipt if transaction exists */}
                           {sub.kuitansiId && (
                             <button
-                              onClick={() => {
-                                const tx = transactions.find((t) => t.nomorKuitansi === sub.kuitansiId);
-                                if (tx) {
-                                  onViewReceipt(tx);
-                                } else {
-                                  alert(`Kuitansi nomor: ${sub.kuitansiId} sudah terbit.`);
-                                }
-                              }}
+                              onClick={() => onViewReceipt(receiptForSubmission(sub, transactions))}
                               className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer"
                               title="Cetak / Bagikan Kuitansi Resmi"
                             >

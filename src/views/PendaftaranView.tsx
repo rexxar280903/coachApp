@@ -1,6 +1,9 @@
 import React, { useState } from 'react';
+import { getTodayISO } from '../utils/constants';
 import { Student, ClassGroup, Gender, ParentInfo } from '../types/sportkit';
 import { formatRupiah } from '../utils/numberToWordsId';
+import { isValidPhone } from '../utils/coaches';
+import { useToast } from '../components/Toast';
 import { CheckCircle2, UserPlus, Sparkles, ArrowLeft, ShieldCheck, CreditCard, Layers } from 'lucide-react';
 
 interface PendaftaranViewProps {
@@ -20,6 +23,7 @@ export const PendaftaranView: React.FC<PendaftaranViewProps> = ({
   onCancel,
   onNavigateKelas,
 }) => {
+  const { toast } = useToast();
   const [nama, setNama] = useState<string>('');
   const [alamat, setAlamat] = useState<string>('');
   const [jenisKelamin, setJenisKelamin] = useState<Gender>('Laki-laki');
@@ -44,35 +48,63 @@ export const PendaftaranView: React.FC<PendaftaranViewProps> = ({
 
   const handleSubmit = (autoPay: boolean) => {
     if (!nama.trim()) {
-      alert('Silakan masukkan nama siswa terlebih dahulu.');
+      toast.error('Nama wajib diisi', 'Silakan masukkan nama siswa terlebih dahulu.');
       return;
     }
 
     if (classes.length === 0 || !selectedClass) {
-      alert('Belum ada kelompok kelas yang tersedia. Silakan buat kelompok kelas baru terlebih dahulu.');
+      toast.error('Belum ada kelas', 'Silakan buat kelompok kelas baru terlebih dahulu.');
       if (onNavigateKelas) onNavigateKelas();
+      return;
+    }
+
+    // Minimal satu nomor yang bisa dihubungi, dan semua nomor yang diisi harus valid
+    const phones = [
+      { label: 'No. WhatsApp siswa', value: noHp },
+      { label: 'No. HP ayah', value: noHpAyah },
+      { label: 'No. HP ibu', value: noHpIbu },
+    ];
+    if (phones.every((p) => !p.value.trim())) {
+      toast.error('Nomor kontak wajib diisi', 'Isi minimal satu nomor HP siswa atau orang tua.');
+      return;
+    }
+    const badPhone = phones.find((p) => p.value.trim() && !isValidPhone(p.value));
+    if (badPhone) {
+      toast.error('Nomor HP tidak valid', `${badPhone.label} harus diawali 0 / 62 / +62 lalu 8–12 digit angka.`);
+      return;
+    }
+
+    if (email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+      toast.error('Email tidak valid', 'Periksa kembali format alamat email.');
+      return;
+    }
+
+    const today = getTodayISO();
+    if (!tanggalLahir || tanggalLahir >= today) {
+      toast.error('Tanggal lahir tidak valid', 'Tanggal lahir harus sebelum hari ini.');
       return;
     }
 
     const newStudent: Student = {
       id: 'std-' + Date.now(),
       nama: nama.trim(),
-      kelasId: selectedClassId,
+      kelasId: selectedClass.id,
       jenisKelamin,
-      tempatLahir,
+      tempatLahir: tempatLahir.trim(),
       tanggalLahir,
-      noHp: noHp || noHpAyah || '081234567890',
-      email: email || `${nama.toLowerCase().replace(/\s+/g, '')}@student.club`,
-      alamat: alamat || 'Surabaya',
+      noHp: (noHp || noHpAyah || noHpIbu).trim(),
+      email: email.trim() || undefined,
+      alamat: alamat.trim(),
       orangTua: {
-        namaAyah: namaAyah || 'Ayah/Wali',
-        noHpAyah: noHpAyah || noHp || '-',
-        namaIbu: namaIbu || 'Ibu/Wali',
-        noHpIbu: noHpIbu || '-',
+        namaAyah: namaAyah.trim() || '-',
+        noHpAyah: noHpAyah.trim() || '-',
+        namaIbu: namaIbu.trim() || '-',
+        noHpIbu: noHpIbu.trim() || '-',
       },
-      status: autoPay ? 'Aktif' : 'Calon',
+      // Selalu 'Calon' dulu; baru menjadi 'Aktif' setelah pembayaran pendaftaran dicatat.
+      status: 'Calon',
       catatan,
-      tanggalBergabung: new Date().toISOString().split('T')[0],
+      tanggalBergabung: today,
       biayaPendaftaran,
       iuranBulanan,
       totalBiayaPendaftaran: totalBiaya,
@@ -82,7 +114,21 @@ export const PendaftaranView: React.FC<PendaftaranViewProps> = ({
 
     if (isPublicMode) {
       setSuccessBanner(true);
+      return;
     }
+    if (!autoPay) {
+      toast.success('Calon siswa tersimpan', `${newStudent.nama} masuk daftar calon siswa.`);
+    }
+    // Kosongkan form agar data yang sama tidak terkirim dua kali
+    setNama('');
+    setNoHp('');
+    setEmail('');
+    setAlamat('');
+    setCatatan('');
+    setNamaAyah('');
+    setNoHpAyah('');
+    setNamaIbu('');
+    setNoHpIbu('');
   };
 
   if (successBanner) {

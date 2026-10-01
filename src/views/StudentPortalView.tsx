@@ -1,4 +1,7 @@
 import React, { useState } from 'react';
+import { useToast } from '../components/Toast';
+import { receiptForSubmission } from '../utils/payments';
+import { getTodayISO, getCurrentYear, getCurrentMonth, getYearOptions } from '../utils/constants';
 import { 
   Student, 
   ClassGroup, 
@@ -46,7 +49,7 @@ interface StudentPortalViewProps {
   submissions: PaymentSubmission[];
   clubProfile: ClubProfile;
   onSelectStudent: (studentId: string) => void;
-  onSubmitPaymentProof: (newSubmission: Omit<PaymentSubmission, 'id' | 'status' | 'tanggalKirim'>) => void;
+  onSubmitPaymentProof: (newSubmission: Omit<PaymentSubmission, 'id' | 'status' | 'tanggalKirim'>) => boolean;
   onViewReceipt: (tx: PaymentTransaction) => void;
 }
 
@@ -63,6 +66,7 @@ export const StudentPortalView: React.FC<StudentPortalViewProps> = ({
   onSubmitPaymentProof,
   onViewReceipt,
 }) => {
+  const { toast } = useToast();
   const [activeTab, setActiveTab] = useState<'upload' | 'iuran' | 'absensi'>('upload');
   
   // Student's specific class
@@ -75,13 +79,13 @@ export const StudentPortalView: React.FC<StudentPortalViewProps> = ({
   ];
 
   // Upload Form State
-  const [selectedMonth, setSelectedMonth] = useState<number>(new Date().getMonth() + 1);
-  const [selectedYear, setSelectedYear] = useState<number>(2024);
+  const [selectedMonth, setSelectedMonth] = useState<number>(getCurrentMonth());
+  const [selectedYear, setSelectedYear] = useState<number>(getCurrentYear());
   const [historyYearFilter, setHistoryYearFilter] = useState<number | 'all'>('all');
   const [transferAmount, setTransferAmount] = useState<number>(studentClass?.iuranBulanan || 100000);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('Transfer BCA');
   const [transferDate, setTransferDate] = useState<string>(
-    new Date().toISOString().split('T')[0]
+    getTodayISO()
   );
   const [studentMessage, setStudentMessage] = useState<string>('');
   const [imagePreviewUrl, setImagePreviewUrl] = useState<string>('');
@@ -123,7 +127,7 @@ export const StudentPortalView: React.FC<StudentPortalViewProps> = ({
     const file = e.target.files?.[0];
     if (file) {
       if (file.size > 5 * 1024 * 1024) {
-        alert('Ukuran file maksimal 5 MB.');
+        toast.error('File terlalu besar', 'Ukuran file maksimal 5 MB.');
         return;
       }
       const reader = new FileReader();
@@ -146,18 +150,18 @@ export const StudentPortalView: React.FC<StudentPortalViewProps> = ({
   const handleSubmitProof = (e: React.FormEvent) => {
     e.preventDefault();
     if (!imagePreviewUrl) {
-      alert('Mohon unggah gambar struk / bukti transfer pembayaran terlebih dahulu.');
+      toast.error('Bukti transfer belum ada', 'Mohon unggah gambar struk / bukti transfer pembayaran terlebih dahulu.');
       return;
     }
     if (!transferAmount || transferAmount <= 0) {
-      alert('Nominal transfer harus lebih dari 0.');
+      toast.error('Nominal tidak valid', 'Nominal transfer harus lebih dari 0.');
       return;
     }
 
     setIsSubmitting(true);
 
     setTimeout(() => {
-      onSubmitPaymentProof({
+      const accepted = onSubmitPaymentProof({
         siswaId: currentStudent.id,
         siswaNama: currentStudent.nama,
         kelasId: currentStudent.kelasId,
@@ -173,6 +177,7 @@ export const StudentPortalView: React.FC<StudentPortalViewProps> = ({
       });
 
       setIsSubmitting(false);
+      if (!accepted) return;
       setShowSuccessAlert(true);
       setImagePreviewUrl('');
       setStudentMessage('');
@@ -296,7 +301,7 @@ export const StudentPortalView: React.FC<StudentPortalViewProps> = ({
                     onChange={(e) => setSelectedYear(Number(e.target.value))}
                     className="bg-transparent text-white font-mono text-xs font-bold focus:outline-none cursor-pointer"
                   >
-                    {[2022, 2023, 2024, 2025, 2026, 2027].map((y) => (
+                    {getYearOptions(selectedYear).map((y) => (
                       <option key={y} value={y} className="bg-slate-900 text-white">
                         Tahun {y}
                       </option>
@@ -443,7 +448,7 @@ export const StudentPortalView: React.FC<StudentPortalViewProps> = ({
                     onChange={(e) => setSelectedYear(Number(e.target.value))}
                     className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-semibold text-slate-800 bg-white focus:outline-emerald-500 cursor-pointer font-bold font-mono"
                   >
-                    {[2022, 2023, 2024, 2025, 2026, 2027].map((y) => (
+                    {getYearOptions(selectedYear).map((y) => (
                       <option key={y} value={y}>
                         {y}
                       </option>
@@ -614,7 +619,7 @@ export const StudentPortalView: React.FC<StudentPortalViewProps> = ({
                     className="px-2.5 py-1 rounded-xl bg-slate-100 text-slate-700 text-xs font-semibold border border-slate-200 cursor-pointer focus:outline-none"
                   >
                     <option value="all">Semua Tahun</option>
-                    {[2022, 2023, 2024, 2025, 2026, 2027].map((y) => (
+                    {getYearOptions().map((y) => (
                       <option key={y} value={y}>Tahun {y}</option>
                     ))}
                   </select>
@@ -742,14 +747,7 @@ export const StudentPortalView: React.FC<StudentPortalViewProps> = ({
                             {/* If verified, show receipt button */}
                             {sub.status === 'verified' && sub.kuitansiId && (
                               <button
-                                onClick={() => {
-                                  const tx = transactions.find((t) => t.nomorKuitansi === sub.kuitansiId);
-                                  if (tx) {
-                                    onViewReceipt(tx);
-                                  } else {
-                                    alert(`Kuitansi ${sub.kuitansiId} siap dicetak.`);
-                                  }
-                                }}
+                                onClick={() => onViewReceipt(receiptForSubmission(sub, transactions))}
                                 className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] flex items-center gap-1 shadow-xs transition-colors cursor-pointer"
                               >
                                 <Receipt className="w-3 h-3" />
@@ -799,7 +797,7 @@ export const StudentPortalView: React.FC<StudentPortalViewProps> = ({
                     onChange={(e) => setSelectedYear(Number(e.target.value))}
                     className="rounded-lg border-0 bg-white px-2.5 py-1 text-xs font-bold text-slate-800 shadow-xs cursor-pointer focus:outline-none focus:ring-2 focus:ring-emerald-500 font-mono"
                   >
-                    {[2022, 2023, 2024, 2025, 2026, 2027].map((yr) => (
+                    {getYearOptions(selectedYear).map((yr) => (
                       <option key={yr} value={yr}>
                         {yr}
                       </option>

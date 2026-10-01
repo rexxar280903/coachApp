@@ -27,10 +27,25 @@ export function getCurrentMonth(): number {
 }
 
 /**
- * Returns today's date in YYYY-MM-DD format.
+ * Returns today's date in YYYY-MM-DD format, based on the device's local
+ * timezone (WIB, not UTC — toISOString() would yield yesterday before 07:00).
  */
 export function getTodayISO(): string {
-  return new Date().toISOString().slice(0, 10);
+  const now = new Date();
+  const mm = String(now.getMonth() + 1).padStart(2, '0');
+  const dd = String(now.getDate()).padStart(2, '0');
+  return `${now.getFullYear()}-${mm}-${dd}`;
+}
+
+/**
+ * Year options for dropdowns: a few years back through next year,
+ * always including any extra years passed in (e.g. the selected year).
+ */
+export function getYearOptions(...include: number[]): number[] {
+  const current = getCurrentYear();
+  const years = new Set<number>(include.filter((y) => Number.isFinite(y)));
+  for (let y = current - 4; y <= current + 1; y++) years.add(y);
+  return Array.from(years).sort((a, b) => a - b);
 }
 
 /**

@@ -1,4 +1,6 @@
 import React, { useState, useMemo } from 'react';
+import { useToast } from '../components/Toast';
+import { getCurrentYear, getYearOptions } from '../utils/constants';
 import { Student, ClassGroup, MonthlyDueRecord, FeeStatus, PaymentSubmission } from '../types/sportkit';
 import { formatRupiah } from '../utils/numberToWordsId';
 import { Search, ChevronDown, ChevronLeft, ChevronRight, Check, Filter, Layers, CreditCard, Sparkles, Clock } from 'lucide-react';
@@ -26,8 +28,9 @@ export const IuranRutinView: React.FC<IuranRutinViewProps> = ({
   onOpenPaymentModal,
   onSelectStudent,
 }) => {
+  const { toast } = useToast();
   const [selectedClassId, setSelectedClassId] = useState<string>(initialClassId || classes[0]?.id || 'ku-10');
-  const [selectedYear, setSelectedYear] = useState<number>(2024);
+  const [selectedYear, setSelectedYear] = useState<number>(getCurrentYear());
   const [searchQuery, setSearchQuery] = useState<string>('');
 
   const currentClass = classes.find((c) => c.id === selectedClassId) || classes[0];
@@ -64,12 +67,12 @@ export const IuranRutinView: React.FC<IuranRutinViewProps> = ({
     );
 
     if (due && due.status === 'belum_bergabung') {
-      alert(`Siswa ${std.nama} belum bergabung pada bulan ini.`);
+      toast.info('Belum bergabung', `Siswa ${std.nama} belum bergabung pada bulan ini.`);
       return;
     }
 
     if (due && due.status === 'lunas') {
-      alert(`Iuran bulan ${MONTH_NAMES[monthNumber - 1]} untuk ${std.nama} sudah lunas.`);
+      toast.info('Sudah lunas', `Iuran bulan ${MONTH_NAMES[monthNumber - 1]} untuk ${std.nama} sudah lunas.`);
       return;
     }
 
@@ -137,7 +140,7 @@ export const IuranRutinView: React.FC<IuranRutinViewProps> = ({
                 onChange={(e) => setSelectedYear(Number(e.target.value))}
                 className="rounded-lg border-0 bg-transparent px-2 py-1 text-xs font-bold text-slate-800 focus:outline-none focus:ring-1 focus:ring-emerald-500 cursor-pointer font-mono"
               >
-                {[2022, 2023, 2024, 2025, 2026, 2027].map((y) => (
+                {getYearOptions(selectedYear).map((y) => (
                   <option key={y} value={y}>
                     {y}
                   </option>

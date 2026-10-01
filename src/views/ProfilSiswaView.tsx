@@ -1,4 +1,7 @@
 import React, { useState } from 'react';
+import { useToast } from '../components/Toast';
+import { receiptForSubmission } from '../utils/payments';
+import { getTodayISO, getCurrentYear, getYearOptions } from '../utils/constants';
 import { 
   Student, 
   ClassGroup, 
@@ -112,8 +115,9 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
   onViewReceipt,
   onAdminRecordPaymentWithProof,
 }) => {
+  const { toast } = useToast();
   const [activeTab, setActiveTab] = useState<TabKey>('iuran');
-  const [selectedYear, setSelectedYear] = useState<number>(2024);
+  const [selectedYear, setSelectedYear] = useState<number>(getCurrentYear());
   const [isEditingBiodata, setIsEditingBiodata] = useState<boolean>(false);
   const [filterProofStatus, setFilterProofStatus] = useState<'all' | 'pending' | 'verified' | 'rejected'>('all');
   const [proofYearFilter, setProofYearFilter] = useState<number | 'all'>('all');
@@ -153,7 +157,7 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
 
   const [inputNominal, setInputNominal] = useState<number>(currentClass?.iuranBulanan || 100000);
   const [inputMetode, setInputMetode] = useState<PaymentMethod>('Transfer BCA');
-  const [inputTanggal, setInputTanggal] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [inputTanggal, setInputTanggal] = useState<string>(getTodayISO());
   const [inputBuktiUrl, setInputBuktiUrl] = useState<string>('');
   const [inputPesan, setInputPesan] = useState<string>('');
   const [inputCatatanAdmin, setInputCatatanAdmin] = useState<string>('Pembayaran diinput & diverifikasi oleh Admin.');
@@ -198,26 +202,7 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
 
   const handleOpenReceiptForSub = (sub: PaymentSubmission) => {
     if (!onViewReceipt) return;
-    const existingTx = transactions?.find((t) => t.id === sub.transactionId || t.nomorKuitansi === sub.kuitansiId);
-    if (existingTx) {
-      onViewReceipt(existingTx);
-    } else {
-      const tx: PaymentTransaction = {
-        id: sub.transactionId || `tx-${sub.id}`,
-        nomorKuitansi: sub.kuitansiId || 'INVSP-OFFICIAL',
-        siswaId: sub.siswaId,
-        siswaNama: sub.siswaNama,
-        kelasNama: sub.kelasNama,
-        tanggal: sub.tanggalTransfer || sub.tanggalVerifikasi || new Date().toISOString().slice(0, 10),
-        nominal: sub.nominal,
-        terbilang: numberToWordsId(sub.nominal),
-        metodePembayaran: sub.metodePembayaran,
-        tipe: 'Iuran Rutin',
-        keterangan: sub.pesanSiswa || `Iuran Rutin ${sub.bulan ? FULL_MONTH_NAMES[sub.bulan - 1] : ''} ${sub.tahun || ''}`,
-        catatan: sub.catatanAdmin,
-      };
-      onViewReceipt(tx);
-    }
+    onViewReceipt(receiptForSubmission(sub, transactions || []));
   };
 
   const handleConfirmVerify = () => {
@@ -252,10 +237,15 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
   };
 
   const openAdminInputProofModal = (monthNumber: number, year: number) => {
-    const defaultNominal = currentClass?.iuranBulanan || 100000;
+    // Untuk cicilan, default nominal = sisa tagihan
+    const existing = monthlyDues.find(
+      (d) => d.siswaId === currentStudent.id && d.bulan === monthNumber && d.tahun === year
+    );
+    const tagihan = existing && existing.nominal > 0 ? existing.nominal : currentClass?.iuranBulanan || 0;
+    const defaultNominal = Math.max(0, tagihan - (existing?.terbayar || 0));
     setInputNominal(defaultNominal);
     setInputMetode('Transfer BCA');
-    setInputTanggal(new Date().toISOString().split('T')[0]);
+    setInputTanggal(getTodayISO());
     setInputBuktiUrl(SAMPLE_TRANSFER_PROOF_SVG);
     setInputPesan(
       `Pembayaran iuran bulan ${FULL_MONTH_NAMES[monthNumber - 1]} ${year} dari wali murid ${
@@ -274,7 +264,7 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
     const file = e.target.files?.[0];
     if (file) {
       if (file.size > 5 * 1024 * 1024) {
-        alert('Ukuran file maksimal 5 MB.');
+        toast.error('File terlalu besar', 'Ukuran file maksimal 5 MB.');
         return;
       }
       const reader = new FileReader();
@@ -290,12 +280,12 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
     if (!adminInputProofModal) return;
 
     if (!inputBuktiUrl) {
-      alert('Mohon lampirkan struk / foto bukti pembayaran transfer.');
+      toast.error('Bukti pembayaran belum ada', 'Mohon lampirkan struk / foto bukti pembayaran transfer.');
       return;
     }
 
     if (!inputNominal || inputNominal <= 0) {
-      alert('Nominal pembayaran harus lebih dari 0.');
+      toast.error('Nominal tidak valid', 'Nominal pembayaran harus lebih dari 0.');
       return;
     }
 
@@ -323,7 +313,7 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
     const record = studentDues.find((d) => d.bulan === monthNumber);
 
     if (record && record.status === 'belum_bergabung') {
-      alert('Siswa belum bergabung pada bulan ini.');
+      toast.info('Belum bergabung', 'Siswa belum bergabung pada bulan ini.');
       return;
     }
 
@@ -342,7 +332,7 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
           sub: monthSub,
         });
       } else {
-        alert(`Iuran bulan ${FULL_MONTH_NAMES[monthNumber - 1]} sudah lunas (${formatRupiah(record?.nominal || currentClass?.iuranBulanan || 100000)}).`);
+        toast.info('Sudah lunas', `Iuran bulan ${FULL_MONTH_NAMES[monthNumber - 1]} sudah lunas (${formatRupiah(record?.nominal || currentClass?.iuranBulanan || 0)}).`);
       }
       return;
     }
@@ -516,12 +506,9 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
                   onChange={(e) => setSelectedYear(Number(e.target.value))}
                   className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-bold text-slate-800 shadow-xs cursor-pointer focus:outline-none focus:ring-2 focus:ring-emerald-500 font-mono"
                 >
-                  <option value={2022}>2022</option>
-                  <option value={2023}>2023</option>
-                  <option value={2024}>2024</option>
-                  <option value={2025}>2025</option>
-                  <option value={2026}>2026</option>
-                  <option value={2027}>2027</option>
+                  {getYearOptions(selectedYear).map((yr) => (
+                    <option key={yr} value={yr}>{yr}</option>
+                  ))}
                 </select>
               </div>
               <button
@@ -895,7 +882,7 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
               >
                 Semua Tahun
               </button>
-              {[2022, 2023, 2024, 2025, 2026, 2027].map((yr) => (
+              {getYearOptions().map((yr) => (
                 <button
                   key={yr}
                   onClick={() => setProofYearFilter(yr)}
@@ -1853,9 +1840,9 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
                     }}
                     className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-semibold text-slate-800 bg-white focus:outline-emerald-500 cursor-pointer"
                   >
-                    <option value={2024}>2024</option>
-                    <option value={2025}>2025</option>
-                    <option value={2026}>2026</option>
+                    {getYearOptions(adminInputProofModal.tahun).map((yr) => (
+                      <option key={yr} value={yr}>{yr}</option>
+                    ))}
                   </select>
                 </div>
               </div>

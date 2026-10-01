@@ -26,6 +26,28 @@ const STORAGE_KEYS = {
   PAYMENT_SUBMISSIONS: 'sportkit_payment_submissions_v2',
 };
 
+/**
+ * Baca & parse JSON dari localStorage dengan aman. Data rusak (bukan JSON valid)
+ * tidak membuat aplikasi crash — fallback dipakai dan data rusak dicatat di console.
+ */
+function readJSON<T>(key: string, fallback: T): T {
+  let raw: string | null = null;
+  try {
+    raw = localStorage.getItem(key);
+  } catch {
+    return fallback;
+  }
+  if (!raw) return fallback;
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(fallback) && !Array.isArray(parsed)) return fallback;
+    return parsed as T;
+  } catch (err) {
+    console.error(`[storage] Data "${key}" rusak, memakai nilai default.`, err);
+    return fallback;
+  }
+}
+
 export const INITIAL_CLASSES: ClassGroup[] = [
   {
     id: 'ku-10',
@@ -553,8 +575,7 @@ export function resetToSeedData() {
 // Data Getters & Setters
 export function getStudents(): Student[] {
   initializeStorage();
-  const raw = localStorage.getItem(STORAGE_KEYS.STUDENTS);
-  return raw ? JSON.parse(raw) : [];
+  return readJSON(STORAGE_KEYS.STUDENTS, []);
 }
 
 export function saveStudents(students: Student[]) {
@@ -563,8 +584,7 @@ export function saveStudents(students: Student[]) {
 
 export function getClasses(): ClassGroup[] {
   initializeStorage();
-  const raw = localStorage.getItem(STORAGE_KEYS.CLASSES);
-  return raw ? JSON.parse(raw) : INITIAL_CLASSES;
+  return readJSON(STORAGE_KEYS.CLASSES, INITIAL_CLASSES);
 }
 
 export function saveClasses(classes: ClassGroup[]) {
@@ -573,8 +593,7 @@ export function saveClasses(classes: ClassGroup[]) {
 
 export function getMonthlyDues(): MonthlyDueRecord[] {
   initializeStorage();
-  const raw = localStorage.getItem(STORAGE_KEYS.MONTHLY_DUES);
-  return raw ? JSON.parse(raw) : [];
+  return readJSON(STORAGE_KEYS.MONTHLY_DUES, []);
 }
 
 export function saveMonthlyDues(dues: MonthlyDueRecord[]) {
@@ -583,8 +602,7 @@ export function saveMonthlyDues(dues: MonthlyDueRecord[]) {
 
 export function getEvents(): ClubEvent[] {
   initializeStorage();
-  const raw = localStorage.getItem(STORAGE_KEYS.EVENTS);
-  return raw ? JSON.parse(raw) : [];
+  return readJSON(STORAGE_KEYS.EVENTS, []);
 }
 
 export function saveEvents(events: ClubEvent[]) {
@@ -593,8 +611,7 @@ export function saveEvents(events: ClubEvent[]) {
 
 export function getEventParticipants(): EventParticipant[] {
   initializeStorage();
-  const raw = localStorage.getItem(STORAGE_KEYS.EVENT_PARTICIPANTS);
-  return raw ? JSON.parse(raw) : [];
+  return readJSON(STORAGE_KEYS.EVENT_PARTICIPANTS, []);
 }
 
 export function saveEventParticipants(participants: EventParticipant[]) {
@@ -603,8 +620,7 @@ export function saveEventParticipants(participants: EventParticipant[]) {
 
 export function getAttendanceSessions(): AttendanceSession[] {
   initializeStorage();
-  const raw = localStorage.getItem(STORAGE_KEYS.ATTENDANCE);
-  return raw ? JSON.parse(raw) : [];
+  return readJSON(STORAGE_KEYS.ATTENDANCE, []);
 }
 
 export function saveAttendanceSessions(sessions: AttendanceSession[]) {
@@ -613,8 +629,7 @@ export function saveAttendanceSessions(sessions: AttendanceSession[]) {
 
 export function getTransactions(): PaymentTransaction[] {
   initializeStorage();
-  const raw = localStorage.getItem(STORAGE_KEYS.TRANSACTIONS);
-  return raw ? JSON.parse(raw) : [];
+  return readJSON(STORAGE_KEYS.TRANSACTIONS, []);
 }
 
 export function saveTransactions(transactions: PaymentTransaction[]) {
@@ -623,35 +638,41 @@ export function saveTransactions(transactions: PaymentTransaction[]) {
 
 export function getClubProfile(): ClubProfile {
   initializeStorage();
-  const raw = localStorage.getItem(STORAGE_KEYS.PROFILE);
-  return raw ? JSON.parse(raw) : INITIAL_PROFILE;
+  return readJSON(STORAGE_KEYS.PROFILE, INITIAL_PROFILE);
 }
 
 export function saveClubProfile(profile: ClubProfile) {
   localStorage.setItem(STORAGE_KEYS.PROFILE, JSON.stringify(profile));
 }
 
+/**
+ * Nomor kuitansi berurutan per hari: INVSP-YYMMDD-NNN.
+ * Urutan diambil dari nomor terbesar yang sudah tersimpan untuk hari ini,
+ * sehingga tidak ada dua kuitansi dengan nomor yang sama.
+ */
 export function generateReceiptNumber(): string {
   const now = new Date();
   const yy = now.getFullYear().toString().slice(-2);
   const mm = (now.getMonth() + 1).toString().padStart(2, '0');
   const dd = now.getDate().toString().padStart(2, '0');
-  const rand = Math.floor(100 + Math.random() * 900);
-  return `INVSP-${yy}${mm}${dd}-${rand}`;
+  const prefix = `INVSP-${yy}${mm}${dd}-`;
+
+  const used = [
+    ...readJSON<PaymentTransaction[]>(STORAGE_KEYS.TRANSACTIONS, []).map((t) => t.nomorKuitansi),
+    ...readJSON<PaymentSubmission[]>(STORAGE_KEYS.PAYMENT_SUBMISSIONS, []).map((s) => s.kuitansiId),
+  ];
+  const maxSeq = used.reduce((max, no) => {
+    if (!no || !no.startsWith(prefix)) return max;
+    const seq = parseInt(no.slice(prefix.length), 10);
+    return Number.isFinite(seq) && seq > max ? seq : max;
+  }, 0);
+
+  return `${prefix}${(maxSeq + 1).toString().padStart(3, '0')}`;
 }
 
 export function getPaymentSubmissions(): PaymentSubmission[] {
   initializeStorage();
-  const raw = localStorage.getItem(STORAGE_KEYS.PAYMENT_SUBMISSIONS);
-  if (!raw || raw === '[]') {
-    const rawStudents = localStorage.getItem(STORAGE_KEYS.STUDENTS);
-    if (rawStudents && JSON.parse(rawStudents).length > 0) {
-      localStorage.setItem(STORAGE_KEYS.PAYMENT_SUBMISSIONS, JSON.stringify(INITIAL_SUBMISSIONS));
-      return INITIAL_SUBMISSIONS;
-    }
-    return [];
-  }
-  return JSON.parse(raw);
+  return readJSON<PaymentSubmission[]>(STORAGE_KEYS.PAYMENT_SUBMISSIONS, []);
 }
 
 export function savePaymentSubmissions(submissions: PaymentSubmission[]) {
@@ -724,12 +745,11 @@ export const INITIAL_COACHES: Coach[] = [
 ];
 
 export function getCoaches(): Coach[] {
-  const raw = localStorage.getItem(STORAGE_KEYS.COACHES);
-  if (!raw) {
+  if (!localStorage.getItem(STORAGE_KEYS.COACHES)) {
     localStorage.setItem(STORAGE_KEYS.COACHES, JSON.stringify(INITIAL_COACHES));
     return INITIAL_COACHES;
   }
-  return JSON.parse(raw);
+  return readJSON<Coach[]>(STORAGE_KEYS.COACHES, INITIAL_COACHES);
 }
 
 export function saveCoaches(coaches: Coach[]) {

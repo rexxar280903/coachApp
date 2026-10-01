@@ -50,6 +50,7 @@ import { numberToWordsId } from './utils/numberToWordsId';
 import { MONTH_NAMES, getCurrentYear, getCurrentMonth, getTodayISO, getCurrentTime } from './utils/constants';
 import { useToast } from './components/Toast';
 import { migrateCoachLinks, syncClassSnapshots, getCoachClasses } from './utils/coaches';
+import { applyMonthlyPayment, applyEventPayment, findMonthlyDue, recountEvents } from './utils/payments';
 
 import { Header } from './components/Header';
 import { Sidebar, ActiveNav } from './components/Sidebar';
@@ -94,6 +95,34 @@ const PATH_TO_NAV: Record<string, ActiveNav> = {
   '/student-portal': 'student-portal',
   '/pengaturan': 'pengaturan',
 };
+
+// Halaman yang boleh diakses tiap role (sidebar hanya menyembunyikan menu,
+// guard ini mencegah akses langsung lewat URL).
+const ROLE_ALLOWED_NAV: Record<UserRole, ActiveNav[] | 'all'> = {
+  admin: 'all',
+  coach: ['sesi-absensi', 'laporan-absensi'],
+  student: ['student-portal'],
+  public: ['pendaftaran-baru'],
+};
+
+const ROLE_HOME_NAV: Record<UserRole, ActiveNav> = {
+  admin: 'dashboard',
+  coach: 'sesi-absensi',
+  student: 'student-portal',
+  public: 'pendaftaran-baru',
+};
+
+const ROLE_STORAGE_KEY = 'sportkit_role';
+
+function loadSavedRole(): UserRole {
+  try {
+    const saved = localStorage.getItem(ROLE_STORAGE_KEY);
+    if (saved && saved in ROLE_HOME_NAV) return saved as UserRole;
+  } catch {
+    // ignore
+  }
+  return 'admin';
+}
 
 const NAV_TO_PATH: Record<ActiveNav, string> = {
   'dashboard': '/dashboard',
@@ -142,7 +171,7 @@ export default function App() {
   }, [navigate]);
 
   // UI Role & Sidebar State
-  const [currentRole, setCurrentRole] = useState<UserRole>('admin');
+  const [currentRole, setCurrentRole] = useState<UserRole>(loadSavedRole);
   const [sidebarMobileOpen, setSidebarMobileOpen] = useState<boolean>(false);
 
   // Ensure default signature palette from photo 2 is always active
@@ -157,8 +186,17 @@ export default function App() {
 
   // Selected Entities
   const [selectedStudentId, setSelectedStudentId] = useState<string>('');
-  const [selectedClassId, setSelectedClassId] = useState<string>('ku-10');
-  const [selectedEventId, setSelectedEventId] = useState<string>('evt-familia-cup');
+  const [selectedClassId, setSelectedClassId] = useState<string>('');
+  const [selectedEventId, setSelectedEventId] = useState<string>('');
+
+  // Route guard: alihkan ke halaman utama role bila URL tidak dikenal / tidak diizinkan
+  useEffect(() => {
+    const allowed = ROLE_ALLOWED_NAV[currentRole];
+    const isKnownPath = location.pathname in PATH_TO_NAV;
+    if (!isKnownPath || (allowed !== 'all' && !allowed.includes(currentNav))) {
+      navigate(NAV_TO_PATH[ROLE_HOME_NAV[currentRole]], { replace: true });
+    }
+  }, [currentRole, currentNav, location.pathname, navigate]);
 
   // Modal States
   const [paymentModalState, setPaymentModalState] = useState<{
@@ -180,6 +218,7 @@ export default function App() {
     isApplicantApproval?: boolean;
     bulan?: number;
     tahun?: number;
+    dueNominal?: number;
   }>({
     isOpen: false,
     title: '',
@@ -261,15 +300,12 @@ export default function App() {
 
   const handleRoleChange = (newRole: UserRole) => {
     setCurrentRole(newRole);
-    if (newRole === 'coach') {
-      setCurrentNav('sesi-absensi');
-    } else if (newRole === 'public') {
-      setCurrentNav('pendaftaran-baru');
-    } else if (newRole === 'student') {
-      setCurrentNav('student-portal');
-    } else {
-      setCurrentNav('dashboard');
+    try {
+      localStorage.setItem(ROLE_STORAGE_KEY, newRole);
+    } catch {
+      // ignore
     }
+    setCurrentNav(ROLE_HOME_NAV[newRole]);
   };
 
   // Navigations from Cards
@@ -310,6 +346,7 @@ export default function App() {
       targetDueId: due.id,
       bulan: due.bulan,
       tahun: due.tahun,
+      dueNominal: due.nominal,
     });
   };
 
@@ -325,6 +362,7 @@ export default function App() {
       title: 'Pembayaran Iuran Insidentil',
       siswaNama: student.nama,
       siswaId: student.id,
+      kelasId: classGroup.id,
       kelasNama: classGroup.nama,
       noHp: student.noHp,
       nominalAwal: participant.nominal - (participant.terbayar || 0),
@@ -338,9 +376,10 @@ export default function App() {
   const handleOpenApplicantPaymentModal = (student: Student, classGroup: ClassGroup) => {
     setPaymentModalState({
       isOpen: true,
-      title: 'Pembayaran Iuran Rutin',
+      title: 'Pembayaran Pendaftaran Siswa Baru',
       siswaNama: student.nama,
       siswaId: student.id,
+      kelasId: classGroup.id,
       kelasNama: classGroup.nama,
       noHp: student.noHp,
       nominalAwal: student.totalBiayaPendaftaran,
@@ -365,145 +404,113 @@ export default function App() {
   ) => {
     const today = getTodayISO();
     const time = getCurrentTime();
+    const tanggalBayar = tx.tanggal || today;
+    const modal = paymentModalState;
+    const student = students.find((s) => s.id === tx.siswaId);
 
     // 1. Save Transaction
     const updatedTxs = [tx, ...transactions];
     setTransactions(updatedTxs);
     saveTransactions(updatedTxs);
 
-    // 2. If it was Monthly Due (or Iuran Rutin)
-    const targetBulan = proofData?.bulan || paymentModalState.bulan;
-    const targetTahun = proofData?.tahun || paymentModalState.tahun || getCurrentYear();
+    // 2. Iuran Rutin → tagihan bulanan (pembayaran kumulatif / cicilan)
+    if (tx.tipe === 'Iuran Rutin' || tx.tipe === 'Angsuran') {
+      const bulan = proofData?.bulan ?? modal.bulan;
+      const tahun = proofData?.tahun ?? modal.tahun;
+      if (bulan && tahun) {
+        const studentClass = classes.find((c) => c.id === (modal.kelasId || student?.kelasId));
+        const samePeriod = modal.bulan === bulan && modal.tahun === tahun;
+        const nominalTagihan =
+          (samePeriod && modal.dueNominal) ||
+          studentClass?.iuranBulanan ||
+          student?.iuranBulanan ||
+          tx.nominal;
 
-    if (paymentModalState.targetDueId || paymentModalState.tipe === 'Iuran Rutin' || targetBulan) {
-      let found = false;
-      const updatedDues = monthlyDues.map((d) => {
-        if (
-          (paymentModalState.targetDueId && d.id === paymentModalState.targetDueId) ||
-          (d.siswaId === tx.siswaId && d.bulan === targetBulan && d.tahun === targetTahun)
-        ) {
-          found = true;
-          return {
-            ...d,
-            status: 'lunas' as const,
-            nominal: tx.nominal,
-            terbayar: tx.nominal,
-            tanggalBayar: tx.tanggal || today,
-            kuitansiId: tx.nomorKuitansi,
-          };
-        }
-        return d;
-      });
-
-      if (!found && targetBulan) {
-        const newDue: MonthlyDueRecord = {
-          id: `due-${tx.siswaId}-${targetTahun}-${targetBulan}`,
+        const updatedDues = applyMonthlyPayment(monthlyDues, {
           siswaId: tx.siswaId,
-          bulan: targetBulan,
-          tahun: targetTahun,
-          nominal: tx.nominal,
-          terbayar: tx.nominal,
-          status: 'lunas',
-          tanggalBayar: tx.tanggal || today,
+          bulan,
+          tahun,
+          nominalTagihan,
+          jumlah: tx.nominal,
+          tanggalBayar,
           kuitansiId: tx.nomorKuitansi,
+        });
+        setMonthlyDues(updatedDues);
+        saveMonthlyDues(updatedDues);
+
+        // Arsip bukti pembayaran (langsung terverifikasi karena diinput admin)
+        const newSub: PaymentSubmission = {
+          id: `sub-${Date.now()}`,
+          siswaId: tx.siswaId,
+          siswaNama: tx.siswaNama,
+          kelasId: studentClass?.id || modal.kelasId || student?.kelasId || '',
+          kelasNama: tx.kelasNama,
+          tipe: 'Iuran Rutin',
+          bulan,
+          tahun,
+          nominal: tx.nominal,
+          metodePembayaran: tx.metodePembayaran,
+          tanggalTransfer: tanggalBayar,
+          buktiGambarUrl: proofData?.buktiGambarUrl || SAMPLE_TRANSFER_PROOF_SVG,
+          pesanSiswa: proofData?.pesanPembayaran || tx.keterangan,
+          status: 'verified',
+          tanggalKirim: `${today} ${time}`,
+          tanggalVerifikasi: today,
+          diverifikasiOleh: 'Super Admin',
+          catatanAdmin: proofData?.catatanAdmin || 'Diinput & diverifikasi langsung oleh Admin.',
+          kuitansiId: tx.nomorKuitansi,
+          transactionId: tx.id,
         };
-        updatedDues.push(newDue);
+        const updatedSubs = [newSub, ...submissions];
+        setSubmissions(updatedSubs);
+        savePaymentSubmissions(updatedSubs);
       }
-
-      setMonthlyDues(updatedDues);
-      saveMonthlyDues(updatedDues);
-
-      // Create & Save verified submission proof record
-      const studentClass = classes.find((c) => c.nama === tx.kelasNama || c.id === paymentModalState.kelasId);
-      const subId = `sub-${Date.now()}`;
-      const newSub: PaymentSubmission = {
-        id: subId,
-        siswaId: tx.siswaId,
-        siswaNama: tx.siswaNama,
-        kelasId: studentClass?.id || paymentModalState.kelasId || 'ku-10',
-        kelasNama: tx.kelasNama,
-        tipe: 'Iuran Rutin',
-        bulan: targetBulan,
-        tahun: targetTahun,
-        nominal: tx.nominal,
-        metodePembayaran: tx.metodePembayaran,
-        tanggalTransfer: tx.tanggal || today,
-        buktiGambarUrl: proofData?.buktiGambarUrl || SAMPLE_TRANSFER_PROOF_SVG,
-        pesanSiswa: proofData?.pesanPembayaran || tx.keterangan,
-        status: 'verified',
-        tanggalKirim: `${today} ${time}`,
-        tanggalVerifikasi: today,
-        diverifikasiOleh: 'Super Admin',
-        catatanAdmin: proofData?.catatanAdmin || 'Diinput & diverifikasi langsung oleh Admin.',
-        kuitansiId: tx.nomorKuitansi,
-        transactionId: tx.id,
-      };
-
-      const updatedSubs = [newSub, ...submissions];
-      setSubmissions(updatedSubs);
-      savePaymentSubmissions(updatedSubs);
     }
 
-    // 3. If it was Event Participant
-    if (paymentModalState.targetParticipantId) {
-      const updatedParts = eventParticipants.map((p) => {
-        if (p.id === paymentModalState.targetParticipantId) {
-          return {
-            ...p,
-            status: 'lunas' as const,
-            terbayar: p.nominal,
-            tanggalBayar: tx.tanggal,
-            kuitansiId: tx.nomorKuitansi,
-          };
-        }
-        return p;
-      });
+    // 3. Iuran Insidentil → peserta event
+    if (tx.tipe === 'Iuran Insidentil' && modal.targetParticipantId) {
+      const part = eventParticipants.find((p) => p.id === modal.targetParticipantId);
+      const updatedParts = applyEventPayment(
+        eventParticipants,
+        modal.targetParticipantId,
+        tx.nominal,
+        tanggalBayar,
+        tx.nomorKuitansi
+      );
       setEventParticipants(updatedParts);
       saveEventParticipants(updatedParts);
 
-      // Update event lunas count
-      const part = eventParticipants.find((p) => p.id === paymentModalState.targetParticipantId);
       if (part) {
-        const updatedEvents = events.map((e) => {
-          if (e.id === part.eventId) {
-            return { ...e, pesertaLunas: e.pesertaLunas + 1 };
-          }
-          return e;
-        });
+        const updatedEvents = recountEvents(events, updatedParts, [part.eventId]);
         setEvents(updatedEvents);
         saveEvents(updatedEvents);
       }
     }
 
-    // 4. If it was Applicant approval
-    if (paymentModalState.isApplicantApproval) {
-      const updatedStudents = students.map((s) => {
-        if (s.id === tx.siswaId) {
-          return { ...s, status: 'Aktif' as StudentStatus };
-        }
-        return s;
-      });
+    // 4. Pendaftaran calon siswa → aktifkan siswa & catat iuran bulan pertama
+    if (tx.tipe === 'Pendaftaran Siswa Baru' && modal.isApplicantApproval) {
+      const updatedStudents = students.map((s) =>
+        s.id === tx.siswaId ? { ...s, status: 'Aktif' as StudentStatus } : s
+      );
       setStudents(updatedStudents);
       saveStudents(updatedStudents);
 
-      // Also ensure student has monthly dues initialized for the current month
-      const now = new Date();
-      const currentMonth = now.getMonth() + 1;
-      const currentYear = now.getFullYear();
-      const newDue: MonthlyDueRecord = {
-        id: `due-${tx.siswaId}-${currentYear}-${currentMonth}`,
-        siswaId: tx.siswaId,
-        tahun: currentYear,
-        bulan: currentMonth,
-        status: 'lunas',
-        nominal: 100000,
-        terbayar: 100000,
-        tanggalBayar: tx.tanggal,
-        kuitansiId: tx.nomorKuitansi,
-      };
-      const updatedDues = [...monthlyDues, newDue];
-      setMonthlyDues(updatedDues);
-      saveMonthlyDues(updatedDues);
+      const biayaDaftar = modal.biayaPendaftaran ?? student?.biayaPendaftaran ?? 0;
+      const iuran = modal.iuranBulanan ?? student?.iuranBulanan ?? 0;
+      const untukIuran = Math.min(Math.max(0, tx.nominal - biayaDaftar), iuran);
+      if (iuran > 0 && untukIuran > 0) {
+        const updatedDues = applyMonthlyPayment(monthlyDues, {
+          siswaId: tx.siswaId,
+          bulan: getCurrentMonth(),
+          tahun: getCurrentYear(),
+          nominalTagihan: iuran,
+          jumlah: untukIuran,
+          tanggalBayar,
+          kuitansiId: tx.nomorKuitansi,
+        });
+        setMonthlyDues(updatedDues);
+        saveMonthlyDues(updatedDues);
+      }
     }
   };
 
@@ -514,8 +521,10 @@ export default function App() {
     saveStudents(updated);
 
     if (autoPayDirectly) {
+      // Siswa tetap 'Calon' sampai pembayaran benar-benar dicatat di modal.
       const cls = classes.find((c) => c.id === newStudent.kelasId) || classes[0];
       handleOpenApplicantPaymentModal(newStudent, cls);
+      toast.info('Menunggu pembayaran', `${newStudent.nama} akan aktif setelah pembayaran pendaftaran dicatat.`);
     } else {
       if (currentRole !== 'public') {
         setCurrentNav('calon-siswa');
@@ -528,6 +537,57 @@ export default function App() {
     const updated = [newSession, ...attendanceSessions];
     setAttendanceSessions(updated);
     saveAttendanceSessions(updated);
+  };
+
+  const handleUpdateSession = (updatedSession: AttendanceSession) => {
+    const updated = attendanceSessions.map((s) => (s.id === updatedSession.id ? updatedSession : s));
+    setAttendanceSessions(updated);
+    saveAttendanceSessions(updated);
+  };
+
+  // Event participants
+  const handleAddEventParticipants = (eventId: string, siswaIds: string[]) => {
+    const event = events.find((e) => e.id === eventId);
+    if (!event || siswaIds.length === 0) return;
+    const existing = new Set(eventParticipants.filter((p) => p.eventId === eventId).map((p) => p.siswaId));
+    const stamp = Date.now();
+    const newParts: EventParticipant[] = siswaIds
+      .filter((id) => !existing.has(id))
+      .map((siswaId, i) => ({
+        id: `ep-${stamp}-${i}`,
+        eventId,
+        siswaId,
+        status: 'belum_bayar',
+        nominal: event.nominal,
+        terbayar: 0,
+      }));
+    if (newParts.length === 0) return;
+
+    const updatedParts = [...eventParticipants, ...newParts];
+    setEventParticipants(updatedParts);
+    saveEventParticipants(updatedParts);
+    const updatedEvents = recountEvents(events, updatedParts, [eventId]);
+    setEvents(updatedEvents);
+    saveEvents(updatedEvents);
+    toast.success('Peserta ditambahkan', `${newParts.length} siswa didaftarkan ke ${event.nama}.`);
+  };
+
+  const handleRemoveEventParticipant = async (participantId: string) => {
+    const part = eventParticipants.find((p) => p.id === participantId);
+    if (!part) return;
+    if ((part.terbayar || 0) > 0) {
+      toast.error('Tidak bisa dihapus', 'Peserta ini sudah melakukan pembayaran.');
+      return;
+    }
+    const std = students.find((s) => s.id === part.siswaId);
+    const ok = await confirm('Hapus Peserta?', `${std?.nama || 'Siswa ini'} akan dikeluarkan dari daftar peserta event.`);
+    if (!ok) return;
+    const updatedParts = eventParticipants.filter((p) => p.id !== participantId);
+    setEventParticipants(updatedParts);
+    saveEventParticipants(updatedParts);
+    const updatedEvents = recountEvents(events, updatedParts, [part.eventId]);
+    setEvents(updatedEvents);
+    saveEvents(updatedEvents);
   };
 
   const handleDeleteSession = (sessionId: string) => {
@@ -557,16 +617,44 @@ export default function App() {
   };
 
   const handleDeleteClass = (classId: string, reassignClassId?: string) => {
-    let updatedStudents = [...students];
-    if (reassignClassId) {
-      updatedStudents = updatedStudents.map((s) =>
-        s.kelasId === classId ? { ...s, kelasId: reassignClassId } : s
-      );
-    } else {
-      updatedStudents = updatedStudents.filter((s) => s.kelasId !== classId);
-    }
+    const removedIds = new Set(
+      reassignClassId ? [] : students.filter((s) => s.kelasId === classId).map((s) => s.id)
+    );
+
+    const updatedStudents = reassignClassId
+      ? students.map((s) => (s.kelasId === classId ? { ...s, kelasId: reassignClassId } : s))
+      : students.filter((s) => !removedIds.has(s.id));
     setStudents(updatedStudents);
     saveStudents(updatedStudents);
+
+    // Sesi absensi kelas ini ikut dipindah / dihapus agar tidak yatim
+    const updatedSessions = reassignClassId
+      ? attendanceSessions.map((a) => (a.kelasId === classId ? { ...a, kelasId: reassignClassId } : a))
+      : attendanceSessions.filter((a) => a.kelasId !== classId);
+    setAttendanceSessions(updatedSessions);
+    saveAttendanceSessions(updatedSessions);
+
+    if (removedIds.size > 0) {
+      // Bersihkan data milik siswa yang ikut terhapus (transaksi tetap disimpan sebagai arsip keuangan)
+      const updatedDues = monthlyDues.filter((d) => !removedIds.has(d.siswaId));
+      setMonthlyDues(updatedDues);
+      saveMonthlyDues(updatedDues);
+
+      const updatedParts = eventParticipants.filter((p) => !removedIds.has(p.siswaId));
+      setEventParticipants(updatedParts);
+      saveEventParticipants(updatedParts);
+
+      const touchedEvents = Array.from(
+        new Set(eventParticipants.filter((p) => removedIds.has(p.siswaId)).map((p) => p.eventId))
+      );
+      const updatedEvents = recountEvents(events, updatedParts, touchedEvents);
+      setEvents(updatedEvents);
+      saveEvents(updatedEvents);
+
+      const updatedSubs = submissions.filter((s) => !(removedIds.has(s.siswaId) && s.status === 'pending'));
+      setSubmissions(updatedSubs);
+      savePaymentSubmissions(updatedSubs);
+    }
 
     const updatedClasses = classes.filter((c) => c.id !== classId);
     setClasses(updatedClasses);
@@ -654,39 +742,76 @@ export default function App() {
     }
   };
 
-  // Submit payment proof from student account
+  // Submit payment proof from student account.
+  // Mengembalikan false (dan menampilkan pesan) bila pembayaran akan dobel.
   const handleSubmitPaymentProof = (
     newSub: Omit<PaymentSubmission, 'id' | 'status' | 'tanggalKirim'>
-  ) => {
-    const id = `sub-${Date.now()}`;
-    const now = new Date();
-    const dateStr = now.toISOString().slice(0, 10);
-    const timeStr = now.toTimeString().slice(0, 5);
+  ): boolean => {
+    if (newSub.tipe === 'Iuran Rutin' && newSub.bulan && newSub.tahun) {
+      const periode = `${MONTH_NAMES[newSub.bulan - 1]} ${newSub.tahun}`;
+      const due = findMonthlyDue(monthlyDues, newSub.siswaId, newSub.bulan, newSub.tahun);
+      if (due?.status === 'lunas') {
+        toast.warning('Iuran sudah lunas', `Iuran ${periode} sudah tercatat lunas, tidak perlu mengirim bukti lagi.`);
+        return false;
+      }
+      const pendingSame = submissions.some(
+        (s) =>
+          s.status === 'pending' &&
+          s.siswaId === newSub.siswaId &&
+          s.tipe === 'Iuran Rutin' &&
+          s.bulan === newSub.bulan &&
+          s.tahun === newSub.tahun
+      );
+      if (pendingSame) {
+        toast.warning('Bukti sudah dikirim', `Bukti pembayaran ${periode} masih menunggu verifikasi admin.`);
+        return false;
+      }
+    }
+
     const submissionItem: PaymentSubmission = {
       ...newSub,
-      id,
+      id: `sub-${Date.now()}`,
       status: 'pending',
-      tanggalKirim: `${dateStr} ${timeStr}`,
+      tanggalKirim: `${getTodayISO()} ${getCurrentTime()}`,
     };
 
     const updated = [submissionItem, ...submissions];
     setSubmissions(updated);
     savePaymentSubmissions(updated);
+    return true;
   };
 
   // Verify payment submission by admin
   const handleVerifySubmission = (submissionId: string, catatanAdmin: string) => {
     const sub = submissions.find((s) => s.id === submissionId);
-    if (!sub) return;
+    if (!sub || sub.status !== 'pending') return;
+
+    const student = students.find((s) => s.id === sub.siswaId);
+    const isRutin = sub.tipe === 'Iuran Rutin' && !!sub.bulan && !!sub.tahun;
+
+    // Cegah pembayaran ganda untuk bulan yang sudah lunas
+    if (isRutin) {
+      const due = findMonthlyDue(monthlyDues, sub.siswaId, sub.bulan!, sub.tahun!);
+      if (due?.status === 'lunas') {
+        toast.error(
+          'Tagihan sudah lunas',
+          `Iuran ${MONTH_NAMES[sub.bulan! - 1]} ${sub.tahun} untuk ${sub.siswaNama} sudah lunas. Tolak bukti ini jika merupakan pembayaran ganda.`
+        );
+        return;
+      }
+    }
 
     const receiptNo = generateReceiptNumber();
     const txId = `tx-${Date.now()}`;
-    const now = new Date();
     const today = getTodayISO();
 
-    const periodLabel = sub.bulan && sub.tahun 
-      ? `Iuran Rutin ${MONTH_NAMES[sub.bulan - 1]} ${sub.tahun}`
-      : sub.tipe;
+    const txTipe: PaymentTransaction['tipe'] =
+      sub.tipe === 'Pendaftaran' ? 'Pendaftaran Siswa Baru' : sub.tipe;
+    const periodLabel = isRutin
+      ? `Iuran Rutin ${MONTH_NAMES[sub.bulan! - 1]} ${sub.tahun}`
+      : sub.tipe === 'Iuran Insidentil'
+        ? `Iuran Insidentil${sub.eventNama ? ` ${sub.eventNama}` : ''}`
+        : txTipe;
 
     // Create official transaction
     const newTx: PaymentTransaction = {
@@ -699,7 +824,7 @@ export default function App() {
       nominal: sub.nominal,
       terbilang: numberToWordsId(sub.nominal),
       metodePembayaran: sub.metodePembayaran,
-      tipe: 'Iuran Rutin',
+      tipe: txTipe,
       keterangan: `${periodLabel} (Verifikasi Bukti Transfer Siswa)`,
       catatan: catatanAdmin,
     };
@@ -708,58 +833,61 @@ export default function App() {
     setTransactions(updatedTxs);
     saveTransactions(updatedTxs);
 
-    // Update monthly due record if it is a monthly due
-    if (sub.bulan && sub.tahun) {
-      let found = false;
-      const updatedDues = monthlyDues.map((d) => {
-        if (d.siswaId === sub.siswaId && d.bulan === sub.bulan && d.tahun === sub.tahun) {
-          found = true;
-          return {
-            ...d,
-            status: 'lunas' as const,
-            terbayar: sub.nominal,
-            tanggalBayar: sub.tanggalTransfer || today,
-            kuitansiId: receiptNo,
-          };
-        }
-        return d;
+    if (isRutin) {
+      const cls = classes.find((c) => c.id === (student?.kelasId || sub.kelasId));
+      const updatedDues = applyMonthlyPayment(monthlyDues, {
+        siswaId: sub.siswaId,
+        bulan: sub.bulan!,
+        tahun: sub.tahun!,
+        nominalTagihan: cls?.iuranBulanan || student?.iuranBulanan || sub.nominal,
+        jumlah: sub.nominal,
+        tanggalBayar: sub.tanggalTransfer || today,
+        kuitansiId: receiptNo,
       });
-
-      if (!found) {
-        const newDue: MonthlyDueRecord = {
-          id: `due-${sub.siswaId}-${sub.tahun}-${sub.bulan}`,
-          siswaId: sub.siswaId,
-          bulan: sub.bulan,
-          tahun: sub.tahun,
-          nominal: sub.nominal,
-          terbayar: sub.nominal,
-          status: 'lunas',
-          tanggalBayar: sub.tanggalTransfer || today,
-          kuitansiId: receiptNo,
-        };
-        updatedDues.push(newDue);
-      }
-
       setMonthlyDues(updatedDues);
       saveMonthlyDues(updatedDues);
     }
 
-    // Update submission record
-    const updatedSubs = submissions.map((s) => {
-      if (s.id === submissionId) {
-        return {
-          ...s,
-          status: 'verified' as const,
-          tanggalVerifikasi: today,
-          diverifikasiOleh: 'Super Admin',
-          catatanAdmin: catatanAdmin,
-          kuitansiId: receiptNo,
-          transactionId: txId,
-        };
+    if (sub.tipe === 'Iuran Insidentil' && sub.eventId) {
+      const part = eventParticipants.find((p) => p.eventId === sub.eventId && p.siswaId === sub.siswaId);
+      if (part) {
+        const updatedParts = applyEventPayment(
+          eventParticipants,
+          part.id,
+          sub.nominal,
+          sub.tanggalTransfer || today,
+          receiptNo
+        );
+        setEventParticipants(updatedParts);
+        saveEventParticipants(updatedParts);
+        const updatedEvents = recountEvents(events, updatedParts, [part.eventId]);
+        setEvents(updatedEvents);
+        saveEvents(updatedEvents);
       }
-      return s;
-    });
+    }
 
+    if (sub.tipe === 'Pendaftaran' && student?.status === 'Calon') {
+      const updatedStudents = students.map((s) =>
+        s.id === sub.siswaId ? { ...s, status: 'Aktif' as StudentStatus } : s
+      );
+      setStudents(updatedStudents);
+      saveStudents(updatedStudents);
+    }
+
+    // Update submission record
+    const updatedSubs = submissions.map((s) =>
+      s.id === submissionId
+        ? {
+            ...s,
+            status: 'verified' as const,
+            tanggalVerifikasi: today,
+            diverifikasiOleh: 'Super Admin',
+            catatanAdmin: catatanAdmin,
+            kuitansiId: receiptNo,
+            transactionId: txId,
+          }
+        : s
+    );
     setSubmissions(updatedSubs);
     savePaymentSubmissions(updatedSubs);
 
@@ -814,9 +942,14 @@ export default function App() {
     pesanPembayaran?: string;
     catatanAdmin?: string;
   }) => {
+    const existingDue = findMonthlyDue(monthlyDues, siswaId, bulan, tahun);
+    if (existingDue?.status === 'lunas') {
+      toast.warning('Iuran sudah lunas', `Iuran ${MONTH_NAMES[bulan - 1]} ${tahun} untuk ${siswaNama} sudah lunas.`);
+      return;
+    }
+
     const receiptNo = generateReceiptNumber();
     const txId = `tx-${Date.now()}`;
-    const now = new Date();
     const today = getTodayISO();
     const time = getCurrentTime();
 
@@ -842,37 +975,18 @@ export default function App() {
     setTransactions(updatedTxs);
     saveTransactions(updatedTxs);
 
-    // 2. Update or Create Monthly Due
-    let found = false;
-    const updatedDues = monthlyDues.map((d) => {
-      if (d.siswaId === siswaId && d.bulan === bulan && d.tahun === tahun) {
-        found = true;
-        return {
-          ...d,
-          status: 'lunas' as const,
-          nominal: nominal,
-          terbayar: nominal,
-          tanggalBayar: tanggalTransfer || today,
-          kuitansiId: receiptNo,
-        };
-      }
-      return d;
+    // 2. Update or Create Monthly Due (kumulatif, mendukung cicilan)
+    const student = students.find((s) => s.id === siswaId);
+    const cls = classes.find((c) => c.id === (student?.kelasId || kelasId));
+    const updatedDues = applyMonthlyPayment(monthlyDues, {
+      siswaId,
+      bulan,
+      tahun,
+      nominalTagihan: existingDue?.nominal || cls?.iuranBulanan || student?.iuranBulanan || nominal,
+      jumlah: nominal,
+      tanggalBayar: tanggalTransfer || today,
+      kuitansiId: receiptNo,
     });
-
-    if (!found) {
-      const newDue: MonthlyDueRecord = {
-        id: `due-${siswaId}-${tahun}-${bulan}`,
-        siswaId,
-        bulan,
-        tahun,
-        nominal,
-        terbayar: nominal,
-        status: 'lunas',
-        tanggalBayar: tanggalTransfer || today,
-        kuitansiId: receiptNo,
-      };
-      updatedDues.push(newDue);
-    }
     setMonthlyDues(updatedDues);
     saveMonthlyDues(updatedDues);
 
@@ -916,7 +1030,10 @@ export default function App() {
   const pendingSubmissionsCount = submissions.filter((s) => s.status === 'pending').length;
 
   // Active student for student portal
-  const activeStudent = students.find((s) => s.id === selectedStudentId) || students[0];
+  const activeStudent =
+    students.find((s) => s.id === selectedStudentId) ||
+    students.find((s) => s.status !== 'Calon') ||
+    students[0];
 
   // View Receipt Handler
   const handleViewReceipt = (tx: PaymentTransaction) => {
@@ -1112,6 +1229,8 @@ export default function App() {
                   classes={classes}
                   initialEventId={selectedEventId}
                   onOpenEventPaymentModal={handleOpenEventPaymentModal}
+                  onAddParticipants={handleAddEventParticipants}
+                  onRemoveParticipant={handleRemoveEventParticipant}
                   onAddNewEvent={(evt) => {
                     const up = [evt, ...events];
                     setEvents(up);
@@ -1149,6 +1268,7 @@ export default function App() {
                   classes={classes}
                   coaches={coaches}
                   onAddSession={handleAddSession}
+                  onUpdateSession={handleUpdateSession}
                   onDeleteSession={handleDeleteSession}
                 />
               )}

@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
+import { getTodayISO, getCurrentYear, getCurrentMonth, getYearOptions } from '../utils/constants';
 import { PaymentMethod, PaymentTransaction } from '../types/sportkit';
 import { formatRupiah, numberToWordsId } from '../utils/numberToWordsId';
+import { useToast } from './Toast';
 import { generateReceiptNumber, SAMPLE_TRANSFER_PROOF_SVG } from '../services/storage';
 import { 
   CheckCircle2, 
@@ -68,17 +70,18 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
   biayaPendaftaran,
   iuranBulanan,
   periodeInfo,
-  bulan: initialBulan = 12,
-  tahun: initialTahun = 2024,
+  bulan: initialBulan,
+  tahun: initialTahun,
   onSuccess,
   onViewReceipt,
 }) => {
+  const { toast } = useToast();
   const [tanggal, setTanggal] = useState<string>('');
   const [jumlahBayar, setJumlahBayar] = useState<number>(nominalAwal);
   const [metode, setMetode] = useState<PaymentMethod>('Transfer BCA');
   const [catatan, setCatatan] = useState<string>('');
-  const [selectedBulan, setSelectedBulan] = useState<number>(initialBulan || 12);
-  const [selectedTahun, setSelectedTahun] = useState<number>(initialTahun || 2024);
+  const [selectedBulan, setSelectedBulan] = useState<number>(initialBulan || getCurrentMonth());
+  const [selectedTahun, setSelectedTahun] = useState<number>(initialTahun || getCurrentYear());
   const [buktiGambarUrl, setBuktiGambarUrl] = useState<string>('');
   const [pesanPembayaran, setPesanPembayaran] = useState<string>('');
   const [isSuccess, setIsSuccess] = useState<boolean>(false);
@@ -86,21 +89,25 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
 
   useEffect(() => {
     if (isOpen) {
-      const today = new Date().toISOString().split('T')[0];
+      const today = getTodayISO();
       setTanggal(today);
       setJumlahBayar(nominalAwal);
       setIsSuccess(false);
       setCreatedTx(null);
       setCatatan('');
       setMetode('Tunai');
-      setSelectedBulan(initialBulan || 12);
-      setSelectedTahun(initialTahun || 2024);
+      const bln = initialBulan || getCurrentMonth();
+      const thn = initialTahun || getCurrentYear();
+      setSelectedBulan(bln);
+      setSelectedTahun(thn);
       setBuktiGambarUrl('');
       setPesanPembayaran(
-        `Pembayaran iuran bulan ${MONTH_NAMES[(initialBulan || 12) - 1]} ${initialTahun || 2024} untuk ${siswaNama}`
+        tipe === 'Iuran Rutin'
+          ? `Pembayaran iuran bulan ${MONTH_NAMES[bln - 1]} ${thn} untuk ${siswaNama}`
+          : `${keterangan} untuk ${siswaNama}`
       );
     }
-  }, [isOpen, nominalAwal, initialBulan, initialTahun, siswaNama]);
+  }, [isOpen, nominalAwal, initialBulan, initialTahun, siswaNama, tipe, keterangan]);
 
   if (!isOpen) return null;
 
@@ -108,7 +115,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
     const file = e.target.files?.[0];
     if (file) {
       if (file.size > 5 * 1024 * 1024) {
-        alert('Ukuran file maksimal 5 MB.');
+        toast.error('File terlalu besar', 'Ukuran file maksimal 5 MB.');
         return;
       }
       const reader = new FileReader();
@@ -130,6 +137,11 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!jumlahBayar || Number(jumlahBayar) <= 0) {
+      toast.error('Nominal tidak valid', 'Jumlah pembayaran harus lebih dari 0.');
+      return;
+    }
+    const isRutin = tipe === 'Iuran Rutin';
     const receiptNo = generateReceiptNumber();
     const monthLabel = tipe === 'Iuran Rutin' ? ` ${MONTH_NAMES[selectedBulan - 1]} ${selectedTahun}` : '';
     const tx: PaymentTransaction = {
@@ -149,12 +161,14 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
 
     setCreatedTx(tx);
     setIsSuccess(true);
+    // Periode bulan/tahun hanya relevan untuk Iuran Rutin; tipe lain tidak boleh
+    // menyentuh tagihan bulanan.
     onSuccess(tx, {
       buktiGambarUrl: buktiGambarUrl || SAMPLE_TRANSFER_PROOF_SVG,
-      pesanPembayaran: pesanPembayaran || `Pembayaran iuran ${MONTH_NAMES[selectedBulan - 1]} ${selectedTahun}`,
+      pesanPembayaran: pesanPembayaran || tx.keterangan,
       catatanAdmin: catatan || 'Diinput & diverifikasi langsung oleh Admin.',
-      bulan: selectedBulan,
-      tahun: selectedTahun,
+      bulan: isRutin ? selectedBulan : undefined,
+      tahun: isRutin ? selectedTahun : undefined,
     });
   };
 
@@ -304,7 +318,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
                       }}
                       className="w-full text-xs rounded-xl border border-slate-300 bg-white px-3 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer font-bold font-mono"
                     >
-                      {[2022, 2023, 2024, 2025, 2026, 2027].map((y) => (
+                      {getYearOptions(selectedTahun).map((y) => (
                         <option key={y} value={y}>
                           {y}
                         </option>
