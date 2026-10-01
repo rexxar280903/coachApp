@@ -203,6 +203,10 @@
   .no-print {
     display: none !important;
   }
+  /* Saat kuitansi terbuka, cetak hanya kuitansinya (bukan halaman di belakangnya) */
+  body:has(.receipt-print-root) > #root {
+    display: none !important;
+  }
   .print-only {
     display: block !important;
   }

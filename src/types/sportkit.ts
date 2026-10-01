@@ -25,7 +25,7 @@ export type PaymentMethod =
   | 'Transfer Mandiri'
   | 'Transfer BRI';
 
-export type FeeStatus = 'lunas' | 'belum_lunas' | 'belum_bayar' | 'belum_bergabung' | 'cuti';
+export type FeeStatus = 'lunas' | 'belum_lunas' | 'belum_bayar' | 'belum_bergabung' | 'cuti' | 'nonaktif';
 
 export interface ParentInfo {
   namaAyah: string;
@@ -48,6 +48,7 @@ export interface Student {
   status: StudentStatus;
   catatan?: string;
   tanggalBergabung: string; // YYYY-MM-DD
+  tanggalStatus?: string;   // YYYY-MM-DD, kapan status terakhir diubah (untuk cuti/nonaktif)
   biayaPendaftaran: number;
   iuranBulanan: number;
   totalBiayaPendaftaran: number;

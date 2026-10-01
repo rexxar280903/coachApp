@@ -50,7 +50,18 @@ import { numberToWordsId } from './utils/numberToWordsId';
 import { MONTH_NAMES, getCurrentYear, getCurrentMonth, getTodayISO, getCurrentTime } from './utils/constants';
 import { useToast } from './components/Toast';
 import { migrateCoachLinks, syncClassSnapshots, getCoachClasses } from './utils/coaches';
-import { applyMonthlyPayment, applyEventPayment, findMonthlyDue, recountEvents } from './utils/payments';
+import {
+  applyMonthlyPayment,
+  applyEventPayment,
+  findMonthlyDue,
+  recountEvents,
+  effectiveDueStatus,
+  isNonBillable,
+  freezeInactiveMonths,
+  FEE_STATUS_LABEL,
+  remainingMonthlyDue,
+  describePaymentOutcome,
+} from './utils/payments';
 
 import { Header } from './components/Header';
 import { Sidebar, ActiveNav } from './components/Sidebar';
@@ -489,8 +500,11 @@ export default function App() {
 
     // 4. Pendaftaran calon siswa → aktifkan siswa & catat iuran bulan pertama
     if (tx.tipe === 'Pendaftaran Siswa Baru' && modal.isApplicantApproval) {
+      // Tanggal bergabung = tanggal aktif (iuran mulai dihitung dari bulan ini)
       const updatedStudents = students.map((s) =>
-        s.id === tx.siswaId ? { ...s, status: 'Aktif' as StudentStatus } : s
+        s.id === tx.siswaId
+          ? { ...s, status: 'Aktif' as StudentStatus, tanggalBergabung: tanggalBayar, tanggalStatus: tanggalBayar }
+          : s
       );
       setStudents(updatedStudents);
       saveStudents(updatedStudents);
@@ -603,6 +617,15 @@ export default function App() {
     saveStudents(updated);
   };
 
+  // Tarif siswa mengikuti kelasnya. Biaya pendaftaran hanya relevan bagi calon siswa.
+  const withClassFees = (s: Student, cls: ClassGroup): Student => ({
+    ...s,
+    iuranBulanan: cls.iuranBulanan,
+    ...(s.status === 'Calon'
+      ? { biayaPendaftaran: cls.biayaPendaftaran, totalBiayaPendaftaran: cls.biayaPendaftaran + cls.iuranBulanan }
+      : {}),
+  });
+
   // Class Management Handlers
   const handleAddClass = (newClass: ClassGroup) => {
     const updated = [...classes, newClass];
@@ -611,9 +634,26 @@ export default function App() {
   };
 
   const handleUpdateClass = (updatedClass: ClassGroup) => {
+    const old = classes.find((c) => c.id === updatedClass.id);
     const updated = classes.map((c) => (c.id === updatedClass.id ? updatedClass : c));
     setClasses(updated);
     saveClasses(updated);
+
+    // Tarif berubah → samakan tarif siswa di kelas ini. Record iuran yang sudah ada tidak diubah.
+    if (
+      old &&
+      (old.iuranBulanan !== updatedClass.iuranBulanan || old.biayaPendaftaran !== updatedClass.biayaPendaftaran)
+    ) {
+      const updatedStudents = students.map((s) =>
+        s.kelasId === updatedClass.id ? withClassFees(s, updatedClass) : s
+      );
+      setStudents(updatedStudents);
+      saveStudents(updatedStudents);
+      toast.info(
+        'Tarif kelas diperbarui',
+        'Tarif baru berlaku untuk calon siswa dan tagihan berikutnya. Iuran yang sudah tercatat tidak berubah.'
+      );
+    }
   };
 
   const handleDeleteClass = (classId: string, reassignClassId?: string) => {
@@ -621,8 +661,15 @@ export default function App() {
       reassignClassId ? [] : students.filter((s) => s.kelasId === classId).map((s) => s.id)
     );
 
+    const targetClass = classes.find((c) => c.id === reassignClassId);
     const updatedStudents = reassignClassId
-      ? students.map((s) => (s.kelasId === classId ? { ...s, kelasId: reassignClassId } : s))
+      ? students.map((s) =>
+          s.kelasId === classId
+            ? targetClass
+              ? withClassFees({ ...s, kelasId: reassignClassId }, targetClass)
+              : { ...s, kelasId: reassignClassId }
+            : s
+        )
       : students.filter((s) => !removedIds.has(s.id));
     setStudents(updatedStudents);
     saveStudents(updatedStudents);
@@ -697,7 +744,20 @@ export default function App() {
   };
 
   const handleUpdateStudentStatus = (studentId: string, newStatus: StudentStatus) => {
-    const updated = students.map((s) => (s.id === studentId ? { ...s, status: newStatus } : s));
+    const std = students.find((s) => s.id === studentId);
+    if (!std || std.status === newStatus) return;
+    const today = getTodayISO();
+
+    // Keluar dari Cuti/Nonaktif: kunci bulan-bulan selama status itu agar tidak jadi tunggakan
+    const updatedDues = freezeInactiveMonths(monthlyDues, std);
+    if (updatedDues !== monthlyDues) {
+      setMonthlyDues(updatedDues);
+      saveMonthlyDues(updatedDues);
+    }
+
+    const updated = students.map((s) =>
+      s.id === studentId ? { ...s, status: newStatus, tanggalStatus: today } : s
+    );
     setStudents(updated);
     saveStudents(updated);
   };
@@ -752,6 +812,12 @@ export default function App() {
       const due = findMonthlyDue(monthlyDues, newSub.siswaId, newSub.bulan, newSub.tahun);
       if (due?.status === 'lunas') {
         toast.warning('Iuran sudah lunas', `Iuran ${periode} sudah tercatat lunas, tidak perlu mengirim bukti lagi.`);
+        return false;
+      }
+      const std = students.find((s) => s.id === newSub.siswaId);
+      const status = std ? effectiveDueStatus(std, due, newSub.bulan, newSub.tahun) : 'belum_bayar';
+      if (isNonBillable(status)) {
+        toast.warning('Bulan tidak ditagih', `Iuran ${periode} berstatus "${FEE_STATUS_LABEL[status]}", tidak perlu dibayar.`);
         return false;
       }
       const pendingSame = submissions.some(
@@ -835,6 +901,13 @@ export default function App() {
 
     if (isRutin) {
       const cls = classes.find((c) => c.id === (student?.kelasId || sub.kelasId));
+      const tarif = cls?.iuranBulanan || student?.iuranBulanan || sub.nominal;
+      const outcome = describePaymentOutcome(
+        sub.nominal,
+        remainingMonthlyDue(monthlyDues, sub.siswaId, sub.bulan!, sub.tahun!, tarif)
+      );
+      if (outcome.kind === 'lebih') toast.warning('Kelebihan bayar', `${sub.siswaNama}: ${outcome.text}.`);
+      if (outcome.kind === 'cicilan') toast.info('Dicatat sebagai cicilan', `${sub.siswaNama}: ${outcome.text}.`);
       const updatedDues = applyMonthlyPayment(monthlyDues, {
         siswaId: sub.siswaId,
         bulan: sub.bulan!,
@@ -868,7 +941,9 @@ export default function App() {
 
     if (sub.tipe === 'Pendaftaran' && student?.status === 'Calon') {
       const updatedStudents = students.map((s) =>
-        s.id === sub.siswaId ? { ...s, status: 'Aktif' as StudentStatus } : s
+        s.id === sub.siswaId
+          ? { ...s, status: 'Aktif' as StudentStatus, tanggalBergabung: today, tanggalStatus: today }
+          : s
       );
       setStudents(updatedStudents);
       saveStudents(updatedStudents);
@@ -978,6 +1053,12 @@ export default function App() {
     // 2. Update or Create Monthly Due (kumulatif, mendukung cicilan)
     const student = students.find((s) => s.id === siswaId);
     const cls = classes.find((c) => c.id === (student?.kelasId || kelasId));
+    const outcome = describePaymentOutcome(
+      nominal,
+      remainingMonthlyDue(monthlyDues, siswaId, bulan, tahun, cls?.iuranBulanan || student?.iuranBulanan || nominal)
+    );
+    if (outcome.kind === 'lebih') toast.warning('Kelebihan bayar', `${siswaNama}: ${outcome.text}.`);
+    if (outcome.kind === 'cicilan') toast.info('Dicatat sebagai cicilan', `${siswaNama}: ${outcome.text}.`);
     const updatedDues = applyMonthlyPayment(monthlyDues, {
       siswaId,
       bulan,

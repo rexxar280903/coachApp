@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useToast } from '../components/Toast';
-import { receiptForSubmission } from '../utils/payments';
+import { receiptForSubmission, submissionOutcome, defaultVerifyNote } from '../utils/payments';
 import { 
   PaymentSubmission, 
   Student, 
@@ -106,6 +106,13 @@ export const VerifikasiPembayaranView: React.FC<VerifikasiPembayaranViewProps> =
 
     return true;
   });
+
+  const outcomeFor = (sub: PaymentSubmission) => {
+    const std = students.find((s) => s.id === sub.siswaId);
+    const cls = classes.find((c) => c.id === (std?.kelasId || sub.kelasId));
+    return submissionOutcome(sub, monthlyDues, cls?.iuranBulanan || std?.iuranBulanan || sub.nominal);
+  };
+  const verifyingOutcome = verifyingSubmission ? outcomeFor(verifyingSubmission) : null;
 
   const handleConfirmVerify = () => {
     if (!verifyingSubmission) return;
@@ -415,7 +422,7 @@ export const VerifikasiPembayaranView: React.FC<VerifikasiPembayaranViewProps> =
                           <button
                             onClick={() => {
                               setVerifyingSubmission(sub);
-                              setAdminNote(`Dana transfer ${sub.metodePembayaran} sebesar Rp ${sub.nominal.toLocaleString('id-ID')} telah terkonfirmasi masuk rekening kas klub. Pembayaran iuran ${periodLabel} dinyatakan lunas.`);
+                              setAdminNote(defaultVerifyNote(sub, outcomeFor(sub)));
                             }}
                             className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
                           >
@@ -569,7 +576,28 @@ export const VerifikasiPembayaranView: React.FC<VerifikasiPembayaranViewProps> =
                     {verifyingSubmission.metodePembayaran} · {verifyingSubmission.tanggalTransfer}
                   </span>
                 </div>
+                {verifyingOutcome && (
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Sisa Tagihan:</span>
+                    <span className="font-mono font-bold text-slate-900">
+                      Rp {verifyingOutcome.sisa.toLocaleString('id-ID')}
+                    </span>
+                  </div>
+                )}
               </div>
+
+              {verifyingOutcome && verifyingOutcome.kind !== 'lunas' && (
+                <div
+                  className={`p-3 rounded-xl text-xs font-semibold border ${
+                    verifyingOutcome.kind === 'lebih'
+                      ? 'bg-rose-50 border-rose-200 text-rose-800'
+                      : 'bg-amber-50 border-amber-200 text-amber-800'
+                  }`}
+                >
+                  ⚠️ Nominal transfer {verifyingOutcome.text}.
+                  {verifyingOutcome.kind === 'cicilan' && ' Status bulan ini akan menjadi "Belum Lunas".'}
+                </div>
+              )}
 
               {/* Verification Note by Admin */}
               <div>

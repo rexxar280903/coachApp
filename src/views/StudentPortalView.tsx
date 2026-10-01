@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useToast } from '../components/Toast';
-import { receiptForSubmission } from '../utils/payments';
+import { receiptForSubmission, remainingMonthlyDue, effectiveDueStatus, isNonBillable, FEE_STATUS_LABEL } from '../utils/payments';
 import { getTodayISO, getCurrentYear, getCurrentMonth, getYearOptions } from '../utils/constants';
 import { 
   Student, 
@@ -102,6 +102,12 @@ export const StudentPortalView: React.FC<StudentPortalViewProps> = ({
 
   // Student's monthly dues
   const studentDues = monthlyDues.filter((d) => d.siswaId === currentStudent.id);
+
+  // Sisa tagihan sebuah bulan (untuk mengisi nominal transfer otomatis)
+  const sisaTagihan = (bulan: number, tahun: number) =>
+    remainingMonthlyDue(monthlyDues, currentStudent.id, bulan, tahun, studentClass?.iuranBulanan || 0) ||
+    studentClass?.iuranBulanan ||
+    0;
 
   // Student's submissions
   const studentSubmissions = submissions.filter((s) => s.siswaId === currentStudent.id);
@@ -428,7 +434,11 @@ export const StudentPortalView: React.FC<StudentPortalViewProps> = ({
                   </label>
                   <select
                     value={selectedMonth}
-                    onChange={(e) => setSelectedMonth(Number(e.target.value))}
+                    onChange={(e) => {
+                      const m = Number(e.target.value);
+                      setSelectedMonth(m);
+                      setTransferAmount(sisaTagihan(m, selectedYear));
+                    }}
                     className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-semibold text-slate-800 bg-white focus:outline-emerald-500 cursor-pointer"
                   >
                     {monthNames.map((m, idx) => (
@@ -837,11 +847,22 @@ export const StudentPortalView: React.FC<StudentPortalViewProps> = ({
             {monthNames.map((mName, idx) => {
               const monthNum = idx + 1;
               const due = studentDues.find((d) => d.bulan === monthNum && d.tahun === selectedYear);
-              const sub = studentSubmissions.find(
-                (s) => s.bulan === monthNum && s.tahun === selectedYear
+              const status = effectiveDueStatus(currentStudent, due, monthNum, selectedYear);
+              const pendingSub = studentSubmissions.find(
+                (s) => s.bulan === monthNum && s.tahun === selectedYear && s.status === 'pending'
               );
-              const isPaid = due?.status === 'lunas' || sub?.status === 'verified';
-              const isPending = sub?.status === 'pending';
+              const tagihan = due && due.nominal > 0 ? due.nominal : studentClass?.iuranBulanan || 0;
+              const sisa = Math.max(0, tagihan - (due?.terbayar || 0));
+              const isPaid = status === 'lunas';
+              const isPartial = status === 'belum_lunas';
+              const isPending = !isPaid && !!pendingSub;
+              const notBilled = isNonBillable(status);
+
+              const goPay = () => {
+                setSelectedMonth(monthNum);
+                setTransferAmount(sisa || tagihan);
+                setActiveTab('upload');
+              };
 
               return (
                 <div
@@ -849,10 +870,10 @@ export const StudentPortalView: React.FC<StudentPortalViewProps> = ({
                   className={`p-4 rounded-2xl border transition-all ${
                     isPaid
                       ? 'bg-emerald-50/50 border-emerald-300 shadow-xs'
-                      : isPending
+                      : isPending || isPartial
                       ? 'bg-amber-50/50 border-amber-300'
                       : 'bg-slate-50 border-slate-200'
-                  }`}
+                  } ${notBilled ? 'opacity-60' : ''}`}
                 >
                   <div className="flex items-center justify-between mb-2">
                     <span className="font-display font-bold text-xs uppercase tracking-wider text-slate-700">
@@ -862,7 +883,7 @@ export const StudentPortalView: React.FC<StudentPortalViewProps> = ({
                       <span className="w-6 h-6 rounded-full bg-emerald-500 text-white flex items-center justify-center">
                         <CheckCircle2 className="w-4 h-4" />
                       </span>
-                    ) : isPending ? (
+                    ) : isPending || isPartial ? (
                       <span className="w-6 h-6 rounded-full bg-amber-500 text-white flex items-center justify-center">
                         <Clock className="w-4 h-4" />
                       </span>
@@ -874,34 +895,40 @@ export const StudentPortalView: React.FC<StudentPortalViewProps> = ({
                   </div>
 
                   <p className="font-mono text-sm font-bold text-slate-900">
-                    Rp {studentClass?.iuranBulanan.toLocaleString('id-ID')}
+                    {notBilled ? '-' : `Rp ${tagihan.toLocaleString('id-ID')}`}
                   </p>
+                  {isPartial && (
+                    <p className="text-[11px] text-amber-700 font-semibold mt-0.5">
+                      Terbayar Rp {(due?.terbayar || 0).toLocaleString('id-ID')}
+                    </p>
+                  )}
 
                   <div className="mt-2 pt-2 border-t border-slate-200/60 flex items-center justify-between text-[11px]">
                     {isPaid ? (
                       <>
                         <span className="text-emerald-700 font-bold">LUNAS</span>
-                        {(due?.kuitansiId || sub?.kuitansiId) && (
-                          <span className="font-mono text-[10px] text-slate-500">
-                            {due?.kuitansiId || sub?.kuitansiId}
-                          </span>
+                        {due?.kuitansiId && (
+                          <span className="font-mono text-[10px] text-slate-500">{due.kuitansiId}</span>
                         )}
                       </>
+                    ) : notBilled ? (
+                      <span className="text-slate-500 font-semibold">{FEE_STATUS_LABEL[status]}</span>
                     ) : isPending ? (
                       <>
                         <span className="text-amber-700 font-bold">Menunggu Cek Admin</span>
                         <span className="text-[10px] text-amber-600">Pending</span>
                       </>
+                    ) : isPartial ? (
+                      <>
+                        <span className="text-amber-700 font-bold">Sisa Rp {sisa.toLocaleString('id-ID')}</span>
+                        <button onClick={goPay} className="font-bold text-emerald-600 hover:text-emerald-700 cursor-pointer">
+                          Bayar Sisa →
+                        </button>
+                      </>
                     ) : (
                       <>
                         <span className="text-slate-500">Belum Dibayar</span>
-                        <button
-                          onClick={() => {
-                            setSelectedMonth(monthNum);
-                            setActiveTab('upload');
-                          }}
-                          className="font-bold text-emerald-600 hover:text-emerald-700 cursor-pointer"
-                        >
+                        <button onClick={goPay} className="font-bold text-emerald-600 hover:text-emerald-700 cursor-pointer">
                           Bayar Sekarang →
                         </button>
                       </>

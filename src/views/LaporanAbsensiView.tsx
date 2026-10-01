@@ -57,13 +57,15 @@ export const LaporanAbsensiView: React.FC<LaporanAbsensiViewProps> = ({
       return [std.nama, ...dayValues, presentCount, `${pct}%`];
     });
 
-    const csvContent =
-      'data:text/csv;charset=utf-8,' +
-      [headers.join(','), ...rows.map((e) => e.map((val) => `"${val}"`).join(','))].join('\n');
-
-    const encodedUri = encodeURI(csvContent);
+    // Escape sesuai RFC 4180 (tanda kutip digandakan), lalu unduh lewat Blob
+    // agar karakter seperti '#' tidak memotong isi file.
+    const escapeCell = (val: string | number) => `"${String(val).replace(/"/g, '""')}"`;
+    const csvContent = [headers, ...rows].map((r) => r.map(escapeCell).join(',')).join('\r\n');
+    // BOM supaya Excel membaca UTF-8 dengan benar
+    const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
+    link.setAttribute('href', url);
     link.setAttribute(
       'download',
       `Laporan_Absensi_${currentClass?.nama || 'Kelas'}_${MONTH_NAMES[selectedMonth - 1]}_${selectedYear}.csv`
@@ -71,6 +73,7 @@ export const LaporanAbsensiView: React.FC<LaporanAbsensiViewProps> = ({
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    setTimeout(() => URL.revokeObjectURL(url), 0);
   };
 
   return (

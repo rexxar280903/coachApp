@@ -11,6 +11,7 @@ import {
   FeeStatus,
   PaymentSubmission 
 } from '../types/sportkit';
+import { getCurrentMonth, getCurrentYear, MONTH_NAMES } from '../utils/constants';
 
 
 const STORAGE_KEYS = {
@@ -559,8 +560,80 @@ export function clearDatabaseToZero() {
   localStorage.setItem(STORAGE_KEYS.PAYMENT_SUBMISSIONS, JSON.stringify([]));
 }
 
+// ─── Penyesuaian tanggal data demo ───────────────────────────────────────────
+// Data demo ditulis dengan acuan "sekarang = November 2024". Semua tanggal digeser
+// sehingga November 2024 jatuh pada bulan berjalan, agar demo langsung terlihat
+// di tahun/bulan saat ini (bukan terkunci di 2024).
+
+const SEED_ANCHOR = 2024 * 12 + (11 - 1);
+
+function seedMonthShift(): number {
+  return getCurrentYear() * 12 + (getCurrentMonth() - 1) - SEED_ANCHOR;
+}
+
+function shiftPeriod(tahun: number, bulan: number, delta: number) {
+  const p = tahun * 12 + (bulan - 1) + delta;
+  return { tahun: Math.floor(p / 12), bulan: (p % 12) + 1 };
+}
+
+/** Geser 'YYYY-MM-DD' (boleh diikuti ' HH:MM') sebanyak delta bulan; tanggal dipotong ke akhir bulan. */
+function shiftDateStr(value: string | undefined, delta: number): string | undefined {
+  if (!value) return value;
+  const m = /^(\d{4})-(\d{2})-(\d{2})(.*)$/.exec(value);
+  if (!m) return value;
+  const { tahun, bulan } = shiftPeriod(Number(m[1]), Number(m[2]), delta);
+  const lastDay = new Date(tahun, bulan, 0).getDate();
+  const day = Math.min(Number(m[3]), lastDay);
+  return `${tahun}-${String(bulan).padStart(2, '0')}-${String(day).padStart(2, '0')}${m[4]}`;
+}
+
+/** Geser teks "<Nama Bulan> <Tahun>" (mis. "November 2024") di keterangan demo. */
+function shiftMonthText(text: string | undefined, delta: number): string | undefined {
+  if (!text) return text;
+  const re = new RegExp(`(${MONTH_NAMES.join('|')}) (\\d{4})`, 'g');
+  return text.replace(re, (_, name: string, year: string) => {
+    const { tahun, bulan } = shiftPeriod(Number(year), MONTH_NAMES.indexOf(name as (typeof MONTH_NAMES)[number]) + 1, delta);
+    return `${MONTH_NAMES[bulan - 1]} ${tahun}`;
+  });
+}
+
+function shiftSeed(seed: ReturnType<typeof generateSeedData>, submissions: PaymentSubmission[]) {
+  const d = seedMonthShift();
+  const date = (v: string | undefined) => shiftDateStr(v, d);
+  return {
+    ...seed,
+    students: seed.students.map((st) => ({ ...st, tanggalBergabung: date(st.tanggalBergabung)! })),
+    monthlyDues: seed.monthlyDues.map((due) => {
+      const { tahun, bulan } = shiftPeriod(due.tahun, due.bulan, d);
+      return { ...due, id: `due-${due.siswaId}-${tahun}-${bulan}`, tahun, bulan, tanggalBayar: date(due.tanggalBayar) };
+    }),
+    events: seed.events.map((e) => ({ ...e, tanggal: date(e.tanggal)! })),
+    eventParticipants: seed.eventParticipants.map((ep) => ({ ...ep, tanggalBayar: date(ep.tanggalBayar) })),
+    attendanceSessions: seed.attendanceSessions.map((a) => {
+      const tanggal = date(a.tanggal)!;
+      return { ...a, id: `att-${tanggal}-${a.kelasId}`, tanggal };
+    }),
+    transactions: seed.transactions.map((t) => ({
+      ...t,
+      tanggal: date(t.tanggal)!,
+      keterangan: shiftMonthText(t.keterangan, d)!,
+    })),
+    submissions: submissions.map((sub) => {
+      const period = sub.bulan && sub.tahun ? shiftPeriod(sub.tahun, sub.bulan, d) : null;
+      return {
+        ...sub,
+        ...(period ? { tahun: period.tahun, bulan: period.bulan } : {}),
+        tanggalTransfer: date(sub.tanggalTransfer)!,
+        tanggalKirim: date(sub.tanggalKirim)!,
+        tanggalVerifikasi: date(sub.tanggalVerifikasi),
+        pesanSiswa: shiftMonthText(sub.pesanSiswa, d),
+      };
+    }),
+  };
+}
+
 export function resetToSeedData() {
-  const seed = generateSeedData();
+  const seed = shiftSeed(generateSeedData(), INITIAL_SUBMISSIONS);
   localStorage.setItem(STORAGE_KEYS.STUDENTS, JSON.stringify(seed.students));
   localStorage.setItem(STORAGE_KEYS.CLASSES, JSON.stringify(seed.classes));
   localStorage.setItem(STORAGE_KEYS.MONTHLY_DUES, JSON.stringify(seed.monthlyDues));
@@ -569,7 +642,7 @@ export function resetToSeedData() {
   localStorage.setItem(STORAGE_KEYS.ATTENDANCE, JSON.stringify(seed.attendanceSessions));
   localStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(seed.transactions));
   localStorage.setItem(STORAGE_KEYS.PROFILE, JSON.stringify(seed.profile));
-  localStorage.setItem(STORAGE_KEYS.PAYMENT_SUBMISSIONS, JSON.stringify(INITIAL_SUBMISSIONS));
+  localStorage.setItem(STORAGE_KEYS.PAYMENT_SUBMISSIONS, JSON.stringify(seed.submissions));
 }
 
 // Data Getters & Setters

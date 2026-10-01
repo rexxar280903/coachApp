@@ -216,6 +216,23 @@ Agar bisa dipakai seperti app native di HP coach/admin.
 
 ---
 
+## 🐞 PERBAIKAN BUG TAHAP 2 — SELESAI ✅
+
+| No | Masalah | Perbaikan |
+|----|---------|-----------|
+| 1 | Cetak kuitansi ikut mencetak halaman di belakangnya | Kuitansi dirender via portal; `#root` disembunyikan saat print |
+| 2 | Bulan sebelum tanggal bergabung tampil menunggak | Status efektif dari `tanggalBergabung` (`effectiveDueStatus`), bulan itu tidak bisa dibayar |
+| 3 | Siswa Cuti/Nonaktif tetap terlihat menunggak | Status `cuti`/`nonaktif` sejak `tanggalStatus`; dikunci saat siswa aktif kembali; siswa nonaktif disembunyikan di matriks (opsional ditampilkan) |
+| 4 | Portal siswa menampilkan cicilan sebagai LUNAS | Status dari record tagihan, tampil terbayar & sisa, tombol "Bayar Sisa" |
+| 5 | Ekspor CSV terpotong oleh `#`, kutip tidak di-escape | Ekspor via Blob, escape RFC 4180, BOM UTF-8 |
+| 6 | Edit biodata tanpa validasi | Validasi nama, nomor HP, email |
+| 7 | Kelebihan bayar tidak diperingatkan | Konfirmasi di modal pembayaran, peringatan di verifikasi & input admin |
+| 8 | Ubah tarif kelas tidak berlaku ke siswa | Tarif calon & siswa aktif ikut kelas (juga saat pindah kelas); record iuran lama tidak diubah |
+| 9 | Catatan verifikasi selalu "lunas" | Catatan & peringatan mengikuti hasil (lunas / cicilan / kelebihan) |
+| 10 | Data demo terkunci di 2024 | Tanggal demo digeser relatif ke bulan berjalan |
+
+---
+
 ## 📝 LANGKAH REKOMENDASI (Urutan Prioritas yang Diperbarui)
 
 > ✅ **Keputusan:** Pilih **Opsi A** — rapikan fondasi frontend terlebih dahulu sebelum integrasi Supabase.

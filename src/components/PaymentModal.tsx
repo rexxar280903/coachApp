@@ -75,7 +75,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
   onSuccess,
   onViewReceipt,
 }) => {
-  const { toast } = useToast();
+  const { toast, confirm } = useToast();
   const [tanggal, setTanggal] = useState<string>('');
   const [jumlahBayar, setJumlahBayar] = useState<number>(nominalAwal);
   const [metode, setMetode] = useState<PaymentMethod>('Transfer BCA');
@@ -135,13 +135,24 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!jumlahBayar || Number(jumlahBayar) <= 0) {
       toast.error('Nominal tidak valid', 'Jumlah pembayaran harus lebih dari 0.');
       return;
     }
     const isRutin = tipe === 'Iuran Rutin';
+    // nominalAwal = sisa tagihan untuk periode yang dibuka (berlaku jika periode tidak diganti)
+    const samePeriod = !isRutin || (selectedBulan === (initialBulan || selectedBulan) && selectedTahun === (initialTahun || selectedTahun));
+    if (samePeriod && nominalAwal > 0 && Number(jumlahBayar) > nominalAwal) {
+      const ok = await confirm(
+        'Kelebihan Bayar?',
+        `Jumlah ${formatRupiah(Number(jumlahBayar))} melebihi sisa tagihan ${formatRupiah(nominalAwal)} (lebih ${formatRupiah(
+          Number(jumlahBayar) - nominalAwal
+        )}). Tetap catat pembayaran ini?`
+      );
+      if (!ok) return;
+    }
     const receiptNo = generateReceiptNumber();
     const monthLabel = tipe === 'Iuran Rutin' ? ` ${MONTH_NAMES[selectedBulan - 1]} ${selectedTahun}` : '';
     const tx: PaymentTransaction = {
@@ -344,6 +355,17 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
               <p className="text-[11px] text-slate-500 mt-1 italic">
                 Terbilang: {numberToWordsId(Number(jumlahBayar))}
               </p>
+              {nominalAwal > 0 && Number(jumlahBayar) > 0 && Number(jumlahBayar) !== nominalAwal && (
+                <p
+                  className={`text-[11px] mt-1 font-semibold ${
+                    Number(jumlahBayar) > nominalAwal ? 'text-rose-600' : 'text-amber-600'
+                  }`}
+                >
+                  {Number(jumlahBayar) > nominalAwal
+                    ? `Melebihi sisa tagihan ${formatRupiah(nominalAwal)}`
+                    : `Dicatat sebagai cicilan — sisa ${formatRupiah(nominalAwal - Number(jumlahBayar))}`}
+                </p>
+              )}
             </div>
 
             {/* Metode Pembayaran */}

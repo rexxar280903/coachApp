@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useToast } from '../components/Toast';
-import { receiptForSubmission } from '../utils/payments';
+import { isValidPhone } from '../utils/coaches';
+import { receiptForSubmission, submissionOutcome, defaultVerifyNote, effectiveDueStatus, isNonBillable, FEE_STATUS_LABEL } from '../utils/payments';
 import { getTodayISO, getCurrentYear, getYearOptions } from '../utils/constants';
 import { 
   Student, 
@@ -167,6 +168,16 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
     setIsEditingBiodata(false);
   }, [currentStudent]);
 
+  const verifyOutcome = verifyModalSub
+    ? submissionOutcome(verifyModalSub, monthlyDues, currentClass?.iuranBulanan || currentStudent?.iuranBulanan || verifyModalSub.nominal)
+    : null;
+
+  // Catatan default mengikuti hasil pembayaran (lunas / cicilan / kelebihan)
+  React.useEffect(() => {
+    if (verifyModalSub) setVerifyNote(defaultVerifyNote(verifyModalSub, verifyOutcome));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [verifyModalSub]);
+
   if (!currentStudent) {
     return (
       <div className="sports-card rounded-2xl p-12 text-center space-y-3">
@@ -229,6 +240,8 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
         return 'bg-rose-500 hover:bg-rose-600 text-white cursor-pointer shadow-xs';
       case 'belum_bergabung':
         return 'bg-slate-200 text-slate-400 cursor-not-allowed';
+      case 'nonaktif':
+        return 'bg-slate-300 text-slate-500';
       case 'cuti':
         return 'bg-amber-100 text-amber-800 border border-amber-300';
       default:
@@ -311,9 +324,10 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
 
   const handleCellClick = (monthNumber: number) => {
     const record = studentDues.find((d) => d.bulan === monthNumber);
+    const status = effectiveDueStatus(currentStudent, record, monthNumber, selectedYear);
 
-    if (record && record.status === 'belum_bergabung') {
-      toast.info('Belum bergabung', 'Siswa belum bergabung pada bulan ini.');
+    if (isNonBillable(status)) {
+      toast.info(FEE_STATUS_LABEL[status], `Iuran bulan ${FULL_MONTH_NAMES[monthNumber - 1]} ${selectedYear} tidak ditagih.`);
       return;
     }
 
@@ -343,10 +357,42 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
 
   const handleSaveBiodata = (e: React.FormEvent) => {
     e.preventDefault();
-    if (editForm) {
-      onUpdateStudent(editForm);
-      setIsEditingBiodata(false);
+    if (!editForm) return;
+
+    const nama = editForm.nama.trim();
+    if (!nama) {
+      toast.error('Nama wajib diisi', 'Nama siswa tidak boleh kosong.');
+      return;
     }
+    // '-' dipakai sebagai penanda "tidak diisi"
+    const filled = (v?: string) => !!v && v.trim() !== '' && v.trim() !== '-';
+    const phones = [
+      { label: 'No. HP siswa', value: editForm.noHp },
+      { label: 'No. HP ayah', value: editForm.orangTua.noHpAyah },
+      { label: 'No. HP ibu', value: editForm.orangTua.noHpIbu },
+    ];
+    if (!phones.some((p) => filled(p.value))) {
+      toast.error('Nomor kontak wajib diisi', 'Isi minimal satu nomor HP siswa atau orang tua.');
+      return;
+    }
+    const badPhone = phones.find((p) => filled(p.value) && !isValidPhone(p.value));
+    if (badPhone) {
+      toast.error('Nomor HP tidak valid', `${badPhone.label} harus diawali 0 / 62 / +62 lalu 8–12 digit angka.`);
+      return;
+    }
+    if (filled(editForm.email) && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(editForm.email!.trim())) {
+      toast.error('Email tidak valid', 'Periksa kembali format alamat email.');
+      return;
+    }
+
+    onUpdateStudent({
+      ...editForm,
+      nama,
+      noHp: phones.find((p) => filled(p.value))!.value.trim(),
+      email: filled(editForm.email) ? editForm.email!.trim() : undefined,
+    });
+    setIsEditingBiodata(false);
+    toast.success('Biodata disimpan', `Data ${nama} berhasil diperbarui.`);
   };
 
   const cleanedPhone = currentStudent.noHp.replace(/[^0-9]/g, '');
@@ -542,7 +588,7 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
                   </td>
                   {Array.from({ length: 12 }, (_, i) => i + 1).map((monthNum) => {
                     const due = studentDues.find((d) => d.bulan === monthNum);
-                    const status: FeeStatus = due ? due.status : 'belum_bayar';
+                    const status: FeeStatus = effectiveDueStatus(currentStudent, due, monthNum, selectedYear);
                     const monthSub = studentSubmissions.find(
                       (s) => s.bulan === monthNum && (!s.tahun || s.tahun === selectedYear)
                     );
@@ -560,7 +606,9 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
                         className={`p-2 border border-slate-200 transition-all cursor-pointer relative ${getCellColorClass(
                           status
                         )}`}
-                        title={`Bulan: ${FULL_MONTH_NAMES[monthNum - 1]} (${status.replace('_', ' ')})${
+                        title={`Bulan: ${FULL_MONTH_NAMES[monthNum - 1]} (${FEE_STATUS_LABEL[status]}${
+                          due && due.status === 'belum_lunas' ? `: ${formatRupiah(due.terbayar || 0)} dari ${formatRupiah(due.nominal)}` : ''
+                        })${
                           monthSub ? ` - Bukti Pembayaran: ${monthSub.status.toUpperCase()}` : ''
                         }`}
                       >
@@ -571,6 +619,7 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
                             {status === 'belum_bayar' && 'BAYAR'}
                             {status === 'belum_bergabung' && '-'}
                             {status === 'cuti' && 'CUTI'}
+                            {status === 'nonaktif' && 'NONAKTIF'}
                           </span>
                           {monthSub && (
                             <span
@@ -617,6 +666,10 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
             <div className="flex items-center gap-2">
               <span className="w-3.5 h-3.5 rounded bg-amber-100 border border-amber-300" />
               <span className="font-semibold text-amber-800">Cuti</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="w-3.5 h-3.5 rounded bg-slate-300" />
+              <span className="font-semibold text-slate-500">Nonaktif</span>
             </div>
             <div className="h-4 w-px bg-slate-300 hidden md:block" />
             <div className="flex items-center gap-2">
@@ -1639,7 +1692,25 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
                   <span className="text-slate-500 font-medium">Metode & Tgl:</span>
                   <span className="font-semibold text-slate-800">{verifyModalSub.metodePembayaran} ({verifyModalSub.tanggalTransfer})</span>
                 </div>
+                {verifyOutcome && (
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-500 font-medium">Sisa Tagihan:</span>
+                    <span className="font-bold text-slate-900 font-mono">{formatRupiah(verifyOutcome.sisa)}</span>
+                  </div>
+                )}
               </div>
+
+              {verifyOutcome && verifyOutcome.kind !== 'lunas' && (
+                <div
+                  className={`p-3 rounded-xl font-semibold border ${
+                    verifyOutcome.kind === 'lebih'
+                      ? 'bg-rose-50 border-rose-200 text-rose-800'
+                      : 'bg-amber-50 border-amber-200 text-amber-800'
+                  }`}
+                >
+                  ⚠️ Nominal transfer {verifyOutcome.text}.
+                </div>
+              )}
 
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">
