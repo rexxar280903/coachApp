@@ -49,6 +49,7 @@ import {
 import { numberToWordsId } from './utils/numberToWordsId';
 import { MONTH_NAMES, getCurrentYear, getCurrentMonth, getTodayISO, getCurrentTime } from './utils/constants';
 import { useToast } from './components/Toast';
+import { migrateCoachLinks, syncClassSnapshots, getCoachClasses } from './utils/coaches';
 
 import { Header } from './components/Header';
 import { Sidebar, ActiveNav } from './components/Sidebar';
@@ -200,11 +201,16 @@ export default function App() {
   const loadAllData = () => {
     const stds = getStudents();
     const coachs = getCoaches();
-    const cls = getClasses();
+    const migrated = migrateCoachLinks(getClasses(), getAttendanceSessions(), coachs);
+    const cls = migrated.classes;
+    const atts = migrated.sessions;
+    if (migrated.changed) {
+      saveClasses(cls);
+      saveAttendanceSessions(atts);
+    }
     const dues = getMonthlyDues();
     const evts = getEvents();
     const parts = getEventParticipants();
-    const atts = getAttendanceSessions();
     const txs = getTransactions();
     const prof = getClubProfile();
     const subs = getPaymentSubmissions();
@@ -620,19 +626,30 @@ export default function App() {
     const updated = coaches.map((c) => (c.id === updatedCoach.id ? updatedCoach : c));
     setCoaches(updated);
     saveCoaches(updated);
+    const syncedClasses = syncClassSnapshots(classes, updated);
+    setClasses(syncedClasses);
+    saveClasses(syncedClasses);
     toast.success('Data pelatih diperbarui', `${updatedCoach.nama} berhasil disimpan.`);
   };
 
   const handleDeleteCoach = async (coachId: string) => {
     const coach = coaches.find((c) => c.id === coachId);
+    const affected = getCoachClasses(coachId, classes);
     const ok = await confirm(
       'Hapus Data Pelatih?',
-      `Data ${coach?.nama || 'pelatih ini'} akan dihapus dari sistem. Kelas yang diampu tidak akan terpengaruh.`
+      affected.length > 0
+        ? `${coach?.nama || 'Pelatih ini'} akan dihapus dan dilepas dari kelas: ${affected.map((c) => c.nama).join(', ')}. Kelas tersebut akan berstatus "Belum ada pelatih" sampai Anda menetapkan pelatih baru.`
+        : `Data ${coach?.nama || 'pelatih ini'} akan dihapus dari sistem.`
     );
     if (ok) {
       const updated = coaches.filter((c) => c.id !== coachId);
       setCoaches(updated);
       saveCoaches(updated);
+      if (affected.length > 0) {
+        const syncedClasses = syncClassSnapshots(classes, updated);
+        setClasses(syncedClasses);
+        saveClasses(syncedClasses);
+      }
       toast.success('Pelatih dihapus', `${coach?.nama} telah dihapus dari sistem.`);
     }
   };
@@ -1046,6 +1063,7 @@ export default function App() {
                 <PelatihView
                   coaches={coaches}
                   classes={classes}
+                  students={students}
                   onAddCoach={handleAddCoach}
                   onUpdateCoach={handleUpdateCoach}
                   onDeleteCoach={handleDeleteCoach}

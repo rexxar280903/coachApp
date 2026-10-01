@@ -32,6 +32,7 @@
 | 17 | Multi-Role Switching | `Header.tsx` | Admin, Coach, Student, Public mode |
 | 18 | Responsive Sidebar | `Sidebar.tsx` | Navigasi desktop + mobile drawer |
 | 19 | Pendaftaran Online (Public) | `PendaftaranView.tsx` | Mode link publik untuk bio IG/WA |
+| 20 | Manajemen Pelatih | `PelatihView.tsx`, `utils/coaches.ts` | CRUD, relasi kelas/sesi via ID (multi-pelatih), validasi HP & duplikat, pencarian, beban kelas |
 
 ---
 

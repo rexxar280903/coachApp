@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
-import { Coach, CoachStatus } from '../types/sportkit';
-import { ClassGroup } from '../types/sportkit';
+import { Coach, CoachStatus, ClassGroup, Student } from '../types/sportkit';
+import { getCoachClasses, isValidPhone, normalizeName, normalizePhone } from '../utils/coaches';
 import {
+  Search,
+  Users,
   UserCheck,
   Plus,
   Edit3,
@@ -20,6 +22,7 @@ import {
 interface PelatihViewProps {
   coaches: Coach[];
   classes: ClassGroup[];
+  students: Student[];
   onAddCoach: (coach: Coach) => void;
   onUpdateCoach: (coach: Coach) => void;
   onDeleteCoach: (coachId: string) => void;
@@ -38,6 +41,7 @@ const EMPTY_FORM = (): Omit<Coach, 'id'> => ({
 export const PelatihView: React.FC<PelatihViewProps> = ({
   coaches,
   classes,
+  students,
   onAddCoach,
   onUpdateCoach,
   onDeleteCoach,
@@ -46,10 +50,13 @@ export const PelatihView: React.FC<PelatihViewProps> = ({
   const [editingCoach, setEditingCoach] = useState<Coach | null>(null);
   const [form, setForm] = useState<Omit<Coach, 'id'>>(EMPTY_FORM());
   const [filterStatus, setFilterStatus] = useState<CoachStatus | 'Semua'>('Semua');
+  const [search, setSearch] = useState('');
+  const [errors, setErrors] = useState<{ nama?: string; noHp?: string }>({});
 
   const openCreateModal = () => {
     setEditingCoach(null);
     setForm(EMPTY_FORM());
+    setErrors({});
     setShowModal(true);
   };
 
@@ -64,31 +71,59 @@ export const PelatihView: React.FC<PelatihViewProps> = ({
       catatan: coach.catatan || '',
       tanggalBergabung: coach.tanggalBergabung,
     });
+    setErrors({});
     setShowModal(true);
+  };
+
+  const validate = () => {
+    const next: { nama?: string; noHp?: string } = {};
+    const others = coaches.filter((c) => c.id !== editingCoach?.id);
+    const nama = form.nama.trim();
+
+    if (!nama) next.nama = 'Nama pelatih wajib diisi.';
+    else if (others.some((c) => normalizeName(c.nama) === normalizeName(nama)))
+      next.nama = 'Nama pelatih sudah terdaftar.';
+
+    if (!isValidPhone(form.noHp)) next.noHp = 'Format nomor HP tidak valid (contoh: 0812-3456-7890).';
+    else if (others.some((c) => normalizePhone(c.noHp) === normalizePhone(form.noHp)))
+      next.noHp = 'Nomor HP sudah dipakai pelatih lain.';
+
+    setErrors(next);
+    return Object.keys(next).length === 0;
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.nama.trim()) return;
+    if (!validate()) return;
+
+    const clean = {
+      ...form,
+      nama: form.nama.trim(),
+      noHp: form.noHp.trim(),
+      spesialisasi: form.spesialisasi.trim(),
+    };
 
     if (editingCoach) {
-      onUpdateCoach({ ...editingCoach, ...form, nama: form.nama.trim() });
+      onUpdateCoach({ ...editingCoach, ...clean });
     } else {
-      onAddCoach({
-        ...form,
-        nama: form.nama.trim(),
-        id: `coach-${Date.now()}`,
-      });
+      onAddCoach({ ...clean, id: `coach-${Date.now()}` });
     }
     setShowModal(false);
   };
 
-  const getCoachClasses = (coachNama: string) =>
-    classes.filter((c) => c.pelatih === coachNama);
+  const getCoachStats = (coachId: string) => {
+    const coachClasses = getCoachClasses(coachId, classes);
+    const ids = new Set(coachClasses.map((c) => c.id));
+    const activeStudents = students.filter((s) => ids.has(s.kelasId) && s.status === 'Aktif').length;
+    return { coachClasses, activeStudents };
+  };
 
-  const filtered = filterStatus === 'Semua'
-    ? coaches
-    : coaches.filter((c) => c.status === filterStatus);
+  const query = search.trim().toLowerCase();
+  const filtered = coaches.filter(
+    (c) =>
+      (filterStatus === 'Semua' || c.status === filterStatus) &&
+      (!query || `${c.nama} ${c.spesialisasi} ${c.noHp}`.toLowerCase().includes(query))
+  );
 
   const aktifCount = coaches.filter((c) => c.status === 'Aktif').length;
 
@@ -113,7 +148,19 @@ export const PelatihView: React.FC<PelatihViewProps> = ({
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Search */}
+          <div className="relative">
+            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Cari nama / spesialisasi..."
+              className="text-xs rounded-xl border border-slate-300 pl-8 pr-3 py-2 text-slate-700 focus:outline-none focus:ring-2 focus:ring-sky-500 w-48"
+            />
+          </div>
+
           {/* Filter */}
           <select
             value={filterStatus}
@@ -139,15 +186,24 @@ export const PelatihView: React.FC<PelatihViewProps> = ({
       {filtered.length === 0 && (
         <div className="sports-card rounded-2xl p-12 text-center">
           <UserCheck className="w-10 h-10 text-slate-300 mx-auto mb-3" />
-          <p className="text-sm font-bold text-slate-600">Belum ada pelatih terdaftar</p>
-          <p className="text-xs text-slate-400 mt-1">Klik tombol + Tambah Pelatih untuk memulai</p>
+          {coaches.length === 0 ? (
+            <>
+              <p className="text-sm font-bold text-slate-600">Belum ada pelatih terdaftar</p>
+              <p className="text-xs text-slate-400 mt-1">Klik tombol + Tambah Pelatih untuk memulai</p>
+            </>
+          ) : (
+            <>
+              <p className="text-sm font-bold text-slate-600">Tidak ada pelatih yang cocok</p>
+              <p className="text-xs text-slate-400 mt-1">Ubah kata kunci pencarian atau filter status</p>
+            </>
+          )}
         </div>
       )}
 
       {/* Coach Cards Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
         {filtered.map((coach) => {
-          const coachClasses = getCoachClasses(coach.nama);
+          const { coachClasses, activeStudents } = getCoachStats(coach.id);
           const isActive = coach.status === 'Aktif';
 
           return (
@@ -220,7 +276,10 @@ export const PelatihView: React.FC<PelatihViewProps> = ({
                 {coachClasses.length > 0 && (
                   <div className="mt-3 pt-3 border-t border-slate-100">
                     <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1.5 flex items-center gap-1">
-                      <Layers className="w-3 h-3" /> Mengampu:
+                      <Layers className="w-3 h-3" /> Mengampu {coachClasses.length} kelas
+                      <span className="ml-auto flex items-center gap-1 normal-case tracking-normal">
+                        <Users className="w-3 h-3" /> {activeStudents} siswa aktif
+                      </span>
                     </p>
                     <div className="flex flex-wrap gap-1.5">
                       {coachClasses.map((cls) => (
@@ -270,6 +329,7 @@ export const PelatihView: React.FC<PelatihViewProps> = ({
                       placeholder="Coach Dimas"
                       className="w-full text-xs rounded-xl border border-slate-300 px-3 py-2.5 text-slate-900 font-bold focus:outline-none focus:ring-2 focus:ring-sky-500"
                     />
+                    {errors.nama && <p className="text-[11px] text-rose-600 mt-1">{errors.nama}</p>}
                   </div>
 
                   <div>
@@ -281,6 +341,7 @@ export const PelatihView: React.FC<PelatihViewProps> = ({
                       placeholder="0812-3456-7890"
                       className="w-full text-xs rounded-xl border border-slate-300 px-3 py-2.5 text-slate-900 font-mono focus:outline-none focus:ring-2 focus:ring-sky-500"
                     />
+                    {errors.noHp && <p className="text-[11px] text-rose-600 mt-1">{errors.noHp}</p>}
                   </div>
 
                   <div>

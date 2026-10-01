@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { AttendanceSession, Student, ClassGroup, Coach } from '../types/sportkit';
 import { Search, Plus, Edit2, CheckSquare, Square, Check, X, ArrowLeft, Trash2, CalendarCheck, UserCheck, Clock } from 'lucide-react';
 import { useToast } from '../components/Toast';
+import { getClassCoaches, getSessionCoachLabel } from '../utils/coaches';
 
 interface SesiAbsensiViewProps {
   sessions: AttendanceSession[];
@@ -26,7 +27,17 @@ export const SesiAbsensiView: React.FC<SesiAbsensiViewProps> = ({
 
   const [tanggal, setTanggal] = useState<string>(new Date().toISOString().split('T')[0]);
   const [selectedClassId, setSelectedClassId] = useState<string>(classes[0]?.id || 'ku-10');
-  const [selectedCoachNama, setSelectedCoachNama] = useState<string>(coaches.find(c => c.status === 'Aktif')?.nama || '');
+  const activeCoaches = coaches.filter((c) => c.status === 'Aktif');
+  const [selectedCoachId, setSelectedCoachId] = useState<string>(activeCoaches[0]?.id || '');
+  const [manualCoachNama, setManualCoachNama] = useState<string>('');
+
+  // Saat kelas dipilih, otomatis pilih pelatih pengampu kelas tersebut
+  const handleSelectClass = (classId: string) => {
+    setSelectedClassId(classId);
+    const cls = classes.find((c) => c.id === classId);
+    const firstCoach = cls && getClassCoaches(cls, activeCoaches)[0];
+    if (firstCoach) setSelectedCoachId(firstCoach.id);
+  };
   const [catatan, setCatatan] = useState<string>('Latihan teknik dasar & game simulation');
   const [kehadiranMap, setKehadiranMap] = useState<{ [sid: string]: boolean }>({});
 
@@ -60,12 +71,14 @@ export const SesiAbsensiView: React.FC<SesiAbsensiViewProps> = ({
 
   const handleSaveSession = (e: React.FormEvent) => {
     e.preventDefault();
+    const coach = coaches.find((c) => c.id === selectedCoachId);
     const newSession: AttendanceSession = {
       id: 'att-' + Date.now(),
       tanggal,
       kelasId: selectedClassId,
       catatan,
-      pelatih: selectedCoachNama || 'Coach Pelatih',
+      pelatihId: coach?.id,
+      pelatih: coach?.nama || manualCoachNama.trim() || '-',
       kehadiran: kehadiranMap,
     };
 
@@ -167,7 +180,7 @@ export const SesiAbsensiView: React.FC<SesiAbsensiViewProps> = ({
                             {session.catatan}
                           </td>
                           <td className="py-3 px-4 text-slate-600 font-medium">
-                            {session.pelatih}
+                            {getSessionCoachLabel(session, coaches)}
                           </td>
                           <td className="py-3 px-4 text-center">
                             <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-mono font-bold text-[11px] border border-emerald-200">
@@ -237,7 +250,7 @@ export const SesiAbsensiView: React.FC<SesiAbsensiViewProps> = ({
                 </label>
                 <select
                   value={selectedClassId}
-                  onChange={(e) => setSelectedClassId(e.target.value)}
+                  onChange={(e) => handleSelectClass(e.target.value)}
                   className="w-full text-xs font-semibold rounded-xl border border-slate-300 px-3.5 py-2.5 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white cursor-pointer"
                 >
                   {classes.map((cls) => (
@@ -252,15 +265,15 @@ export const SesiAbsensiView: React.FC<SesiAbsensiViewProps> = ({
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
                   Pelatih Pencatat Absensi
                 </label>
-                {coaches.filter(c => c.status === 'Aktif').length > 0 ? (
+                {activeCoaches.length > 0 ? (
                   <select
-                    value={selectedCoachNama}
-                    onChange={(e) => setSelectedCoachNama(e.target.value)}
+                    value={selectedCoachId}
+                    onChange={(e) => setSelectedCoachId(e.target.value)}
                     className="w-full text-xs rounded-xl border border-slate-300 px-3.5 py-2.5 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer bg-white"
                   >
                     <option value="">-- Pilih Pelatih --</option>
-                    {coaches.filter(c => c.status === 'Aktif').map((c) => (
-                      <option key={c.id} value={c.nama}>
+                    {activeCoaches.map((c) => (
+                      <option key={c.id} value={c.id}>
                         {c.nama} — {c.spesialisasi}
                       </option>
                     ))}
@@ -268,8 +281,8 @@ export const SesiAbsensiView: React.FC<SesiAbsensiViewProps> = ({
                 ) : (
                   <input
                     type="text"
-                    value={selectedCoachNama}
-                    onChange={(e) => setSelectedCoachNama(e.target.value)}
+                    value={manualCoachNama}
+                    onChange={(e) => setManualCoachNama(e.target.value)}
                     placeholder="Nama pelatih pencatat absensi"
                     className="w-full text-xs rounded-xl border border-slate-300 px-3.5 py-2.5 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
                   />

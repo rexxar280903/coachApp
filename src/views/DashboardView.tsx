@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Student, ClassGroup, ClubEvent, PaymentTransaction, Coach } from '../types/sportkit';
+import { getCoachClasses } from '../utils/coaches';
 import { formatRupiah } from '../utils/numberToWordsId';
 import { 
   Users, 
@@ -430,7 +431,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-slate-100">
             {coaches.filter(c => c.status === 'Aktif').slice(0, 6).map((coach) => {
-              const coachClasses = classes.filter(c => c.pelatih === coach.nama);
+              const coachClasses = getCoachClasses(coach.id, classes);
               return (
                 <div key={coach.id} className="p-4 flex items-start gap-3 hover:bg-slate-50/60 transition-colors">
                   <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-sky-500 to-emerald-500 flex items-center justify-center text-white font-bold text-sm shrink-0">

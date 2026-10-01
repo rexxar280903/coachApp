@@ -60,7 +60,8 @@ export interface ClassGroup {
   deskripsi: string;
   iuranBulanan: number;
   biayaPendaftaran: number;
-  pelatih: string;
+  pelatihIds?: string[]; // relasi ke Coach.id (sumber kebenaran)
+  pelatih: string;       // snapshot nama (fallback data lama / pelatih terhapus)
 }
 
 export interface MonthlyDueRecord {
@@ -102,7 +103,8 @@ export interface AttendanceSession {
   tanggal: string; // YYYY-MM-DD
   kelasId: string;
   catatan: string;
-  pelatih: string;
+  pelatihId?: string; // relasi ke Coach.id
+  pelatih: string;    // snapshot nama (fallback)
   kehadiran: {
     [siswaId: string]: boolean; // true = hadir, false = absen
   };

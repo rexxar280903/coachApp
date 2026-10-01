@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { ClassGroup, Student, Coach } from '../types/sportkit';
 import { formatRupiah } from '../utils/numberToWordsId';
+import { getClassCoaches, getClassCoachLabel } from '../utils/coaches';
 import { 
   Plus, 
   Layers, 
@@ -45,7 +46,13 @@ export const KelasManagerView: React.FC<KelasManagerViewProps> = ({
   const [deskripsi, setDeskripsi] = useState<string>('');
   const [iuranBulanan, setIuranBulanan] = useState<number>(100000);
   const [biayaPendaftaran, setBiayaPendaftaran] = useState<number>(1000000);
-  const [pelatih, setPelatih] = useState<string>('');
+  const [pelatihIds, setPelatihIds] = useState<string[]>([]);
+
+  const togglePelatih = (id: string) =>
+    setPelatihIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+
+  // Pelatih yang bisa dipilih: semua yang aktif + yang sudah terpasang di kelas yang sedang diedit
+  const selectableCoaches = coaches.filter((c) => c.status === 'Aktif' || pelatihIds.includes(c.id));
 
   const openCreateModal = () => {
     setEditingClass(null);
@@ -53,7 +60,7 @@ export const KelasManagerView: React.FC<KelasManagerViewProps> = ({
     setDeskripsi('');
     setIuranBulanan(100000);
     setBiayaPendaftaran(1000000);
-    setPelatih('Coach ');
+    setPelatihIds([]);
     setShowModal(true);
   };
 
@@ -63,13 +70,18 @@ export const KelasManagerView: React.FC<KelasManagerViewProps> = ({
     setDeskripsi(cls.deskripsi);
     setIuranBulanan(cls.iuranBulanan);
     setBiayaPendaftaran(cls.biayaPendaftaran);
-    setPelatih(cls.pelatih);
+    setPelatihIds(getClassCoaches(cls, coaches).map((c) => c.id));
     setShowModal(true);
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!nama.trim()) return;
+
+    const pelatihNama = pelatihIds
+      .map((id) => coaches.find((c) => c.id === id)?.nama)
+      .filter(Boolean)
+      .join(' & ');
 
     if (editingClass) {
       onUpdateClass({
@@ -78,7 +90,8 @@ export const KelasManagerView: React.FC<KelasManagerViewProps> = ({
         deskripsi: deskripsi.trim(),
         iuranBulanan: Number(iuranBulanan),
         biayaPendaftaran: Number(biayaPendaftaran),
-        pelatih: pelatih.trim() || 'Coach Pelatih',
+        pelatihIds,
+        pelatih: pelatihNama,
       });
     } else {
       const newClass: ClassGroup = {
@@ -87,7 +100,8 @@ export const KelasManagerView: React.FC<KelasManagerViewProps> = ({
         deskripsi: deskripsi.trim() || 'Kelompok Kelas Olahraga',
         iuranBulanan: Number(iuranBulanan),
         biayaPendaftaran: Number(biayaPendaftaran),
-        pelatih: pelatih.trim() || 'Coach Pelatih',
+        pelatihIds,
+        pelatih: pelatihNama,
       };
       onAddClass(newClass);
     }
@@ -188,7 +202,7 @@ export const KelasManagerView: React.FC<KelasManagerViewProps> = ({
                       Pelatih Kelas:
                     </span>
                     <span className="font-bold text-slate-800">
-                      {cls.pelatih || 'Coach Pelatih'}
+                      {getClassCoachLabel(cls, coaches)}
                     </span>
                   </div>
 
@@ -275,31 +289,33 @@ export const KelasManagerView: React.FC<KelasManagerViewProps> = ({
 
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Pelatih Penanggung Jawab
+                  Pelatih Penanggung Jawab (boleh lebih dari satu)
                 </label>
-                {coaches.filter((c) => c.status === 'Aktif').length > 0 ? (
-                  <select
-                    value={pelatih}
-                    onChange={(e) => setPelatih(e.target.value)}
-                    className="w-full text-xs rounded-xl border border-slate-300 px-3 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer"
-                  >
-                    <option value="">-- Pilih Pelatih --</option>
-                    {coaches
-                      .filter((c) => c.status === 'Aktif')
-                      .map((c) => (
-                        <option key={c.id} value={c.nama}>
-                          {c.nama} — {c.spesialisasi}
-                        </option>
-                      ))}
-                  </select>
+                {selectableCoaches.length > 0 ? (
+                  <div className="max-h-40 overflow-y-auto rounded-xl border border-slate-300 divide-y divide-slate-100">
+                    {selectableCoaches.map((c) => (
+                      <label
+                        key={c.id}
+                        className="flex items-center gap-2.5 px-3 py-2 text-xs text-slate-800 hover:bg-slate-50 cursor-pointer"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={pelatihIds.includes(c.id)}
+                          onChange={() => togglePelatih(c.id)}
+                          className="accent-emerald-600"
+                        />
+                        <span className="font-semibold">{c.nama}</span>
+                        <span className="text-slate-400">— {c.spesialisasi}</span>
+                        {c.status !== 'Aktif' && (
+                          <span className="ml-auto text-[10px] text-slate-400">Nonaktif</span>
+                        )}
+                      </label>
+                    ))}
+                  </div>
                 ) : (
-                  <input
-                    type="text"
-                    value={pelatih}
-                    onChange={(e) => setPelatih(e.target.value)}
-                    placeholder="Coach Dimas (belum ada pelatih terdaftar)"
-                    className="w-full text-xs rounded-xl border border-slate-300 px-3 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                  />
+                  <p className="text-xs text-slate-500 rounded-xl border border-dashed border-slate-300 px-3 py-2.5">
+                    Belum ada pelatih aktif. Tambahkan dulu di menu Data Pelatih.
+                  </p>
                 )}
               </div>
 
