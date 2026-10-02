@@ -27,7 +27,11 @@ import { generateKodeAkses } from '../utils/kodeAkses';
 
 type Obj = Record<string, any>;
 
-const toSnake = (s: string) => s.replace(/[A-Z]/g, (m) => '_' + m.toLowerCase());
+/** Nama kolom yang tidak mengikuti aturan camelCase → snake_case biasa (mis. "WhatsApp" satu kata). */
+const SNAKE_EXCEPTIONS: Record<string, string> = { noWhatsApp: 'no_whatsapp' };
+
+const toSnake = (s: string) =>
+  SNAKE_EXCEPTIONS[s] ?? s.replace(/[A-Z]/g, (m) => '_' + m.toLowerCase());
 
 interface TableDef {
   table: string;
