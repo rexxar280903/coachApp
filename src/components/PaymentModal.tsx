@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { PaymentMethod, PaymentTransaction } from '../types/sportkit';
 import { formatRupiah, numberToWordsId } from '../utils/numberToWordsId';
-import { generateReceiptNumber, SAMPLE_TRANSFER_PROOF_SVG } from '../services/storage';
+import { generateReceiptNumber } from '../services/storage';
+import { fileToCompressedDataUrl } from '../utils/image';
+import { useToast } from './Toast';
 import { 
   CheckCircle2, 
   DollarSign, 
@@ -73,6 +75,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
   onSuccess,
   onViewReceipt,
 }) => {
+  const { toast } = useToast();
   const [tanggal, setTanggal] = useState<string>('');
   const [jumlahBayar, setJumlahBayar] = useState<number>(nominalAwal);
   const [metode, setMetode] = useState<PaymentMethod>('Transfer BCA');
@@ -104,27 +107,14 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
 
   if (!isOpen) return null;
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      if (file.size > 5 * 1024 * 1024) {
-        alert('Ukuran file maksimal 5 MB.');
-        return;
-      }
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        setBuktiGambarUrl(event.target?.result as string);
-      };
-      reader.readAsDataURL(file);
-    }
-  };
-
-  const handleUseSampleProof = () => {
-    setBuktiGambarUrl(SAMPLE_TRANSFER_PROOF_SVG);
-    if (!pesanPembayaran) {
-      setPesanPembayaran(
-        `Pembayaran iuran ${MONTH_NAMES[selectedBulan - 1]} ${selectedTahun} telah ditransfer melalui m-Banking oleh wali murid ${siswaNama}.`
-      );
+    e.target.value = '';
+    if (!file) return;
+    try {
+      setBuktiGambarUrl(await fileToCompressedDataUrl(file));
+    } catch (err) {
+      toast.error('Gambar tidak dapat dipakai', (err as Error).message);
     }
   };
 
@@ -150,7 +140,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
     setCreatedTx(tx);
     setIsSuccess(true);
     onSuccess(tx, {
-      buktiGambarUrl: buktiGambarUrl || SAMPLE_TRANSFER_PROOF_SVG,
+      buktiGambarUrl,
       pesanPembayaran: pesanPembayaran || `Pembayaran iuran ${MONTH_NAMES[selectedBulan - 1]} ${selectedTahun}`,
       catatanAdmin: catatan || 'Diinput & diverifikasi langsung oleh Admin.',
       bulan: selectedBulan,
@@ -372,15 +362,6 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
                     Otomatis disimpan di daftar bukti admin dan dapat dilihat oleh siswa di akun portalnya.
                   </p>
                 </div>
-                <button
-                  type="button"
-                  onClick={handleUseSampleProof}
-                  className="px-2.5 py-1 rounded-lg bg-emerald-100 hover:bg-emerald-200 text-emerald-800 text-[10px] font-bold transition-colors cursor-pointer flex items-center gap-1"
-                  title="Gunakan contoh struk transfer otomatis"
-                >
-                  <Sparkles className="w-3 h-3 text-emerald-600" />
-                  <span>Pakai Contoh Struk</span>
-                </button>
               </div>
 
               {/* Upload Input & Preview */}

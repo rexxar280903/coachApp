@@ -34,7 +34,7 @@ import {
   HelpCircle,
   GraduationCap
 } from 'lucide-react';
-import { SAMPLE_TRANSFER_PROOF_SVG } from '../services/storage';
+import { fileToCompressedDataUrl } from '../utils/image';
 
 interface StudentPortalViewProps {
   currentStudent: Student;
@@ -46,7 +46,7 @@ interface StudentPortalViewProps {
   submissions: PaymentSubmission[];
   clubProfile: ClubProfile;
   onSelectStudent: (studentId: string) => void;
-  onSubmitPaymentProof: (newSubmission: Omit<PaymentSubmission, 'id' | 'status' | 'tanggalKirim'>) => void;
+  onSubmitPaymentProof: (newSubmission: Omit<PaymentSubmission, 'id' | 'status' | 'tanggalKirim'>) => Promise<void>;
   onViewReceipt: (tx: PaymentTransaction) => void;
 }
 
@@ -76,7 +76,7 @@ export const StudentPortalView: React.FC<StudentPortalViewProps> = ({
 
   // Upload Form State
   const [selectedMonth, setSelectedMonth] = useState<number>(new Date().getMonth() + 1);
-  const [selectedYear, setSelectedYear] = useState<number>(2024);
+  const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
   const [historyYearFilter, setHistoryYearFilter] = useState<number | 'all'>('all');
   const [transferAmount, setTransferAmount] = useState<number>(studentClass?.iuranBulanan || 100000);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('Transfer BCA');
@@ -87,6 +87,7 @@ export const StudentPortalView: React.FC<StudentPortalViewProps> = ({
   const [imagePreviewUrl, setImagePreviewUrl] = useState<string>('');
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [showSuccessAlert, setShowSuccessAlert] = useState<boolean>(false);
+  const [submitError, setSubmitError] = useState<string>('');
 
   // High-Res Image Preview Modal
   const [previewImage, setPreviewImage] = useState<{
@@ -118,46 +119,35 @@ export const StudentPortalView: React.FC<StudentPortalViewProps> = ({
     ? Math.round((attendedCount / totalSessionsCount) * 100) 
     : 100;
 
-  // Handle Image File Upload (FileReader to Base64)
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Handle Image File Upload (divalidasi & diperkecil di browser)
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      if (file.size > 5 * 1024 * 1024) {
-        alert('Ukuran file maksimal 5 MB.');
-        return;
-      }
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        setImagePreviewUrl(event.target?.result as string);
-      };
-      reader.readAsDataURL(file);
+    e.target.value = '';
+    if (!file) return;
+    setSubmitError('');
+    try {
+      setImagePreviewUrl(await fileToCompressedDataUrl(file));
+    } catch (err) {
+      setSubmitError((err as Error).message);
     }
-  };
-
-  // Preset sample proof generator for rapid testing
-  const handleUseSampleProof = () => {
-    setImagePreviewUrl(SAMPLE_TRANSFER_PROOF_SVG);
-    setStudentMessage(
-      `Halo Admin ${clubProfile.namaKlub}, saya melampirkan bukti transfer m-banking untuk iuran bulan ${monthNames[selectedMonth - 1]} ${selectedYear}. Mohon bantu diverifikasi, terima kasih!`
-    );
   };
 
   // Submit Handler
-  const handleSubmitProof = (e: React.FormEvent) => {
+  const handleSubmitProof = async (e: React.FormEvent) => {
     e.preventDefault();
+    setSubmitError('');
     if (!imagePreviewUrl) {
-      alert('Mohon unggah gambar struk / bukti transfer pembayaran terlebih dahulu.');
+      setSubmitError('Mohon unggah gambar struk / bukti transfer pembayaran terlebih dahulu.');
       return;
     }
     if (!transferAmount || transferAmount <= 0) {
-      alert('Nominal transfer harus lebih dari 0.');
+      setSubmitError('Nominal transfer harus lebih dari 0.');
       return;
     }
 
     setIsSubmitting(true);
-
-    setTimeout(() => {
-      onSubmitPaymentProof({
+    try {
+      await onSubmitPaymentProof({
         siswaId: currentStudent.id,
         siswaNama: currentStudent.nama,
         kelasId: currentStudent.kelasId,
@@ -171,16 +161,15 @@ export const StudentPortalView: React.FC<StudentPortalViewProps> = ({
         buktiGambarUrl: imagePreviewUrl,
         pesanSiswa: studentMessage || `Pembayaran iuran ${monthNames[selectedMonth - 1]} ${selectedYear}`,
       });
-
-      setIsSubmitting(false);
       setShowSuccessAlert(true);
       setImagePreviewUrl('');
       setStudentMessage('');
-
-      setTimeout(() => {
-        setShowSuccessAlert(false);
-      }, 5000);
-    }, 400);
+      setTimeout(() => setShowSuccessAlert(false), 5000);
+    } catch (err) {
+      setSubmitError((err as Error).message || 'Gagal mengirim bukti. Coba lagi.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -200,6 +189,7 @@ export const StudentPortalView: React.FC<StudentPortalViewProps> = ({
         </div>
 
         {/* Student Selector Dropdown */}
+        {students.filter((s) => s.status !== 'Calon').length > 1 && (
         <div className="flex items-center gap-2 w-full sm:w-auto">
           <span className="text-xs text-slate-400 whitespace-nowrap hidden sm:inline">Pilih Siswa:</span>
           <select
@@ -216,6 +206,7 @@ export const StudentPortalView: React.FC<StudentPortalViewProps> = ({
               ))}
           </select>
         </div>
+        )}
       </div>
 
       {/* Athlete Hero Header Card */}
@@ -400,11 +391,18 @@ export const StudentPortalView: React.FC<StudentPortalViewProps> = ({
                 </span>
               </div>
               <div className="flex items-center justify-between pt-1">
-                <div>
-                  <p className="text-xs font-semibold text-slate-300">Bank Central Asia (BCA)</p>
-                  <p className="font-mono text-base font-bold text-white tracking-wider">8290-8812-3390</p>
-                  <p className="text-[10px] text-slate-400">a.n Akademi Olahraga {clubProfile.namaKlub}</p>
-                </div>
+                {clubProfile.noRekening ? (
+                  <div>
+                    <p className="text-xs font-semibold text-slate-300">{clubProfile.namaBank || 'Rekening Klub'}</p>
+                    <p className="font-mono text-base font-bold text-white tracking-wider">{clubProfile.noRekening}</p>
+                    <p className="text-[10px] text-slate-400">a.n {clubProfile.atasNama || clubProfile.namaKlub}</p>
+                  </div>
+                ) : (
+                  <div>
+                    <p className="text-xs font-semibold text-slate-300">Nomor rekening belum diatur</p>
+                    <p className="text-[10px] text-slate-400">Hubungi admin klub ({clubProfile.noWhatsApp || clubProfile.noHp}) untuk info rekening.</p>
+                  </div>
+                )}
                 <div className="text-right">
                   <span className="text-[10px] text-slate-400 block">Tarif SPP Kelas:</span>
                   <span className="text-sm font-mono font-bold text-emerald-400">
@@ -523,14 +521,6 @@ export const StudentPortalView: React.FC<StudentPortalViewProps> = ({
                   <label className="block text-xs font-bold text-slate-700">
                     Foto Struk / Bukti Transfer:
                   </label>
-                  <button
-                    type="button"
-                    onClick={handleUseSampleProof}
-                    className="text-[11px] font-bold text-emerald-600 hover:text-emerald-700 flex items-center gap-1 cursor-pointer"
-                  >
-                    <Sparkles className="w-3 h-3 text-emerald-500" />
-                    <span>Gunakan Contoh Bukti m-BCA</span>
-                  </button>
                 </div>
 
                 {!imagePreviewUrl ? (
@@ -574,6 +564,11 @@ export const StudentPortalView: React.FC<StudentPortalViewProps> = ({
               </div>
 
               {/* Submit Button */}
+              {submitError && (
+                <p role="alert" className="text-xs font-medium text-rose-700 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2">
+                  {submitError}
+                </p>
+              )}
               <button
                 type="submit"
                 disabled={isSubmitting || !imagePreviewUrl}
@@ -720,7 +715,7 @@ export const StudentPortalView: React.FC<StudentPortalViewProps> = ({
                           {/* Right thumbnail & action */}
                           <div className="flex flex-col items-end gap-2 shrink-0">
                             <div
-                              onClick={() => setPreviewImage({
+                              onClick={() => sub.buktiGambarUrl && setPreviewImage({
                                 url: sub.buktiGambarUrl,
                                 title: `Bukti Transfer Iuran ${period}`,
                                 nominal: sub.nominal,
@@ -729,11 +724,17 @@ export const StudentPortalView: React.FC<StudentPortalViewProps> = ({
                               className="w-16 h-16 rounded-xl overflow-hidden border border-slate-300 bg-slate-100 cursor-pointer hover:border-emerald-500 transition-all relative group"
                               title="Klik untuk perbesar bukti"
                             >
-                              <img
-                                src={sub.buktiGambarUrl}
-                                alt="Bukti Transfer"
-                                className="w-full h-full object-cover"
-                              />
+                              {sub.buktiGambarUrl ? (
+                                <img
+                                  src={sub.buktiGambarUrl}
+                                  alt="Bukti Transfer"
+                                  className="w-full h-full object-cover"
+                                />
+                              ) : (
+                                <div className="w-full h-full flex items-center justify-center text-slate-400" title="Bukti tersimpan aman di server">
+                                  <ImageIcon className="w-5 h-5" />
+                                </div>
+                              )}
                               <div className="absolute inset-0 bg-slate-900/40 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white transition-opacity">
                                 <Maximize2 className="w-3.5 h-3.5" />
                               </div>

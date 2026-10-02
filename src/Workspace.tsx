@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { 
   Student, 
@@ -42,10 +42,14 @@ import {
   getPaymentSubmissions,
   savePaymentSubmissions,
   generateReceiptNumber,
-  clearDatabaseToZero,
-  resetToSeedData,
-  SAMPLE_TRANSFER_PROOF_SVG,
+  registerPublic,
+  portalLogin,
+  portalSubmitPayment,
+  setSyncErrorHandler,
+  PortalCredentials,
 } from './services/storage';
+import { StaffUser } from './services/auth';
+import { generateKodeAkses } from './utils/kodeAkses';
 import { numberToWordsId } from './utils/numberToWordsId';
 import { MONTH_NAMES, getCurrentYear, getCurrentMonth, getTodayISO, getCurrentTime } from './utils/constants';
 import { useToast } from './components/Toast';
@@ -91,7 +95,6 @@ const PATH_TO_NAV: Record<string, ActiveNav> = {
   '/profil-siswa': 'profil-siswa',
   '/sesi-absensi': 'sesi-absensi',
   '/laporan-absensi': 'laporan-absensi',
-  '/student-portal': 'student-portal',
   '/pengaturan': 'pengaturan',
 };
 
@@ -116,7 +119,31 @@ const NAV_TO_PATH: Record<ActiveNav, string> = {
   'pengaturan': '/pengaturan',
 };
 
-export default function App() {
+const EMPTY_PROFILE: ClubProfile = {
+  namaKlub: '',
+  cabangOlahraga: '',
+  alamat: '',
+  kota: '',
+  noHp: '',
+  email: '',
+  noWhatsApp: '',
+};
+
+// Halaman yang boleh dibuka pelatih (selebihnya khusus admin).
+const COACH_NAVS: ActiveNav[] = ['sesi-absensi', 'laporan-absensi'];
+
+export type WorkspaceMode = 'staff' | 'public' | 'student';
+
+interface WorkspaceProps {
+  mode: WorkspaceMode;
+  /** Wajib untuk mode 'staff'. */
+  staff?: StaffUser;
+  /** Wajib untuk mode 'student'. */
+  portal?: PortalCredentials;
+  onLogout: () => void;
+}
+
+export default function Workspace({ mode, staff, portal, onLogout }: WorkspaceProps) {
   const navigate = useNavigate();
   const location = useLocation();
   const { toast, confirm } = useToast();
@@ -131,18 +158,26 @@ export default function App() {
   const [attendanceSessions, setAttendanceSessions] = useState<AttendanceSession[]>([]);
   const [transactions, setTransactions] = useState<PaymentTransaction[]>([]);
   const [submissions, setSubmissions] = useState<PaymentSubmission[]>([]);
-  const [profile, setProfile] = useState<ClubProfile>(getClubProfile());
+  const [profile, setProfile] = useState<ClubProfile>(EMPTY_PROFILE);
+  const hasLoadedRef = useRef(false);
+  const [dataStatus, setDataStatus] = useState<'loading' | 'ready' | 'error'>('loading');
+  const [loadError, setLoadError] = useState<string>('');
 
-  // Derive currentNav from URL
-  const currentNav: ActiveNav = PATH_TO_NAV[location.pathname] ?? 'dashboard';
+  // Peran ditentukan oleh login (bukan lagi saklar di UI).
+  const currentRole: UserRole = mode === 'staff' ? staff?.role ?? 'admin' : mode;
+  const actorName = staff?.nama || 'Admin';
+
+  // Derive currentNav from URL (pelatih dibatasi ke halaman absensi)
+  const urlNav: ActiveNav = PATH_TO_NAV[location.pathname] ?? 'dashboard';
+  const currentNav: ActiveNav =
+    currentRole === 'coach' && !COACH_NAVS.includes(urlNav) ? 'sesi-absensi' : urlNav;
 
   // Helper to navigate both state + URL
   const setCurrentNav = useCallback((nav: ActiveNav) => {
     navigate(NAV_TO_PATH[nav]);
   }, [navigate]);
 
-  // UI Role & Sidebar State
-  const [currentRole, setCurrentRole] = useState<UserRole>('admin');
+  // Sidebar State
   const [sidebarMobileOpen, setSidebarMobileOpen] = useState<boolean>(false);
 
   // Ensure default signature palette from photo 2 is always active
@@ -157,8 +192,8 @@ export default function App() {
 
   // Selected Entities
   const [selectedStudentId, setSelectedStudentId] = useState<string>('');
-  const [selectedClassId, setSelectedClassId] = useState<string>('ku-10');
-  const [selectedEventId, setSelectedEventId] = useState<string>('evt-familia-cup');
+  const [selectedClassId, setSelectedClassId] = useState<string>('');
+  const [selectedEventId, setSelectedEventId] = useState<string>('');
 
   // Modal States
   const [paymentModalState, setPaymentModalState] = useState<{
@@ -193,82 +228,99 @@ export default function App() {
 
   const [receiptModalTx, setReceiptModalTx] = useState<PaymentTransaction | null>(null);
 
+  // Kegagalan menyimpan ke server: beri tahu pengguna lalu muat ulang agar tampilan kembali sesuai server.
+  useEffect(() => {
+    if (mode !== 'staff') return;
+    setSyncErrorHandler((table, error) => {
+      toast.error('Gagal menyimpan ke server', `${error.message} (${table}). Data dimuat ulang dari server.`);
+      loadAllData();
+    });
+    return () => setSyncErrorHandler(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode]);
+
   // Initial Data Load
   useEffect(() => {
     loadAllData();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, staff?.id, portal?.hp, portal?.kode]);
 
-  const loadAllData = () => {
-    const stds = getStudents();
-    const coachs = getCoaches();
-    const migrated = migrateCoachLinks(getClasses(), getAttendanceSessions(), coachs);
-    const cls = migrated.classes;
-    const atts = migrated.sessions;
-    if (migrated.changed) {
-      saveClasses(cls);
-      saveAttendanceSessions(atts);
-    }
-    const dues = getMonthlyDues();
-    const evts = getEvents();
-    const parts = getEventParticipants();
-    const txs = getTransactions();
-    const prof = getClubProfile();
-    const subs = getPaymentSubmissions();
+  const loadAllData = async () => {
+    try {
+      if (mode === 'public') {
+        // Halaman pendaftaran publik hanya butuh daftar kelas & profil klub.
+        const [cls, prof] = await Promise.all([getClasses(), getClubProfile()]);
+        setClasses(cls);
+        setProfile(prof);
+        setSelectedClassId((prev) => prev || cls[0]?.id || '');
+      } else if (mode === 'student') {
+        if (!portal) throw new Error('Sesi portal tidak ditemukan.');
+        const bundle = await portalLogin(portal);
+        if (!bundle) throw new Error('Nomor HP atau kode akses tidak lagi valid.');
+        setStudents([bundle.student]);
+        setClasses(bundle.classes);
+        setMonthlyDues(bundle.monthlyDues);
+        setAttendanceSessions(bundle.attendanceSessions);
+        setTransactions(bundle.transactions);
+        setSubmissions(bundle.submissions);
+        setProfile(bundle.profile);
+        setSelectedStudentId(bundle.student.id);
+      } else {
+        const isAdmin = staff?.role === 'admin';
+        // Pelatih hanya diizinkan membaca data dasar (lihat RLS); tabel keuangan tidak dimuat.
+        const [stds, coachs, loadedClasses, loadedSessions, prof] = await Promise.all([
+          getStudents(),
+          getCoaches(),
+          getClasses(),
+          getAttendanceSessions(),
+          getClubProfile(),
+        ]);
+        let cls = loadedClasses;
+        let atts = loadedSessions;
+        if (isAdmin) {
+          const migrated = migrateCoachLinks(cls, atts, coachs);
+          cls = migrated.classes;
+          atts = migrated.sessions;
+          if (migrated.changed) {
+            saveClasses(cls);
+            saveAttendanceSessions(atts);
+          }
+        }
+        const [dues, evts, parts, txs, subs] = isAdmin
+          ? await Promise.all([
+              getMonthlyDues(),
+              getEvents(),
+              getEventParticipants(),
+              getTransactions(),
+              getPaymentSubmissions(),
+            ])
+          : [[], [], [], [], []];
 
-    setStudents(stds);
-    setCoaches(coachs);
-    setClasses(cls);
-    setMonthlyDues(dues);
-    setEvents(evts);
-    setEventParticipants(parts);
-    setAttendanceSessions(atts);
-    setTransactions(txs);
-    setProfile(prof);
-    setSubmissions(subs);
+        setStudents(stds);
+        setCoaches(coachs);
+        setClasses(cls);
+        setMonthlyDues(dues as MonthlyDueRecord[]);
+        setEvents(evts as ClubEvent[]);
+        setEventParticipants(parts as EventParticipant[]);
+        setAttendanceSessions(atts);
+        setTransactions(txs as PaymentTransaction[]);
+        setProfile(prof);
+        setSubmissions(subs as PaymentSubmission[]);
 
-    if (stds.length > 0 && !selectedStudentId) {
-      // Default to Kamila Syahira or first student
-      const kamila = stds.find((s) => s.nama === 'Kamila Syahira');
-      setSelectedStudentId(kamila ? kamila.id : stds[0].id);
-    }
-  };
-
-  const handleClearToZero = async () => {
-    const ok = await confirm(
-      'Kosongkan Semua Data?',
-      'Semua data murid, transaksi, absensi, dan iuran akan dihapus. Tindakan ini tidak bisa dibatalkan.'
-    );
-    if (ok) {
-      clearDatabaseToZero();
-      loadAllData();
-      setSelectedStudentId('');
-      setSubmissions([]);
-      toast.success('Database dikosongkan', 'Sistem siap menerima data baru dari nol.');
-    }
-  };
-
-  const handleLoadSeedData = async () => {
-    const ok = await confirm(
-      'Muat Data Demo?',
-      'Akan memuat 30+ murid KU-10 beserta transaksi dan absensi contoh. Data yang ada akan diganti.'
-    );
-    if (ok) {
-      resetToSeedData();
-      loadAllData();
-      toast.success('Data demo berhasil dimuat!', '30+ murid KU-10 kini tersedia di sistem.');
-    }
-  };
-
-  const handleRoleChange = (newRole: UserRole) => {
-    setCurrentRole(newRole);
-    if (newRole === 'coach') {
-      setCurrentNav('sesi-absensi');
-    } else if (newRole === 'public') {
-      setCurrentNav('pendaftaran-baru');
-    } else if (newRole === 'student') {
-      setCurrentNav('student-portal');
-    } else {
-      setCurrentNav('dashboard');
+        setSelectedStudentId((prev) => prev || stds[0]?.id || '');
+        setSelectedClassId((prev) => prev || cls[0]?.id || '');
+      }
+      hasLoadedRef.current = true;
+      setDataStatus('ready');
+    } catch (e) {
+      const message = (e as Error).message;
+      if (hasLoadedRef.current) {
+        // Muat ulang gagal setelah tampilan sudah terisi: pertahankan tampilan, beri tahu pengguna.
+        toast.error('Gagal memuat data', message);
+      } else {
+        setLoadError(message);
+        setDataStatus('error');
+      }
     }
   };
 
@@ -420,7 +472,7 @@ export default function App() {
         id: subId,
         siswaId: tx.siswaId,
         siswaNama: tx.siswaNama,
-        kelasId: studentClass?.id || paymentModalState.kelasId || 'ku-10',
+        kelasId: studentClass?.id || paymentModalState.kelasId || classes[0]?.id || '',
         kelasNama: tx.kelasNama,
         tipe: 'Iuran Rutin',
         bulan: targetBulan,
@@ -428,12 +480,12 @@ export default function App() {
         nominal: tx.nominal,
         metodePembayaran: tx.metodePembayaran,
         tanggalTransfer: tx.tanggal || today,
-        buktiGambarUrl: proofData?.buktiGambarUrl || SAMPLE_TRANSFER_PROOF_SVG,
+        buktiGambarUrl: proofData?.buktiGambarUrl || '',
         pesanSiswa: proofData?.pesanPembayaran || tx.keterangan,
         status: 'verified',
         tanggalKirim: `${today} ${time}`,
         tanggalVerifikasi: today,
-        diverifikasiOleh: 'Super Admin',
+        diverifikasiOleh: actorName,
         catatanAdmin: proofData?.catatanAdmin || 'Diinput & diverifikasi langsung oleh Admin.',
         kuitansiId: tx.nomorKuitansi,
         transactionId: tx.id,
@@ -508,19 +560,31 @@ export default function App() {
   };
 
   // Add new student from form
-  const handleRegisterSubmit = (newStudent: Student, autoPayDirectly: boolean) => {
-    const updated = [newStudent, ...students];
+  const handleRegisterSubmit = async (newStudent: Student, autoPayDirectly: boolean): Promise<boolean> => {
+    // Pendaftar publik tidak login: kirim lewat fungsi database yang memaksa status "Calon"
+    // dan menghitung biaya dari kelas (bukan dari input).
+    if (currentRole === 'public') {
+      try {
+        await registerPublic(newStudent);
+        return true;
+      } catch (e) {
+        toast.error('Pendaftaran gagal', (e as Error).message);
+        return false;
+      }
+    }
+
+    const student: Student = { ...newStudent, kodeAkses: newStudent.kodeAkses || generateKodeAkses() };
+    const updated = [student, ...students];
     setStudents(updated);
     saveStudents(updated);
 
     if (autoPayDirectly) {
-      const cls = classes.find((c) => c.id === newStudent.kelasId) || classes[0];
-      handleOpenApplicantPaymentModal(newStudent, cls);
+      const cls = classes.find((c) => c.id === student.kelasId) || classes[0];
+      handleOpenApplicantPaymentModal(student, cls);
     } else {
-      if (currentRole !== 'public') {
-        setCurrentNav('calon-siswa');
-      }
+      setCurrentNav('calon-siswa');
     }
+    return true;
   };
 
   // Add Attendance Session
@@ -654,24 +718,21 @@ export default function App() {
     }
   };
 
-  // Submit payment proof from student account
-  const handleSubmitPaymentProof = (
+  // Submit payment proof from student account (portal): dikirim lewat fungsi database
+  const handleSubmitPaymentProof = async (
     newSub: Omit<PaymentSubmission, 'id' | 'status' | 'tanggalKirim'>
   ) => {
-    const id = `sub-${Date.now()}`;
-    const now = new Date();
-    const dateStr = now.toISOString().slice(0, 10);
-    const timeStr = now.toTimeString().slice(0, 5);
-    const submissionItem: PaymentSubmission = {
-      ...newSub,
-      id,
-      status: 'pending',
-      tanggalKirim: `${dateStr} ${timeStr}`,
-    };
-
-    const updated = [submissionItem, ...submissions];
-    setSubmissions(updated);
-    savePaymentSubmissions(updated);
+    if (!portal) throw new Error('Sesi portal tidak ditemukan. Silakan masuk kembali.');
+    await portalSubmitPayment(portal, {
+      bulan: newSub.bulan,
+      tahun: newSub.tahun,
+      nominal: newSub.nominal,
+      metodePembayaran: newSub.metodePembayaran,
+      tanggalTransfer: newSub.tanggalTransfer,
+      pesanSiswa: newSub.pesanSiswa,
+      buktiGambarUrl: newSub.buktiGambarUrl,
+    });
+    await loadAllData();
   };
 
   // Verify payment submission by admin
@@ -751,7 +812,7 @@ export default function App() {
           ...s,
           status: 'verified' as const,
           tanggalVerifikasi: today,
-          diverifikasiOleh: 'Super Admin',
+          diverifikasiOleh: actorName,
           catatanAdmin: catatanAdmin,
           kuitansiId: receiptNo,
           transactionId: txId,
@@ -890,12 +951,12 @@ export default function App() {
       nominal,
       metodePembayaran,
       tanggalTransfer: tanggalTransfer || today,
-      buktiGambarUrl: buktiGambarUrl || SAMPLE_TRANSFER_PROOF_SVG,
+      buktiGambarUrl: buktiGambarUrl || '',
       pesanSiswa: pesanPembayaran || `Pembayaran iuran ${MONTH_NAMES[bulan - 1]} ${tahun}`,
       status: 'verified',
       tanggalKirim: `${today} ${time}`,
       tanggalVerifikasi: today,
-      diverifikasiOleh: 'Super Admin',
+      diverifikasiOleh: actorName,
       catatanAdmin: catatanAdmin || 'Pembayaran diinput & diverifikasi langsung oleh Admin.',
       kuitansiId: receiptNo,
       transactionId: txId,
@@ -923,30 +984,65 @@ export default function App() {
     setReceiptModalTx(tx);
   };
 
+  if (dataStatus !== 'ready') {
+    return (
+      <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center gap-3 px-6 text-center font-sans">
+        {dataStatus === 'loading' ? (
+          <>
+            <div className="w-8 h-8 rounded-full border-2 border-emerald-500 border-t-transparent animate-spin" />
+            <p className="text-sm font-semibold text-slate-600">Memuat data…</p>
+          </>
+        ) : (
+          <>
+            <p className="text-sm font-bold text-slate-800">Data tidak dapat dimuat</p>
+            <p className="text-xs text-slate-500 max-w-sm">{loadError}</p>
+            <div className="flex gap-2">
+              <button
+                onClick={() => {
+                  setDataStatus('loading');
+                  loadAllData();
+                }}
+                className="px-4 py-2 rounded-xl bg-emerald-600 text-white text-xs font-bold cursor-pointer"
+              >
+                Coba lagi
+              </button>
+              {mode !== 'public' && (
+                <button onClick={onLogout} className="px-4 py-2 rounded-xl bg-slate-200 text-slate-700 text-xs font-bold cursor-pointer">
+                  Keluar
+                </button>
+              )}
+            </div>
+          </>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800 font-sans flex flex-col antialiased">
       {/* Top Header */}
       <Header
         currentRole={currentRole}
-        onChangeRole={handleRoleChange}
+        userName={mode === 'student' ? activeStudent?.nama : staff?.nama}
+        onLogout={mode === 'public' ? undefined : onLogout}
         clubProfile={profile}
         calonCount={calonCount}
         pendingVerificationsCount={pendingSubmissionsCount}
-        activeStudentName={activeStudent?.nama}
         onToggleSidebar={() => setSidebarMobileOpen(!sidebarMobileOpen)}
         onNavigateCalon={() => setCurrentNav('calon-siswa')}
         onNavigateVerifikasi={() => setCurrentNav('verifikasi-pembayaran')}
       />
 
       <div className="flex-1 flex overflow-hidden">
-        {/* Left Sidebar Navigation (hidden in public mode) */}
-        {currentRole !== 'public' && (
+        {/* Left Sidebar Navigation (hanya untuk pengurus) */}
+        {mode === 'staff' && (
           <Sidebar
             currentNav={currentNav}
             onSelectNav={setCurrentNav}
             calonCount={calonCount}
             pendingVerificationsCount={pendingSubmissionsCount}
             currentRole={currentRole}
+            supportPhone={profile.noWhatsApp || profile.noHp}
             isOpenMobile={sidebarMobileOpen}
             onCloseMobile={() => setSidebarMobileOpen(false)}
           />
@@ -955,27 +1051,9 @@ export default function App() {
         {/* Main Workspace Body */}
         <main
           className={`flex-1 overflow-y-auto p-4 md:p-6 lg:p-8 transition-all ${
-            currentRole !== 'public' ? 'lg:ml-64' : 'max-w-5xl mx-auto w-full'
+            mode === 'staff' ? 'lg:ml-64' : mode === 'student' ? 'max-w-6xl mx-auto w-full' : 'max-w-5xl mx-auto w-full'
           }`}
         >
-          {/* Public Mode Helper Switcher Bar */}
-          {currentRole === 'public' && (
-            <div className="mb-6 p-4 rounded-2xl bg-slate-900 text-white flex items-center justify-between shadow-md">
-              <div>
-                <p className="text-xs font-bold text-sky-400">Mode Simulasi Link Publik / Bio IG</p>
-                <p className="text-[11px] text-slate-300">
-                  Ini adalah halaman pendaftaran online yang dapat disematkan di bio Instagram atau WhatsApp klub.
-                </p>
-              </div>
-              <button
-                onClick={() => handleRoleChange('admin')}
-                className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs shadow-sm transition-colors cursor-pointer"
-              >
-                Kembali ke Dashboard Admin
-              </button>
-            </div>
-          )}
-
           {/* VIEW SWITCHER */}
           {currentRole === 'public' ? (
             <PendaftaranView
@@ -983,7 +1061,7 @@ export default function App() {
               isPublicMode={true}
               onRegisterSubmit={handleRegisterSubmit}
             />
-          ) : currentRole === 'student' || currentNav === 'student-portal' ? (
+          ) : mode === 'student' ? (
             activeStudent ? (
               <StudentPortalView
                 currentStudent={activeStudent}
@@ -1000,13 +1078,7 @@ export default function App() {
               />
             ) : (
               <div className="bg-white rounded-3xl p-12 text-center border border-slate-200">
-                <p className="text-sm font-bold text-slate-700">Belum ada data siswa dalam database.</p>
-                <button
-                  onClick={handleLoadSeedData}
-                  className="mt-3 px-4 py-2 bg-emerald-600 text-white rounded-xl text-xs font-bold cursor-pointer"
-                >
-                  Muat Data Demo Siswa
-                </button>
+                <p className="text-sm font-bold text-slate-700">Data siswa tidak ditemukan.</p>
               </div>
             )
           ) : (
@@ -1230,8 +1302,6 @@ export default function App() {
                     setClasses(c);
                     saveClasses(c);
                   }}
-                  onClearToZero={handleClearToZero}
-                  onLoadSeedData={handleLoadSeedData}
                 />
               )}
             </>

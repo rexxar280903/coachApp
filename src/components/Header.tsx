@@ -1,14 +1,16 @@
 import React from 'react';
 import { UserRole, ClubProfile } from '../types/sportkit';
-import { Shield, UserCheck, Globe, Bell, Menu, GraduationCap, CheckCircle2 } from 'lucide-react';
+import { Bell, Menu, CheckCircle2, LogOut } from 'lucide-react';
 
 interface HeaderProps {
   currentRole: UserRole;
-  onChangeRole: (role: UserRole) => void;
+  /** Nama pengguna yang sedang login (staf atau siswa). */
+  userName?: string;
+  /** Tidak ada pada halaman publik (tanpa login). */
+  onLogout?: () => void;
   clubProfile: ClubProfile;
   calonCount: number;
   pendingVerificationsCount?: number;
-  activeStudentName?: string;
   onToggleSidebar: () => void;
   onNavigateCalon: () => void;
   onNavigateVerifikasi?: () => void;
@@ -16,11 +18,11 @@ interface HeaderProps {
 
 export const Header: React.FC<HeaderProps> = ({
   currentRole,
-  onChangeRole,
+  userName,
+  onLogout,
   clubProfile,
   calonCount,
   pendingVerificationsCount = 0,
-  activeStudentName,
   onToggleSidebar,
   onNavigateCalon,
   onNavigateVerifikasi,
@@ -29,7 +31,7 @@ export const Header: React.FC<HeaderProps> = ({
     <header className="bg-[#090e17] border-b border-slate-800/80 text-white px-4 md:px-6 py-3 flex items-center justify-between sticky top-0 z-30 shadow-sm backdrop-blur-md">
       {/* Zone 1: Brand & Toggle */}
       <div className="flex items-center gap-3">
-        {currentRole !== 'public' && (
+        {(currentRole === 'admin' || currentRole === 'coach') && (
           <button
             onClick={onToggleSidebar}
             className="lg:hidden p-2 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-300 transition-colors cursor-pointer"
@@ -41,9 +43,17 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* Brand Mark in Header */}
         <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-emerald-600 via-teal-500 to-emerald-400 flex items-center justify-center font-display font-black text-xs text-white shadow-sm border border-emerald-400/40">
-            SK
-          </div>
+          {clubProfile.logoUrl ? (
+            <img
+              src={clubProfile.logoUrl}
+              alt={`Logo ${clubProfile.namaKlub}`}
+              className="w-8 h-8 rounded-lg object-cover bg-white border border-slate-700"
+            />
+          ) : (
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-emerald-600 via-teal-500 to-emerald-400 flex items-center justify-center font-display font-black text-xs text-white shadow-sm border border-emerald-400/40">
+              SK
+            </div>
+          )}
           <div>
             <div className="flex items-center gap-1.5">
               <span className="font-display font-bold text-sm tracking-tight text-white uppercase">
@@ -58,61 +68,6 @@ export const Header: React.FC<HeaderProps> = ({
             </p>
           </div>
         </div>
-      </div>
-
-      {/* Zone 2: Role Switcher (Segmented Control) */}
-      <div className="hidden sm:flex items-center bg-slate-900/90 p-1 rounded-xl border border-slate-800 text-xs">
-        <button
-          onClick={() => onChangeRole('admin')}
-          className={`px-3 py-1.5 rounded-lg font-medium flex items-center gap-1.5 transition-all whitespace-nowrap cursor-pointer ${
-            currentRole === 'admin'
-              ? 'bg-slate-800 text-white shadow-xs font-semibold'
-              : 'text-slate-400 hover:text-slate-200'
-          }`}
-          title="Mode Administrator Klub"
-        >
-          <Shield className="w-3.5 h-3.5 text-emerald-400" />
-          <span>Admin</span>
-        </button>
-
-        <button
-          onClick={() => onChangeRole('coach')}
-          className={`px-3 py-1.5 rounded-lg font-medium flex items-center gap-1.5 transition-all whitespace-nowrap cursor-pointer ${
-            currentRole === 'coach'
-              ? 'bg-slate-800 text-white shadow-xs font-semibold'
-              : 'text-slate-400 hover:text-slate-200'
-          }`}
-          title="Mode Pelatih (Hanya Absensi)"
-        >
-          <UserCheck className="w-3.5 h-3.5 text-sky-400" />
-          <span>Pelatih</span>
-        </button>
-
-        <button
-          onClick={() => onChangeRole('student')}
-          className={`px-3 py-1.5 rounded-lg font-medium flex items-center gap-1.5 transition-all whitespace-nowrap cursor-pointer ${
-            currentRole === 'student'
-              ? 'bg-slate-800 text-white shadow-xs font-semibold'
-              : 'text-slate-400 hover:text-slate-200'
-          }`}
-          title="Mode Siswa / Wali Murid (Upload Bukti, Presensi, Kuitansi)"
-        >
-          <GraduationCap className="w-3.5 h-3.5 text-emerald-400" />
-          <span>Siswa</span>
-        </button>
-
-        <button
-          onClick={() => onChangeRole('public')}
-          className={`px-3 py-1.5 rounded-lg font-medium flex items-center gap-1.5 transition-all whitespace-nowrap cursor-pointer ${
-            currentRole === 'public'
-              ? 'bg-slate-800 text-white shadow-xs font-semibold'
-              : 'text-slate-400 hover:text-slate-200'
-          }`}
-          title="Form Pendaftaran Online (Link Bio IG/WA)"
-        >
-          <Globe className="w-3.5 h-3.5 text-amber-400" />
-          <span>Form Publik</span>
-        </button>
       </div>
 
       {/* Zone 3: Notifications & Profile */}
@@ -147,31 +102,35 @@ export const Header: React.FC<HeaderProps> = ({
         )}
 
         {/* User Profile Pill */}
-        <div className="flex items-center gap-2 pl-2 border-l border-slate-800">
-          <div className="w-7 h-7 rounded-lg bg-slate-800 border border-slate-700 flex items-center justify-center text-white font-bold text-xs">
-            {currentRole === 'coach'
-              ? 'CD'
-              : currentRole === 'student'
-              ? (activeStudentName ? activeStudentName.split(' ').map((n) => n[0]).slice(0, 2).join('') : 'SW')
-              : 'SA'}
+        {currentRole !== 'public' && (
+          <div className="flex items-center gap-2 pl-2 border-l border-slate-800">
+            <div className="w-7 h-7 rounded-lg bg-slate-800 border border-slate-700 flex items-center justify-center text-white font-bold text-xs">
+              {(userName || '?')
+                .split(' ')
+                .filter(Boolean)
+                .map((n) => n[0])
+                .slice(0, 2)
+                .join('')
+                .toUpperCase()}
+            </div>
+            <div className="hidden lg:block text-left text-xs">
+              <p className="font-semibold text-slate-200 leading-tight truncate max-w-[140px]">{userName || 'Pengguna'}</p>
+              <p className="text-[10px] text-slate-400">
+                {currentRole === 'coach' ? 'Pelatih' : currentRole === 'student' ? 'Siswa / Wali Atlet' : 'Administrator'}
+              </p>
+            </div>
+            {onLogout && (
+              <button
+                onClick={onLogout}
+                className="ml-1 p-2 rounded-lg bg-slate-900/80 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-800 transition-colors cursor-pointer"
+                title="Keluar"
+                aria-label="Keluar"
+              >
+                <LogOut className="w-4 h-4" />
+              </button>
+            )}
           </div>
-          <div className="hidden lg:block text-left text-xs">
-            <p className="font-semibold text-slate-200 leading-tight truncate max-w-[140px]">
-              {currentRole === 'coach'
-                ? 'Coach Dimas'
-                : currentRole === 'student'
-                ? (activeStudentName || 'Akun Siswa')
-                : 'Administrator'}
-            </p>
-            <p className="text-[10px] text-slate-400">
-              {currentRole === 'coach'
-                ? 'Pelatih Akademi'
-                : currentRole === 'student'
-                ? 'Siswa / Wali Atlet'
-                : 'Super Admin'}
-            </p>
-          </div>
-        </div>
+        )}
       </div>
     </header>
   );

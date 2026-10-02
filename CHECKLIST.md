@@ -3,7 +3,7 @@
 > **Nama Proyek:** SportKit Club Administration  
 > **Versi Saat Ini:** 0.0.0  
 > **Tanggal Audit:** 1 Oktober 2026  
-> **Stack:** React 19 + Vite 8 + TailwindCSS 4 + TypeScript 7 + localStorage
+> **Stack:** React 19 + Vite 8 + TailwindCSS 4 + TypeScript 7 + Supabase (Postgres, Auth, Storage)
 
 ---
 
@@ -38,55 +38,41 @@
 
 ## 🔴 KRITIS — Harus Diselesaikan Sebelum Production
 
-### 1. 🗄️ Backend & Database (BELUM ADA)
+> **Status (2 Okt 2026):** kode untuk poin 1–3 sudah selesai dan lolos `tsc`, build, uji skema/RLS di PostgreSQL, serta
+> uji alur UI dengan Supabase tiruan. **Yang masih harus dilakukan manual:** membuat project Supabase, menjalankan
+> `supabase/schema.sql`, mengisi env, dan uji end-to-end dengan project sungguhan — ikuti `supabase/README.md`.
 
-Saat ini **semua data disimpan di `localStorage` browser**. Ini berarti:
-- ❌ Data hilang jika user clear browser / ganti device
-- ❌ Tidak bisa diakses multi-user (admin di PC A tidak bisa lihat data admin di PC B)
-- ❌ Tidak aman — siswa bisa manipulasi data via DevTools
-- ❌ Kapasitas terbatas (~5-10MB)
+### 1. 🗄️ Backend & Database ✅ (kode selesai — perlu setup project Supabase)
 
-**Yang perlu dibuat:**
-- [ ] Pilih database: **Supabase** (recommended, gratis), Firebase, atau PostgreSQL + Express
-- [ ] Buat skema tabel untuk semua entity (`students`, `classes`, `monthly_dues`, `events`, `event_participants`, `attendance_sessions`, `transactions`, `payment_submissions`, `club_profile`)
-- [ ] Migrasi semua fungsi di `storage.ts` dari `localStorage` ke API calls
-- [ ] Implementasi REST API atau Supabase client
+- [x] Supabase dipilih; skema untuk semua entity ada di `supabase/schema.sql` (+ `seed.sql` opsional)
+- [x] `src/services/storage.ts` dimigrasi dari `localStorage` ke Supabase (sinkronisasi per baris, hanya yang berubah)
+- [x] Row Level Security: admin penuh, pelatih baca data dasar + tulis absensi, anon hanya baca kelas/profil klub
+- [ ] Buat project Supabase & jalankan `schema.sql` *(manual)*
+- [ ] Migrasi data lama dari `localStorage` bila ada data yang perlu dipertahankan *(tidak ada migrasi otomatis)*
 
-### 2. 🔐 Autentikasi & Otorisasi (BELUM ADA)
+### 2. 🔐 Autentikasi & Otorisasi ✅ (kode selesai — perlu setup project Supabase)
 
-Saat ini role (Admin/Coach/Student/Public) hanya **switch UI biasa**, tanpa login.
+- [x] Login pengurus (email + kata sandi, Supabase Auth) di `/login`, lupa/atur ulang kata sandi di `/reset-password`
+- [x] Role admin/pelatih dari tabel `profiles`; saklar role di UI dihapus
+- [x] Proteksi rute: tanpa login → `/login`; pelatih hanya Sesi Latihan & Rekap Absensi
+- [x] Portal Siswa `/portal`: login sederhana No. HP + kode akses (8 karakter) lewat fungsi database; batas percobaan salah
+- [x] Pendaftaran publik `/daftar` tanpa login (status selalu *Calon*, biaya diambil dari kelas di server)
+- [ ] Buat admin pertama & nonaktifkan sign-up publik di Supabase *(manual, lihat `supabase/README.md`)*
 
-**Yang perlu dibuat:**
-- [ ] Sistem login (email + password / Google OAuth)
-- [ ] Role-based access control (RBAC) yang real
-- [ ] Tabel `users` dengan role masing-masing
-- [ ] Proteksi route — coach tidak bisa akses halaman admin
-- [ ] Session management (JWT / cookie)
-- [ ] Halaman login/register
-- [ ] Fitur lupa password
+### 3. 🖼️ Upload File / Foto ✅ (kode selesai)
 
-### 3. 🖼️ Upload File / Foto (BELUM ADA)
+- [x] Bukti transfer → bucket privat `payment-proofs` (admin melihat lewat tautan bertanda tangan)
+- [x] Foto siswa (Profil → Biodata) dan logo klub (Pengaturan) → bucket publik `avatars`
+- [x] Validasi tipe (JPG/PNG/WebP) & ukuran, gambar diperkecil di browser sebelum diunggah
+- [x] Tombol "Contoh Struk" (bukti palsu) dihapus
+- [ ] Crop foto *(belum; hanya resize)*
 
-Saat ini foto profil siswa dan bukti transfer hanya menggunakan **SVG placeholder inline**.
+### 4. 🌐 Deployment & Hosting (siap, belum dijalankan)
 
-**Yang perlu dibuat:**
-- [ ] Integrasi storage (Supabase Storage / Firebase Storage / AWS S3)
-- [ ] Upload foto profil siswa (dengan crop/resize)
-- [ ] Upload bukti transfer pembayaran (gambar)
-- [ ] Upload logo klub di pengaturan
-- [ ] Validasi file type & size limit
-
-### 4. 🌐 Deployment & Hosting (BELUM)
-
-App belum di-deploy ke server mana pun.
-
-**Yang perlu dilakukan:**
-- [ ] Pilih hosting: **Vercel** (recommended, gratis), Netlify, atau VPS
-- [ ] Setup domain (opsional, bisa pakai subdomain gratis)
-- [ ] Setup environment variables (`.env`)
-- [ ] Setup CI/CD pipeline (auto deploy dari Git push)
-- [ ] Testing build production (`npm run build`)
-- [ ] Setup HTTPS/SSL
+- [x] `vercel.json` (rewrite SPA + header keamanan dasar), `.env.example`, GitHub Actions CI (lint + build)
+- [ ] Deploy ke Vercel & isi `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY`
+- [ ] Domain / HTTPS (otomatis di Vercel) dan daftarkan URL ke Auth → URL Configuration di Supabase
+- [ ] Isi rekening tujuan transfer di Pengaturan Klub (sebelumnya tertulis langsung di kode)
 
 ---
 
@@ -214,23 +200,23 @@ Phase 1: RAPIKAN FRONTEND — OPSI A ✅ (SELESAI ✅)
           → 118 package dihapus, bundle lebih ringan
           → Tambah: react-router-dom@7
 
-Phase 2: BACKEND — SUPABASE (Setelah Phase 1 Selesai)
+Phase 2: BACKEND — SUPABASE (kode SELESAI; tinggal setup project)
 ├── 4. [ ] Buat project di Supabase (gratis)
-├── 5. [ ] Jalankan skrip SQL untuk semua tabel
+├── 5. [ ] Jalankan skrip SQL untuk semua tabel (skrip siap: supabase/schema.sql)
 │         (students, classes, monthly_dues, events,
 │          event_participants, attendance_sessions,
 │          transactions, payment_submissions, club_profile)
-├── 6. [ ] Migrasi storage.ts: localStorage → Supabase client
-├── 7. [ ] Setup Supabase Storage bucket
+├── 6. [x] Migrasi storage.ts: localStorage → Supabase client
+├── 7. [x] Setup Supabase Storage bucket
 │         → Bucket: avatars (foto profil siswa)
 │         → Bucket: payment-proofs (bukti transfer)
-└── 8. [ ] Implementasi Auth (Login + Role Management)
+└── 8. [x] Implementasi Auth (Login + Role Management)
           → Halaman /login (email + password)
           → Protected routes per role (Admin, Coach, Student)
           → Fitur lupa password
 
 Phase 3: DEPLOYMENT (Setelah Phase 2 Selesai)
-├── 9.  [ ] Build production & test (npm run build)
+├── 9.  [x] Build production & test (npm run build)
 ├── 10. [ ] Deploy ke Vercel (gratis, connect GitHub)
 ├── 11. [ ] Setup environment variables di Vercel
 │          → VITE_SUPABASE_URL

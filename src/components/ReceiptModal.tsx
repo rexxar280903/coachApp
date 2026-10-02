@@ -79,11 +79,15 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
           {/* Top Club Header */}
           <div className="flex items-start justify-between pb-6 border-b-2 border-slate-900 gap-4">
             <div className="flex items-center gap-3.5">
-              <div className="w-12 h-12 rounded-xl bg-slate-900 flex flex-col items-center justify-center text-white shadow-sm">
-                <span className="text-[7px] tracking-wider font-extrabold text-emerald-400">★ ★ ★</span>
-                <span className="text-[11px] font-black tracking-tight uppercase leading-none font-display">SPORT</span>
-                <span className="text-[7px] font-bold text-slate-300">ACADEMY</span>
-              </div>
+              {profile.logoUrl ? (
+                <img src={profile.logoUrl} alt={`Logo ${profile.namaKlub}`} className="w-12 h-12 rounded-xl object-cover border border-slate-200" />
+              ) : (
+                <div className="w-12 h-12 rounded-xl bg-slate-900 flex flex-col items-center justify-center text-white shadow-sm">
+                  <span className="text-[7px] tracking-wider font-extrabold text-emerald-400">★ ★ ★</span>
+                  <span className="text-[11px] font-black tracking-tight uppercase leading-none font-display">SPORT</span>
+                  <span className="text-[7px] font-bold text-slate-300">ACADEMY</span>
+                </div>
+              )}
               <div>
                 <h2 className="text-base font-display font-black tracking-tight text-slate-900 uppercase">
                   {profile.namaKlub}

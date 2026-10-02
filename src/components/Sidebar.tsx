@@ -49,6 +49,7 @@ interface SidebarProps {
   calonCount: number;
   pendingVerificationsCount?: number;
   currentRole: UserRole;
+  supportPhone?: string;
   isOpenMobile: boolean;
   onCloseMobile: () => void;
 }
@@ -59,6 +60,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   calonCount,
   pendingVerificationsCount = 0,
   currentRole,
+  supportPhone,
   isOpenMobile,
   onCloseMobile,
 }) => {
@@ -124,45 +126,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </div>
         )}
 
-        {/* Student Mode Notice if role is student */}
-        {currentRole === 'student' && (
-          <div className="mx-3 mt-3 p-3 rounded-xl bg-emerald-950/40 border border-emerald-800/50 text-xs text-emerald-200">
-            <p className="font-semibold flex items-center gap-1.5 text-emerald-400">
-              <GraduationCap className="w-4 h-4" />
-              <span>Portal Akun Siswa</span>
-            </p>
-            <p className="text-[11px] text-slate-300 mt-1 leading-snug">
-              Akses biodata atlet, presensi latihan, dan upload bukti kuitansi bayar.
-            </p>
-          </div>
-        )}
-
         {/* Menu Items */}
         <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-1 text-xs font-medium">
-          {/* STUDENT ROLE MENUS */}
-          {currentRole === 'student' && (
-            <>
-              <div className="px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-500">
-                Menu Siswa
-              </div>
-
-              <button
-                onClick={() => handleNavClick('student-portal')}
-                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all relative ${
-                  isNavActive('student-portal')
-                    ? 'bg-slate-800 text-white font-semibold shadow-xs'
-                    : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
-                }`}
-              >
-                {isNavActive('student-portal') && (
-                  <span className="absolute left-0 top-2 bottom-2 w-1 rounded-r-md bg-emerald-500" />
-                )}
-                <GraduationCap className="w-4 h-4 text-emerald-400" />
-                <span>Portal Siswa & Kuitansi</span>
-              </button>
-            </>
-          )}
-
           {/* ADMIN ROLE MENUS */}
           {currentRole === 'admin' && (
             <>
@@ -495,7 +460,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </div>
             <div className="min-w-0">
               <p className="text-[9px] text-slate-400 uppercase font-semibold truncate">Bantuan & WhatsApp</p>
-              <p className="text-xs font-mono font-bold text-slate-200 tracking-tight truncate">0897-2488-333</p>
+              <p className="text-xs font-mono font-bold text-slate-200 tracking-tight truncate">{supportPhone || '-'}</p>
             </div>
           </div>
         </div>

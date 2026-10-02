@@ -19,7 +19,7 @@ export const LaporanAbsensiView: React.FC<LaporanAbsensiViewProps> = ({
   classes,
 }) => {
   const [selectedClassId, setSelectedClassId] = useState<string>(classes[0]?.id || 'ku-10');
-  const [selectedYear, setSelectedYear] = useState<number>(2024);
+  const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
   const [selectedMonth, setSelectedMonth] = useState<number>(10);
   const [showCuti, setShowCuti] = useState<boolean>(false);
 

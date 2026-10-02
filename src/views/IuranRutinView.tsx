@@ -27,7 +27,7 @@ export const IuranRutinView: React.FC<IuranRutinViewProps> = ({
   onSelectStudent,
 }) => {
   const [selectedClassId, setSelectedClassId] = useState<string>(initialClassId || classes[0]?.id || 'ku-10');
-  const [selectedYear, setSelectedYear] = useState<number>(2024);
+  const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
   const [searchQuery, setSearchQuery] = useState<string>('');
 
   const currentClass = classes.find((c) => c.id === selectedClassId) || classes[0];

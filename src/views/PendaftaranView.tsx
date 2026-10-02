@@ -7,7 +7,8 @@ interface PendaftaranViewProps {
   classes: ClassGroup[];
   isPublicMode?: boolean;
   initialClassId?: string;
-  onRegisterSubmit: (newStudent: Student, autoPayDirectly: boolean) => void;
+  /** Mengembalikan false jika pendaftaran gagal (banner sukses tidak ditampilkan). */
+  onRegisterSubmit: (newStudent: Student, autoPayDirectly: boolean) => void | boolean | Promise<boolean | void>;
   onCancel?: () => void;
   onNavigateKelas?: () => void;
 }
@@ -42,7 +43,9 @@ export const PendaftaranView: React.FC<PendaftaranViewProps> = ({
   const iuranBulanan = selectedClass?.iuranBulanan || 100000;
   const totalBiaya = biayaPendaftaran + iuranBulanan;
 
-  const handleSubmit = (autoPay: boolean) => {
+  const [submitting, setSubmitting] = useState<boolean>(false);
+
+  const handleSubmit = async (autoPay: boolean) => {
     if (!nama.trim()) {
       alert('Silakan masukkan nama siswa terlebih dahulu.');
       return;
@@ -54,6 +57,11 @@ export const PendaftaranView: React.FC<PendaftaranViewProps> = ({
       return;
     }
 
+    if (!noHp.trim() && !noHpAyah.trim() && !noHpIbu.trim()) {
+      alert('Nomor HP siswa atau orang tua wajib diisi (dipakai untuk login Portal Siswa).');
+      return;
+    }
+
     const newStudent: Student = {
       id: 'std-' + Date.now(),
       nama: nama.trim(),
@@ -61,14 +69,14 @@ export const PendaftaranView: React.FC<PendaftaranViewProps> = ({
       jenisKelamin,
       tempatLahir,
       tanggalLahir,
-      noHp: noHp || noHpAyah || '081234567890',
-      email: email || `${nama.toLowerCase().replace(/\s+/g, '')}@student.club`,
-      alamat: alamat || 'Surabaya',
+      noHp: noHp.trim() || noHpAyah.trim() || noHpIbu.trim(),
+      email: email.trim() || undefined,
+      alamat: alamat.trim(),
       orangTua: {
-        namaAyah: namaAyah || 'Ayah/Wali',
-        noHpAyah: noHpAyah || noHp || '-',
-        namaIbu: namaIbu || 'Ibu/Wali',
-        noHpIbu: noHpIbu || '-',
+        namaAyah: namaAyah.trim(),
+        noHpAyah: noHpAyah.trim() || noHp.trim(),
+        namaIbu: namaIbu.trim(),
+        noHpIbu: noHpIbu.trim(),
       },
       status: autoPay ? 'Aktif' : 'Calon',
       catatan,
@@ -78,9 +86,15 @@ export const PendaftaranView: React.FC<PendaftaranViewProps> = ({
       totalBiayaPendaftaran: totalBiaya,
     };
 
-    onRegisterSubmit(newStudent, autoPay);
+    setSubmitting(true);
+    let ok: boolean | void = true;
+    try {
+      ok = await onRegisterSubmit(newStudent, autoPay);
+    } finally {
+      setSubmitting(false);
+    }
 
-    if (isPublicMode) {
+    if (isPublicMode && ok !== false) {
       setSuccessBanner(true);
     }
   };
@@ -341,15 +355,17 @@ export const PendaftaranView: React.FC<PendaftaranViewProps> = ({
             <button
               type="button"
               onClick={() => handleSubmit(false)}
-              className="w-full sm:w-auto px-8 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-md transition-all cursor-pointer"
+              disabled={submitting}
+              className="w-full sm:w-auto px-8 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-md transition-all cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
             >
-              Kirim Formulir Pendaftaran
+              {submitting ? 'Mengirim…' : 'Kirim Formulir Pendaftaran'}
             </button>
           ) : (
             <>
               <button
                 type="button"
                 onClick={() => handleSubmit(false)}
+              disabled={submitting}
                 className="w-full sm:w-auto px-5 py-2.5 rounded-xl border border-slate-300 hover:bg-slate-50 text-slate-700 font-semibold text-xs transition-colors cursor-pointer"
               >
                 Simpan Sebagai Calon Siswa (Verifikasi Nanti)
@@ -357,6 +373,7 @@ export const PendaftaranView: React.FC<PendaftaranViewProps> = ({
               <button
                 type="button"
                 onClick={() => handleSubmit(true)}
+              disabled={submitting}
                 className="w-full sm:w-auto px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-md transition-all flex items-center justify-center gap-1.5 cursor-pointer"
               >
                 <CreditCard className="w-4 h-4" />

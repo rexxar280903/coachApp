@@ -12,7 +12,10 @@ import {
   PaymentMethod
 } from '../types/sportkit';
 import { formatRupiah, numberToWordsId } from '../utils/numberToWordsId';
-import { SAMPLE_TRANSFER_PROOF_SVG } from '../services/storage';
+import { fileToCompressedDataUrl } from '../utils/image';
+import { useToast } from '../components/Toast';
+import { ImageUploadField } from '../components/ImageUploadField';
+import { generateKodeAkses, normalizePhone } from '../utils/kodeAkses';
 import { 
   Phone, 
   Mail, 
@@ -112,8 +115,9 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
   onViewReceipt,
   onAdminRecordPaymentWithProof,
 }) => {
+  const { toast, confirm } = useToast();
   const [activeTab, setActiveTab] = useState<TabKey>('iuran');
-  const [selectedYear, setSelectedYear] = useState<number>(2024);
+  const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
   const [isEditingBiodata, setIsEditingBiodata] = useState<boolean>(false);
   const [filterProofStatus, setFilterProofStatus] = useState<'all' | 'pending' | 'verified' | 'rejected'>('all');
   const [proofYearFilter, setProofYearFilter] = useState<number | 'all'>('all');
@@ -256,7 +260,7 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
     setInputNominal(defaultNominal);
     setInputMetode('Transfer BCA');
     setInputTanggal(new Date().toISOString().split('T')[0]);
-    setInputBuktiUrl(SAMPLE_TRANSFER_PROOF_SVG);
+    setInputBuktiUrl('');
     setInputPesan(
       `Pembayaran iuran bulan ${FULL_MONTH_NAMES[monthNumber - 1]} ${year} dari wali murid ${
         currentStudent.orangTua?.namaAyah || currentStudent.orangTua?.namaIbu || currentStudent.nama
@@ -270,18 +274,14 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
     });
   };
 
-  const handleAdminFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleAdminFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      if (file.size > 5 * 1024 * 1024) {
-        alert('Ukuran file maksimal 5 MB.');
-        return;
-      }
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        setInputBuktiUrl(event.target?.result as string);
-      };
-      reader.readAsDataURL(file);
+    e.target.value = '';
+    if (!file) return;
+    try {
+      setInputBuktiUrl(await fileToCompressedDataUrl(file));
+    } catch (err) {
+      toast.error('Gambar tidak dapat dipakai', (err as Error).message);
     }
   };
 
@@ -1345,6 +1345,13 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
 
           {isEditingBiodata && editForm ? (
             <form onSubmit={handleSaveBiodata} className="mt-6 space-y-4">
+              <ImageUploadField
+                label="Foto Siswa"
+                value={editForm.foto}
+                onChange={(foto) => setEditForm({ ...editForm, foto })}
+                hint="Opsional. Otomatis diperkecil sebelum diunggah."
+                placeholder={<span className="text-lg font-black text-slate-500">{editForm.nama.charAt(0)}</span>}
+              />
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1">Nama Siswa</label>
@@ -1451,10 +1458,16 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
               </div>
             </form>
           ) : (
+            <>
             <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 text-xs">
-              <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/80">
-                <span className="text-slate-400 font-semibold block text-[11px]">Nama Lengkap</span>
-                <span className="font-bold text-slate-900 text-sm">{currentStudent.nama}</span>
+              <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/80 flex items-center gap-3">
+                {currentStudent.foto && (
+                  <img src={currentStudent.foto} alt={`Foto ${currentStudent.nama}`} className="w-12 h-12 rounded-xl object-cover border border-slate-200" />
+                )}
+                <div>
+                  <span className="text-slate-400 font-semibold block text-[11px]">Nama Lengkap</span>
+                  <span className="font-bold text-slate-900 text-sm">{currentStudent.nama}</span>
+                </div>
               </div>
               <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/80">
                 <span className="text-slate-400 font-semibold block text-[11px]">Jenis Kelamin</span>
@@ -1491,6 +1504,61 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
                 <span className="font-bold text-slate-900 text-sm">{currentStudent.orangTua.namaIbu}</span>
               </div>
             </div>
+
+            {/* Akses Portal Siswa */}
+            <div className="mt-6 p-4 rounded-2xl bg-emerald-50/60 border border-emerald-200 space-y-3">
+              <div>
+                <h3 className="text-sm font-display font-bold text-slate-900">Akses Portal Siswa / Wali</h3>
+                <p className="text-[11px] text-slate-600">
+                  Siswa atau orang tua masuk di halaman <span className="font-mono">/portal</span> dengan nomor HP yang terdaftar
+                  (siswa, ayah, atau ibu) dan kode akses ini. Bagikan hanya kepada wali yang bersangkutan.
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="px-3 py-2 rounded-xl bg-white border border-emerald-200 font-mono font-bold tracking-widest text-sm text-slate-900">
+                  {currentStudent.kodeAkses || '—'}
+                </span>
+                <button
+                  type="button"
+                  disabled={!currentStudent.kodeAkses}
+                  onClick={() => {
+                    navigator.clipboard
+                      ?.writeText(currentStudent.kodeAkses || '')
+                      .then(() => toast.success('Kode disalin', currentStudent.kodeAkses))
+                      .catch(() => toast.error('Tidak dapat menyalin', 'Salin kode secara manual.'));
+                  }}
+                  className="px-3 py-2 rounded-xl bg-white hover:bg-slate-50 border border-slate-300 text-xs font-semibold text-slate-700 cursor-pointer disabled:opacity-50"
+                >
+                  Salin
+                </button>
+                {(() => {
+                  const hp = normalizePhone(currentStudent.orangTua.noHpAyah) || normalizePhone(currentStudent.orangTua.noHpIbu) || normalizePhone(currentStudent.noHp);
+                  if (!hp || !currentStudent.kodeAkses) return null;
+                  const text = `Halo, berikut akses Portal Siswa untuk ${currentStudent.nama}:\nBuka: ${window.location.origin}/portal\nNo. HP: ${hp}\nKode akses: ${currentStudent.kodeAkses}`;
+                  return (
+                    <a
+                      href={`https://wa.me/62${hp.replace(/^0/, '')}?text=${encodeURIComponent(text)}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold"
+                    >
+                      Kirim via WhatsApp
+                    </a>
+                  );
+                })()}
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const ok = await confirm('Buat kode akses baru?', 'Kode lama langsung tidak berlaku. Bagikan kode baru kepada wali.');
+                    if (ok) onUpdateStudent({ ...currentStudent, kodeAkses: generateKodeAkses() });
+                  }}
+                  className="px-3 py-2 rounded-xl text-xs font-semibold text-rose-700 hover:bg-rose-50 border border-rose-200 cursor-pointer"
+                >
+                  Buat kode baru
+                </button>
+              </div>
+            </div>
+            </>
           )}
         </div>
       )}
@@ -1917,13 +1985,6 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
                   <label className="block text-xs font-bold text-slate-700">
                     Unggah Bukti Struk Transfer:
                   </label>
-                  <button
-                    type="button"
-                    onClick={() => setInputBuktiUrl(SAMPLE_TRANSFER_PROOF_SVG)}
-                    className="text-[11px] text-emerald-700 hover:text-emerald-800 font-bold underline cursor-pointer"
-                  >
-                    Gunakan Contoh Struk Transfer
-                  </button>
                 </div>
 
                 {!inputBuktiUrl ? (

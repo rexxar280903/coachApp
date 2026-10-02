@@ -1,14 +1,13 @@
 import React, { useState } from 'react';
 import { ClubProfile, ClassGroup } from '../types/sportkit';
-import { Building, Settings, Save, RefreshCw, CheckCircle2 } from 'lucide-react';
+import { Building, Settings, Save, CheckCircle2 } from 'lucide-react';
+import { ImageUploadField } from '../components/ImageUploadField';
 
 interface PengaturanViewProps {
   profile: ClubProfile;
   classes: ClassGroup[];
   onUpdateProfile: (newProfile: ClubProfile) => void;
   onUpdateClasses: (newClasses: ClassGroup[]) => void;
-  onClearToZero: () => void;
-  onLoadSeedData: () => void;
 }
 
 export const PengaturanView: React.FC<PengaturanViewProps> = ({
@@ -16,8 +15,6 @@ export const PengaturanView: React.FC<PengaturanViewProps> = ({
   classes,
   onUpdateProfile,
   onUpdateClasses,
-  onClearToZero,
-  onLoadSeedData,
 }) => {
   const [profileForm, setProfileForm] = useState<ClubProfile>(profile);
   const [savedSuccess, setSavedSuccess] = useState<boolean>(false);
@@ -46,26 +43,6 @@ export const PengaturanView: React.FC<PengaturanViewProps> = ({
             Konfigurasi identitas resmi klub, kuitansi cetak, alamat markas, dan kontak darurat
           </p>
         </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={onClearToZero}
-            className="px-3.5 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-semibold border border-rose-200 flex items-center gap-1.5 transition-colors cursor-pointer"
-            title="Kosongkan database untuk mulai dari nol"
-          >
-            <RefreshCw className="w-3.5 h-3.5" />
-            <span>Kosongkan Data (Mulai Nol)</span>
-          </button>
-          <button
-            type="button"
-            onClick={onLoadSeedData}
-            className="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
-            title="Muat data contoh demo"
-          >
-            <span>Muat Data Demo</span>
-          </button>
-        </div>
       </div>
 
       {savedSuccess && (
@@ -83,6 +60,14 @@ export const PengaturanView: React.FC<PengaturanViewProps> = ({
             Informasi Profil Klub (Dicetak pada Kuitansi)
           </h2>
         </div>
+
+        <ImageUploadField
+          label="Logo Klub"
+          value={profileForm.logoUrl}
+          onChange={(logoUrl) => setProfileForm({ ...profileForm, logoUrl })}
+          hint="Tampil di header dan kuitansi. Disarankan persegi."
+          maxDim={400}
+        />
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
@@ -148,6 +133,40 @@ export const PengaturanView: React.FC<PengaturanViewProps> = ({
               value={profileForm.noWhatsApp}
               onChange={(e) => setProfileForm({ ...profileForm, noWhatsApp: e.target.value })}
               className="w-full text-xs rounded-xl border border-slate-300 px-3.5 py-2.5 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 font-mono"
+            />
+          </div>
+
+          <div className="sm:col-span-2 pt-2 border-t border-slate-100">
+            <p className="text-xs font-bold text-slate-700">Rekening Tujuan Transfer Iuran</p>
+            <p className="text-[11px] text-slate-500">Ditampilkan kepada siswa / wali di Portal Siswa saat mengunggah bukti transfer.</p>
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">Nama Bank</label>
+            <input
+              type="text"
+              value={profileForm.namaBank || ''}
+              onChange={(e) => setProfileForm({ ...profileForm, namaBank: e.target.value })}
+              placeholder="Bank Central Asia (BCA)"
+              className="w-full text-xs rounded-xl border border-slate-300 px-3.5 py-2.5 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">Nomor Rekening</label>
+            <input
+              type="text"
+              inputMode="numeric"
+              value={profileForm.noRekening || ''}
+              onChange={(e) => setProfileForm({ ...profileForm, noRekening: e.target.value })}
+              className="w-full text-xs rounded-xl border border-slate-300 px-3.5 py-2.5 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 font-mono"
+            />
+          </div>
+          <div className="sm:col-span-2">
+            <label className="block text-xs font-semibold text-slate-700 mb-1">Atas Nama</label>
+            <input
+              type="text"
+              value={profileForm.atasNama || ''}
+              onChange={(e) => setProfileForm({ ...profileForm, atasNama: e.target.value })}
+              className="w-full text-xs rounded-xl border border-slate-300 px-3.5 py-2.5 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
             />
           </div>
 
