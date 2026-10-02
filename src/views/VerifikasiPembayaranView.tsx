@@ -1,4 +1,7 @@
+import { ProofImage } from '../components/ProofImage';
 import React, { useState } from 'react';
+import { useToast } from '../components/Toast';
+import { receiptForSubmission, submissionOutcome, defaultVerifyNote } from '../utils/payments';
 import { 
   PaymentSubmission, 
   Student, 
@@ -47,6 +50,7 @@ export const VerifikasiPembayaranView: React.FC<VerifikasiPembayaranViewProps> =
   onViewReceipt,
   transactions,
 }) => {
+  const { toast } = useToast();
   const [filterStatus, setFilterStatus] = useState<'all' | 'pending' | 'verified' | 'rejected'>('pending');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedClassFilter, setSelectedClassFilter] = useState<string>('all');
@@ -104,6 +108,13 @@ export const VerifikasiPembayaranView: React.FC<VerifikasiPembayaranViewProps> =
     return true;
   });
 
+  const outcomeFor = (sub: PaymentSubmission) => {
+    const std = students.find((s) => s.id === sub.siswaId);
+    const cls = classes.find((c) => c.id === (std?.kelasId || sub.kelasId));
+    return submissionOutcome(sub, monthlyDues, cls?.iuranBulanan || std?.iuranBulanan || sub.nominal);
+  };
+  const verifyingOutcome = verifyingSubmission ? outcomeFor(verifyingSubmission) : null;
+
   const handleConfirmVerify = () => {
     if (!verifyingSubmission) return;
     onVerifySubmission(verifyingSubmission.id, adminNote);
@@ -113,7 +124,7 @@ export const VerifikasiPembayaranView: React.FC<VerifikasiPembayaranViewProps> =
   const handleConfirmReject = () => {
     if (!rejectingSubmission) return;
     if (!rejectReason.trim()) {
-      alert('Mohon tuliskan alasan penolakan agar siswa dapat memperbaikinya.');
+      toast.error('Alasan wajib diisi', 'Mohon tuliskan alasan penolakan agar siswa dapat memperbaikinya.');
       return;
     }
     onRejectSubmission(rejectingSubmission.id, rejectReason);
@@ -392,7 +403,7 @@ export const VerifikasiPembayaranView: React.FC<VerifikasiPembayaranViewProps> =
                       className="group relative cursor-pointer rounded-xl overflow-hidden border border-slate-200 bg-slate-100 hover:border-emerald-500 transition-all shadow-2xs shrink-0"
                       title="Klik untuk memperbesar bukti pembayaran"
                     >
-                      <img
+                      <ProofImage
                         src={sub.buktiGambarUrl}
                         alt={`Bukti transfer ${sub.siswaNama}`}
                         className="w-24 h-16 object-cover object-center group-hover:scale-105 transition-transform"
@@ -412,7 +423,7 @@ export const VerifikasiPembayaranView: React.FC<VerifikasiPembayaranViewProps> =
                           <button
                             onClick={() => {
                               setVerifyingSubmission(sub);
-                              setAdminNote(`Dana transfer ${sub.metodePembayaran} sebesar Rp ${sub.nominal.toLocaleString('id-ID')} telah terkonfirmasi masuk rekening kas klub. Pembayaran iuran ${periodLabel} dinyatakan lunas.`);
+                              setAdminNote(defaultVerifyNote(sub, outcomeFor(sub)));
                             }}
                             className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
                           >
@@ -442,14 +453,7 @@ export const VerifikasiPembayaranView: React.FC<VerifikasiPembayaranViewProps> =
                           {/* Open receipt if transaction exists */}
                           {sub.kuitansiId && (
                             <button
-                              onClick={() => {
-                                const tx = transactions.find((t) => t.nomorKuitansi === sub.kuitansiId);
-                                if (tx) {
-                                  onViewReceipt(tx);
-                                } else {
-                                  alert(`Kuitansi nomor: ${sub.kuitansiId} sudah terbit.`);
-                                }
-                              }}
+                              onClick={() => onViewReceipt(receiptForSubmission(sub, transactions))}
                               className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer"
                               title="Cetak / Bagikan Kuitansi Resmi"
                             >
@@ -497,10 +501,10 @@ export const VerifikasiPembayaranView: React.FC<VerifikasiPembayaranViewProps> =
             </div>
 
             <div className="p-4 bg-slate-950 flex items-center justify-center max-h-[65vh] overflow-auto">
-              <img
+              <ProofImage
                 src={previewImage.url}
                 alt={previewImage.title}
-                className="max-h-[60vh] max-w-full object-contain rounded-lg shadow-md"
+                className="max-h-[60vh] max-w-full object-contain rounded-lg shadow-md min-h-[200px] min-w-[200px]"
               />
             </div>
 
@@ -573,7 +577,28 @@ export const VerifikasiPembayaranView: React.FC<VerifikasiPembayaranViewProps> =
                     {verifyingSubmission.metodePembayaran} · {verifyingSubmission.tanggalTransfer}
                   </span>
                 </div>
+                {verifyingOutcome && (
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Sisa Tagihan:</span>
+                    <span className="font-mono font-bold text-slate-900">
+                      Rp {verifyingOutcome.sisa.toLocaleString('id-ID')}
+                    </span>
+                  </div>
+                )}
               </div>
+
+              {verifyingOutcome && verifyingOutcome.kind !== 'lunas' && (
+                <div
+                  className={`p-3 rounded-xl text-xs font-semibold border ${
+                    verifyingOutcome.kind === 'lebih'
+                      ? 'bg-rose-50 border-rose-200 text-rose-800'
+                      : 'bg-amber-50 border-amber-200 text-amber-800'
+                  }`}
+                >
+                  ⚠️ Nominal transfer {verifyingOutcome.text}.
+                  {verifyingOutcome.kind === 'cicilan' && ' Status bulan ini akan menjadi "Belum Lunas".'}
+                </div>
+              )}
 
               {/* Verification Note by Admin */}
               <div>

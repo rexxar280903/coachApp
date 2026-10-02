@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { getCurrentYear, getCurrentMonth, getYearOptions } from '../utils/constants';
 import { AttendanceSession, Student, ClassGroup } from '../types/sportkit';
 import { FileSpreadsheet, Printer, ChevronDown, Check, X, Calendar, FileText } from 'lucide-react';
 
@@ -19,8 +20,8 @@ export const LaporanAbsensiView: React.FC<LaporanAbsensiViewProps> = ({
   classes,
 }) => {
   const [selectedClassId, setSelectedClassId] = useState<string>(classes[0]?.id || 'ku-10');
-  const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
-  const [selectedMonth, setSelectedMonth] = useState<number>(10);
+  const [selectedYear, setSelectedYear] = useState<number>(getCurrentYear());
+  const [selectedMonth, setSelectedMonth] = useState<number>(getCurrentMonth());
   const [showCuti, setShowCuti] = useState<boolean>(false);
 
   const currentClass = classes.find((c) => c.id === selectedClassId) || classes[0];
@@ -56,13 +57,15 @@ export const LaporanAbsensiView: React.FC<LaporanAbsensiViewProps> = ({
       return [std.nama, ...dayValues, presentCount, `${pct}%`];
     });
 
-    const csvContent =
-      'data:text/csv;charset=utf-8,' +
-      [headers.join(','), ...rows.map((e) => e.map((val) => `"${val}"`).join(','))].join('\n');
-
-    const encodedUri = encodeURI(csvContent);
+    // Escape sesuai RFC 4180 (tanda kutip digandakan), lalu unduh lewat Blob
+    // agar karakter seperti '#' tidak memotong isi file.
+    const escapeCell = (val: string | number) => `"${String(val).replace(/"/g, '""')}"`;
+    const csvContent = [headers, ...rows].map((r) => r.map(escapeCell).join(',')).join('\r\n');
+    // BOM supaya Excel membaca UTF-8 dengan benar
+    const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
+    link.setAttribute('href', url);
     link.setAttribute(
       'download',
       `Laporan_Absensi_${currentClass?.nama || 'Kelas'}_${MONTH_NAMES[selectedMonth - 1]}_${selectedYear}.csv`
@@ -70,6 +73,7 @@ export const LaporanAbsensiView: React.FC<LaporanAbsensiViewProps> = ({
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    setTimeout(() => URL.revokeObjectURL(url), 0);
   };
 
   return (
@@ -157,9 +161,9 @@ export const LaporanAbsensiView: React.FC<LaporanAbsensiViewProps> = ({
                 onChange={(e) => setSelectedYear(Number(e.target.value))}
                 className="w-full text-xs font-semibold rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 appearance-none cursor-pointer pr-8"
               >
-                <option value={2024}>2024</option>
-                <option value={2025}>2025</option>
-                <option value={2026}>2026</option>
+                {getYearOptions(selectedYear).map((yr) => (
+                  <option key={yr} value={yr}>{yr}</option>
+                ))}
               </select>
               <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-3 top-3 pointer-events-none" />
             </div>

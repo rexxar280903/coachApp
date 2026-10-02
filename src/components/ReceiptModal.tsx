@@ -1,4 +1,5 @@
 import React, { useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { PaymentTransaction, ClubProfile } from '../types/sportkit';
 import { formatRupiah } from '../utils/numberToWordsId';
 import { Printer, X, Share2, CheckCircle2, Building, ShieldCheck, Award } from 'lucide-react';
@@ -34,14 +35,16 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
       `Metode: ${transaction.metodePembayaran}\n` +
       `Jumlah: *${formatRupiah(transaction.nominal)}*\n` +
       `Terbilang: _${transaction.terbilang}_\n\n` +
-      `Status: LUNAS RESMI ✅\n` +
+      `Status: Pembayaran diterima & terverifikasi ✅\n` +
       `Terima kasih atas pembayarannya.`
     );
     window.open(`https://wa.me/?text=${text}`, '_blank');
   };
 
-  return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4 print:p-0 print:bg-white">
+  // Dirender di luar #root agar saat dicetak hanya kuitansi yang tampil
+  // (#root disembunyikan oleh aturan @media print di index.css).
+  return createPortal(
+    <div className="receipt-print-root fixed inset-0 z-50 overflow-y-auto bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4 print:static print:block print:overflow-visible print:p-0 print:bg-white print:backdrop-blur-none">
       <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full border border-slate-200 overflow-hidden print:border-none print:shadow-none">
         {/* Header Action Bar (Hidden in Print) */}
         <div className="bg-[#090e17] text-white px-6 py-4 flex items-center justify-between border-b border-slate-800 print:hidden">
@@ -163,7 +166,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
             <div className="text-left">
               <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-300 font-bold text-[11px] font-mono">
                 <ShieldCheck className="w-4 h-4 text-emerald-600" />
-                <span>LUNAS TERVERIFIKASI</span>
+                <span>PEMBAYARAN TERVERIFIKASI</span>
               </div>
               <p className="text-[10px] text-slate-400 mt-1">
                 Kuitansi ini sah dan dihasilkan secara digital oleh SportKit System.
@@ -185,6 +188,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };

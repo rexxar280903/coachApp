@@ -1,4 +1,7 @@
 import React, { useState, useMemo } from 'react';
+import { useToast } from '../components/Toast';
+import { effectiveDueStatus, isNonBillable, FEE_STATUS_LABEL } from '../utils/payments';
+import { getCurrentYear, getYearOptions } from '../utils/constants';
 import { Student, ClassGroup, MonthlyDueRecord, FeeStatus, PaymentSubmission } from '../types/sportkit';
 import { formatRupiah } from '../utils/numberToWordsId';
 import { Search, ChevronDown, ChevronLeft, ChevronRight, Check, Filter, Layers, CreditCard, Sparkles, Clock } from 'lucide-react';
@@ -26,9 +29,11 @@ export const IuranRutinView: React.FC<IuranRutinViewProps> = ({
   onOpenPaymentModal,
   onSelectStudent,
 }) => {
+  const { toast } = useToast();
   const [selectedClassId, setSelectedClassId] = useState<string>(initialClassId || classes[0]?.id || 'ku-10');
-  const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
+  const [selectedYear, setSelectedYear] = useState<number>(getCurrentYear());
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [showNonaktif, setShowNonaktif] = useState<boolean>(false);
 
   const currentClass = classes.find((c) => c.id === selectedClassId) || classes[0];
 
@@ -37,9 +42,10 @@ export const IuranRutinView: React.FC<IuranRutinViewProps> = ({
     return students.filter((s) => {
       const matchClass = s.kelasId === selectedClassId;
       const matchQuery = s.nama.toLowerCase().includes(searchQuery.toLowerCase());
-      return matchClass && matchQuery && s.status !== 'Calon';
+      const matchStatus = s.status !== 'Calon' && (showNonaktif || s.status !== 'Nonaktif');
+      return matchClass && matchQuery && matchStatus;
     });
-  }, [students, selectedClassId, searchQuery]);
+  }, [students, selectedClassId, searchQuery, showNonaktif]);
 
   const getCellBg = (status: FeeStatus) => {
     switch (status) {
@@ -53,6 +59,8 @@ export const IuranRutinView: React.FC<IuranRutinViewProps> = ({
         return 'bg-slate-200 text-slate-400';
       case 'cuti':
         return 'bg-amber-100 text-amber-800';
+      case 'nonaktif':
+        return 'bg-slate-300 text-slate-500';
       default:
         return 'bg-slate-100 text-slate-600';
     }
@@ -63,13 +71,14 @@ export const IuranRutinView: React.FC<IuranRutinViewProps> = ({
       (d) => d.siswaId === std.id && d.tahun === selectedYear && d.bulan === monthNumber
     );
 
-    if (due && due.status === 'belum_bergabung') {
-      alert(`Siswa ${std.nama} belum bergabung pada bulan ini.`);
+    const status = effectiveDueStatus(std, due, monthNumber, selectedYear);
+    if (isNonBillable(status)) {
+      toast.info(FEE_STATUS_LABEL[status], `Iuran ${std.nama} bulan ${MONTH_NAMES[monthNumber - 1]} ${selectedYear} tidak ditagih.`);
       return;
     }
 
     if (due && due.status === 'lunas') {
-      alert(`Iuran bulan ${MONTH_NAMES[monthNumber - 1]} untuk ${std.nama} sudah lunas.`);
+      toast.info('Sudah lunas', `Iuran bulan ${MONTH_NAMES[monthNumber - 1]} untuk ${std.nama} sudah lunas.`);
       return;
     }
 
@@ -137,7 +146,7 @@ export const IuranRutinView: React.FC<IuranRutinViewProps> = ({
                 onChange={(e) => setSelectedYear(Number(e.target.value))}
                 className="rounded-lg border-0 bg-transparent px-2 py-1 text-xs font-bold text-slate-800 focus:outline-none focus:ring-1 focus:ring-emerald-500 cursor-pointer font-mono"
               >
-                {[2022, 2023, 2024, 2025, 2026, 2027].map((y) => (
+                {getYearOptions(selectedYear).map((y) => (
                   <option key={y} value={y}>
                     {y}
                   </option>
@@ -169,8 +178,17 @@ export const IuranRutinView: React.FC<IuranRutinViewProps> = ({
           </div>
 
           <div className="flex items-center gap-4 text-xs text-slate-500">
+            <label className="flex items-center gap-1.5 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={showNonaktif}
+                onChange={(e) => setShowNonaktif(e.target.checked)}
+                className="accent-emerald-600"
+              />
+              <span>Tampilkan siswa nonaktif</span>
+            </label>
             <span>
-              Menampilkan <span className="font-bold text-slate-900 font-mono">{filteredStudents.length}</span> siswa aktif di kelas {currentClass?.nama}
+              Menampilkan <span className="font-bold text-slate-900 font-mono">{filteredStudents.length}</span> siswa di kelas {currentClass?.nama}
             </span>
           </div>
         </div>
@@ -216,7 +234,7 @@ export const IuranRutinView: React.FC<IuranRutinViewProps> = ({
                       const due = monthlyDues.find(
                         (d) => d.siswaId === std.id && d.tahun === selectedYear && d.bulan === monthNum
                       );
-                      const status: FeeStatus = due ? due.status : 'belum_bayar';
+                      const status: FeeStatus = effectiveDueStatus(std, due, monthNum, selectedYear);
                       const sub = submissions?.find(
                         (s) => s.siswaId === std.id && s.bulan === monthNum && (!s.tahun || s.tahun === selectedYear)
                       );
@@ -230,7 +248,9 @@ export const IuranRutinView: React.FC<IuranRutinViewProps> = ({
                               ? 'bg-amber-400 text-slate-950 ring-2 ring-amber-300 ring-inset cursor-pointer'
                               : getCellBg(status)
                           }`}
-                          title={`${std.nama} - Bulan ${MONTH_NAMES[monthNum - 1]} (${status.replace('_', ' ')})${
+                          title={`${std.nama} - Bulan ${MONTH_NAMES[monthNum - 1]} (${FEE_STATUS_LABEL[status]}${
+                            due && due.status === 'belum_lunas' ? `: Rp ${(due.terbayar || 0).toLocaleString('id-ID')} dari Rp ${due.nominal.toLocaleString('id-ID')}` : ''
+                          })${
                             sub ? ` - Bukti: ${sub.status}` : ''
                           }`}
                         >
@@ -247,6 +267,7 @@ export const IuranRutinView: React.FC<IuranRutinViewProps> = ({
                                   {status === 'belum_bayar' && 'Rp'}
                                   {status === 'belum_bergabung' && '-'}
                                   {status === 'cuti' && 'C'}
+                                  {status === 'nonaktif' && 'N'}
                                 </span>
                                 {sub && sub.status === 'verified' && (
                                   <span className="text-[8px] opacity-80 leading-none">📎</span>
@@ -282,6 +303,14 @@ export const IuranRutinView: React.FC<IuranRutinViewProps> = ({
             <div className="flex items-center gap-2">
               <span className="w-3.5 h-3.5 rounded bg-slate-200" />
               <span className="font-semibold text-slate-500">Belum Bergabung (-)</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="w-3.5 h-3.5 rounded bg-amber-100 border border-amber-300" />
+              <span className="font-semibold text-amber-800">Cuti (C)</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="w-3.5 h-3.5 rounded bg-slate-300" />
+              <span className="font-semibold text-slate-500">Nonaktif (N)</span>
             </div>
             <div className="flex items-center gap-2">
               <span className="w-4 h-4 rounded bg-amber-400 text-slate-900 font-bold text-[10px] flex items-center justify-center animate-pulse">

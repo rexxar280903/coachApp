@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { getTodayISO } from '../utils/constants';
 import { Coach, CoachStatus, ClassGroup, Student } from '../types/sportkit';
 import { getCoachClasses, isValidPhone, normalizeName, normalizePhone } from '../utils/coaches';
 import {
@@ -35,7 +36,7 @@ const EMPTY_FORM = (): Omit<Coach, 'id'> => ({
   spesialisasi: '',
   status: 'Aktif',
   catatan: '',
-  tanggalBergabung: new Date().toISOString().slice(0, 10),
+  tanggalBergabung: getTodayISO(),
 });
 
 export const PelatihView: React.FC<PelatihViewProps> = ({

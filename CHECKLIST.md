@@ -178,6 +178,47 @@ Agar bisa dipakai seperti app native di HP coach/admin.
 
 ---
 
+## 🐞 PERBAIKAN BUG (Audit 1 Okt 2026) — SELESAI ✅
+
+| No | Masalah | Perbaikan |
+|----|---------|-----------|
+| 1 | Bayar event/pendaftaran ikut melunasi iuran Desember 2024 | Periode bulan/tahun hanya dikirim untuk Iuran Rutin; handler dipisah per tipe pembayaran |
+| 2 | Angsuran/cicilan langsung dianggap lunas & menimpa nominal | Pembayaran kumulatif (`utils/payments.ts`), status `belum_lunas` sampai tertutup penuh |
+| 3 | Peserta event lunas tanpa cek nominal, `pesertaLunas` selalu +1 | Cicilan event + hitung ulang dari data peserta |
+| 4 | "Bayar Langsung" mengaktifkan siswa sebelum bayar | Siswa tetap `Calon` sampai pembayaran tercatat; iuran perdana pakai tarif kelas |
+| 5 | Data demo bukti bayar muncul lagi setelah reset | Injeksi `INITIAL_SUBMISSIONS` dihapus dari `getPaymentSubmissions` |
+| 6 | Pembayaran ganda (bulan lunas / bukti pending) | Diblokir di portal siswa, verifikasi admin, dan input admin |
+| 7 | Event baru tidak bisa diberi peserta | Modal "Tambah Peserta" + hapus peserta yang belum bayar |
+| 8 | Sesi absensi salah saat ganti kelas, tidak bisa diedit | Daftar hadir di-reset per kelas, fitur edit sesi, peringatan sesi dobel |
+| 9 | Tahun default 2024 & dropdown tahun hardcoded | `getCurrentYear()` / `getYearOptions()` |
+| 10 | Tanggal pakai UTC (salah sebelum 07:00 WIB) | `getTodayISO()` memakai zona waktu lokal |
+| 11 | Nomor kuitansi bisa kembar | Nomor urut harian `INVSP-YYMMDD-NNN` |
+| 12 | Hapus kelas meninggalkan data yatim | Iuran, peserta event, sesi absensi ikut dibersihkan/dipindah |
+| 13 | Pendaftaran mengisi data palsu, tanpa validasi | Validasi HP/email/tanggal lahir, tanpa data dummy |
+| 14 | Verifikasi selalu bertipe "Iuran Rutin" | Tipe transaksi mengikuti tipe bukti bayar |
+| 15 | Masih ada 18 `alert()` | Semua diganti toast |
+| 16 | Role bisa akses halaman admin lewat URL, hilang saat refresh | Route guard per role + role disimpan |
+| 17 | localStorage rusak → layar putih | Parse aman + `ErrorBoundary` |
+
+---
+
+## 🐞 PERBAIKAN BUG TAHAP 2 — SELESAI ✅
+
+| No | Masalah | Perbaikan |
+|----|---------|-----------|
+| 1 | Cetak kuitansi ikut mencetak halaman di belakangnya | Kuitansi dirender via portal; `#root` disembunyikan saat print |
+| 2 | Bulan sebelum tanggal bergabung tampil menunggak | Status efektif dari `tanggalBergabung` (`effectiveDueStatus`), bulan itu tidak bisa dibayar |
+| 3 | Siswa Cuti/Nonaktif tetap terlihat menunggak | Status `cuti`/`nonaktif` sejak `tanggalStatus`; dikunci saat siswa aktif kembali; siswa nonaktif disembunyikan di matriks (opsional ditampilkan) |
+| 4 | Portal siswa menampilkan cicilan sebagai LUNAS | Status dari record tagihan, tampil terbayar & sisa, tombol "Bayar Sisa" |
+| 5 | Ekspor CSV terpotong oleh `#`, kutip tidak di-escape | Ekspor via Blob, escape RFC 4180, BOM UTF-8 |
+| 6 | Edit biodata tanpa validasi | Validasi nama, nomor HP, email |
+| 7 | Kelebihan bayar tidak diperingatkan | Konfirmasi di modal pembayaran, peringatan di verifikasi & input admin |
+| 8 | Ubah tarif kelas tidak berlaku ke siswa | Tarif calon & siswa aktif ikut kelas (juga saat pindah kelas); record iuran lama tidak diubah |
+| 9 | Catatan verifikasi selalu "lunas" | Catatan & peringatan mengikuti hasil (lunas / cicilan / kelebihan) |
+| 10 | Data demo terkunci di 2024 | Tanggal demo digeser relatif ke bulan berjalan |
+
+---
+
 ## 📝 LANGKAH REKOMENDASI (Urutan Prioritas yang Diperbarui)
 
 > ✅ **Keputusan:** Pilih **Opsi A** — rapikan fondasi frontend terlebih dahulu sebelum integrasi Supabase.

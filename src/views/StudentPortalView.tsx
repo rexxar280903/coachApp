@@ -1,4 +1,7 @@
 import React, { useState } from 'react';
+import { useToast } from '../components/Toast';
+import { receiptForSubmission, remainingMonthlyDue, effectiveDueStatus, isNonBillable, FEE_STATUS_LABEL } from '../utils/payments';
+import { getTodayISO, getCurrentYear, getCurrentMonth, getYearOptions } from '../utils/constants';
 import { 
   Student, 
   ClassGroup, 
@@ -46,7 +49,7 @@ interface StudentPortalViewProps {
   submissions: PaymentSubmission[];
   clubProfile: ClubProfile;
   onSelectStudent: (studentId: string) => void;
-  onSubmitPaymentProof: (newSubmission: Omit<PaymentSubmission, 'id' | 'status' | 'tanggalKirim'>) => Promise<void>;
+  onSubmitPaymentProof: (newSubmission: Omit<PaymentSubmission, 'id' | 'status' | 'tanggalKirim'>) => Promise<boolean>;
   onViewReceipt: (tx: PaymentTransaction) => void;
 }
 
@@ -63,6 +66,7 @@ export const StudentPortalView: React.FC<StudentPortalViewProps> = ({
   onSubmitPaymentProof,
   onViewReceipt,
 }) => {
+  const { toast } = useToast();
   const [activeTab, setActiveTab] = useState<'upload' | 'iuran' | 'absensi'>('upload');
   
   // Student's specific class
@@ -75,13 +79,13 @@ export const StudentPortalView: React.FC<StudentPortalViewProps> = ({
   ];
 
   // Upload Form State
-  const [selectedMonth, setSelectedMonth] = useState<number>(new Date().getMonth() + 1);
-  const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
+  const [selectedMonth, setSelectedMonth] = useState<number>(getCurrentMonth());
+  const [selectedYear, setSelectedYear] = useState<number>(getCurrentYear());
   const [historyYearFilter, setHistoryYearFilter] = useState<number | 'all'>('all');
   const [transferAmount, setTransferAmount] = useState<number>(studentClass?.iuranBulanan || 100000);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('Transfer BCA');
   const [transferDate, setTransferDate] = useState<string>(
-    new Date().toISOString().split('T')[0]
+    getTodayISO()
   );
   const [studentMessage, setStudentMessage] = useState<string>('');
   const [imagePreviewUrl, setImagePreviewUrl] = useState<string>('');
@@ -99,6 +103,12 @@ export const StudentPortalView: React.FC<StudentPortalViewProps> = ({
 
   // Student's monthly dues
   const studentDues = monthlyDues.filter((d) => d.siswaId === currentStudent.id);
+
+  // Sisa tagihan sebuah bulan (untuk mengisi nominal transfer otomatis)
+  const sisaTagihan = (bulan: number, tahun: number) =>
+    remainingMonthlyDue(monthlyDues, currentStudent.id, bulan, tahun, studentClass?.iuranBulanan || 0) ||
+    studentClass?.iuranBulanan ||
+    0;
 
   // Student's submissions
   const studentSubmissions = submissions.filter((s) => s.siswaId === currentStudent.id);
@@ -124,11 +134,10 @@ export const StudentPortalView: React.FC<StudentPortalViewProps> = ({
     const file = e.target.files?.[0];
     e.target.value = '';
     if (!file) return;
-    setSubmitError('');
     try {
       setImagePreviewUrl(await fileToCompressedDataUrl(file));
     } catch (err) {
-      setSubmitError((err as Error).message);
+      toast.error('Gambar tidak dapat dipakai', (err as Error).message);
     }
   };
 
@@ -137,17 +146,17 @@ export const StudentPortalView: React.FC<StudentPortalViewProps> = ({
     e.preventDefault();
     setSubmitError('');
     if (!imagePreviewUrl) {
-      setSubmitError('Mohon unggah gambar struk / bukti transfer pembayaran terlebih dahulu.');
+      toast.error('Bukti transfer belum ada', 'Mohon unggah gambar struk / bukti transfer pembayaran terlebih dahulu.');
       return;
     }
     if (!transferAmount || transferAmount <= 0) {
-      setSubmitError('Nominal transfer harus lebih dari 0.');
+      toast.error('Nominal tidak valid', 'Nominal transfer harus lebih dari 0.');
       return;
     }
 
     setIsSubmitting(true);
     try {
-      await onSubmitPaymentProof({
+      const accepted = await onSubmitPaymentProof({
         siswaId: currentStudent.id,
         siswaNama: currentStudent.nama,
         kelasId: currentStudent.kelasId,
@@ -161,6 +170,7 @@ export const StudentPortalView: React.FC<StudentPortalViewProps> = ({
         buktiGambarUrl: imagePreviewUrl,
         pesanSiswa: studentMessage || `Pembayaran iuran ${monthNames[selectedMonth - 1]} ${selectedYear}`,
       });
+      if (!accepted) return; // ditolak di sisi aplikasi (mis. iuran sudah lunas / bukti masih menunggu); pesan sudah tampil
       setShowSuccessAlert(true);
       setImagePreviewUrl('');
       setStudentMessage('');
@@ -287,7 +297,7 @@ export const StudentPortalView: React.FC<StudentPortalViewProps> = ({
                     onChange={(e) => setSelectedYear(Number(e.target.value))}
                     className="bg-transparent text-white font-mono text-xs font-bold focus:outline-none cursor-pointer"
                   >
-                    {[2022, 2023, 2024, 2025, 2026, 2027].map((y) => (
+                    {getYearOptions(selectedYear).map((y) => (
                       <option key={y} value={y} className="bg-slate-900 text-white">
                         Tahun {y}
                       </option>
@@ -421,7 +431,11 @@ export const StudentPortalView: React.FC<StudentPortalViewProps> = ({
                   </label>
                   <select
                     value={selectedMonth}
-                    onChange={(e) => setSelectedMonth(Number(e.target.value))}
+                    onChange={(e) => {
+                      const m = Number(e.target.value);
+                      setSelectedMonth(m);
+                      setTransferAmount(sisaTagihan(m, selectedYear));
+                    }}
                     className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-semibold text-slate-800 bg-white focus:outline-emerald-500 cursor-pointer"
                   >
                     {monthNames.map((m, idx) => (
@@ -441,7 +455,7 @@ export const StudentPortalView: React.FC<StudentPortalViewProps> = ({
                     onChange={(e) => setSelectedYear(Number(e.target.value))}
                     className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-semibold text-slate-800 bg-white focus:outline-emerald-500 cursor-pointer font-bold font-mono"
                   >
-                    {[2022, 2023, 2024, 2025, 2026, 2027].map((y) => (
+                    {getYearOptions(selectedYear).map((y) => (
                       <option key={y} value={y}>
                         {y}
                       </option>
@@ -609,7 +623,7 @@ export const StudentPortalView: React.FC<StudentPortalViewProps> = ({
                     className="px-2.5 py-1 rounded-xl bg-slate-100 text-slate-700 text-xs font-semibold border border-slate-200 cursor-pointer focus:outline-none"
                   >
                     <option value="all">Semua Tahun</option>
-                    {[2022, 2023, 2024, 2025, 2026, 2027].map((y) => (
+                    {getYearOptions().map((y) => (
                       <option key={y} value={y}>Tahun {y}</option>
                     ))}
                   </select>
@@ -743,14 +757,7 @@ export const StudentPortalView: React.FC<StudentPortalViewProps> = ({
                             {/* If verified, show receipt button */}
                             {sub.status === 'verified' && sub.kuitansiId && (
                               <button
-                                onClick={() => {
-                                  const tx = transactions.find((t) => t.nomorKuitansi === sub.kuitansiId);
-                                  if (tx) {
-                                    onViewReceipt(tx);
-                                  } else {
-                                    alert(`Kuitansi ${sub.kuitansiId} siap dicetak.`);
-                                  }
-                                }}
+                                onClick={() => onViewReceipt(receiptForSubmission(sub, transactions))}
                                 className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] flex items-center gap-1 shadow-xs transition-colors cursor-pointer"
                               >
                                 <Receipt className="w-3 h-3" />
@@ -800,7 +807,7 @@ export const StudentPortalView: React.FC<StudentPortalViewProps> = ({
                     onChange={(e) => setSelectedYear(Number(e.target.value))}
                     className="rounded-lg border-0 bg-white px-2.5 py-1 text-xs font-bold text-slate-800 shadow-xs cursor-pointer focus:outline-none focus:ring-2 focus:ring-emerald-500 font-mono"
                   >
-                    {[2022, 2023, 2024, 2025, 2026, 2027].map((yr) => (
+                    {getYearOptions(selectedYear).map((yr) => (
                       <option key={yr} value={yr}>
                         {yr}
                       </option>
@@ -840,11 +847,22 @@ export const StudentPortalView: React.FC<StudentPortalViewProps> = ({
             {monthNames.map((mName, idx) => {
               const monthNum = idx + 1;
               const due = studentDues.find((d) => d.bulan === monthNum && d.tahun === selectedYear);
-              const sub = studentSubmissions.find(
-                (s) => s.bulan === monthNum && s.tahun === selectedYear
+              const status = effectiveDueStatus(currentStudent, due, monthNum, selectedYear);
+              const pendingSub = studentSubmissions.find(
+                (s) => s.bulan === monthNum && s.tahun === selectedYear && s.status === 'pending'
               );
-              const isPaid = due?.status === 'lunas' || sub?.status === 'verified';
-              const isPending = sub?.status === 'pending';
+              const tagihan = due && due.nominal > 0 ? due.nominal : studentClass?.iuranBulanan || 0;
+              const sisa = Math.max(0, tagihan - (due?.terbayar || 0));
+              const isPaid = status === 'lunas';
+              const isPartial = status === 'belum_lunas';
+              const isPending = !isPaid && !!pendingSub;
+              const notBilled = isNonBillable(status);
+
+              const goPay = () => {
+                setSelectedMonth(monthNum);
+                setTransferAmount(sisa || tagihan);
+                setActiveTab('upload');
+              };
 
               return (
                 <div
@@ -852,10 +870,10 @@ export const StudentPortalView: React.FC<StudentPortalViewProps> = ({
                   className={`p-4 rounded-2xl border transition-all ${
                     isPaid
                       ? 'bg-emerald-50/50 border-emerald-300 shadow-xs'
-                      : isPending
+                      : isPending || isPartial
                       ? 'bg-amber-50/50 border-amber-300'
                       : 'bg-slate-50 border-slate-200'
-                  }`}
+                  } ${notBilled ? 'opacity-60' : ''}`}
                 >
                   <div className="flex items-center justify-between mb-2">
                     <span className="font-display font-bold text-xs uppercase tracking-wider text-slate-700">
@@ -865,7 +883,7 @@ export const StudentPortalView: React.FC<StudentPortalViewProps> = ({
                       <span className="w-6 h-6 rounded-full bg-emerald-500 text-white flex items-center justify-center">
                         <CheckCircle2 className="w-4 h-4" />
                       </span>
-                    ) : isPending ? (
+                    ) : isPending || isPartial ? (
                       <span className="w-6 h-6 rounded-full bg-amber-500 text-white flex items-center justify-center">
                         <Clock className="w-4 h-4" />
                       </span>
@@ -877,34 +895,40 @@ export const StudentPortalView: React.FC<StudentPortalViewProps> = ({
                   </div>
 
                   <p className="font-mono text-sm font-bold text-slate-900">
-                    Rp {studentClass?.iuranBulanan.toLocaleString('id-ID')}
+                    {notBilled ? '-' : `Rp ${tagihan.toLocaleString('id-ID')}`}
                   </p>
+                  {isPartial && (
+                    <p className="text-[11px] text-amber-700 font-semibold mt-0.5">
+                      Terbayar Rp {(due?.terbayar || 0).toLocaleString('id-ID')}
+                    </p>
+                  )}
 
                   <div className="mt-2 pt-2 border-t border-slate-200/60 flex items-center justify-between text-[11px]">
                     {isPaid ? (
                       <>
                         <span className="text-emerald-700 font-bold">LUNAS</span>
-                        {(due?.kuitansiId || sub?.kuitansiId) && (
-                          <span className="font-mono text-[10px] text-slate-500">
-                            {due?.kuitansiId || sub?.kuitansiId}
-                          </span>
+                        {due?.kuitansiId && (
+                          <span className="font-mono text-[10px] text-slate-500">{due.kuitansiId}</span>
                         )}
                       </>
+                    ) : notBilled ? (
+                      <span className="text-slate-500 font-semibold">{FEE_STATUS_LABEL[status]}</span>
                     ) : isPending ? (
                       <>
                         <span className="text-amber-700 font-bold">Menunggu Cek Admin</span>
                         <span className="text-[10px] text-amber-600">Pending</span>
                       </>
+                    ) : isPartial ? (
+                      <>
+                        <span className="text-amber-700 font-bold">Sisa Rp {sisa.toLocaleString('id-ID')}</span>
+                        <button onClick={goPay} className="font-bold text-emerald-600 hover:text-emerald-700 cursor-pointer">
+                          Bayar Sisa →
+                        </button>
+                      </>
                     ) : (
                       <>
                         <span className="text-slate-500">Belum Dibayar</span>
-                        <button
-                          onClick={() => {
-                            setSelectedMonth(monthNum);
-                            setActiveTab('upload');
-                          }}
-                          className="font-bold text-emerald-600 hover:text-emerald-700 cursor-pointer"
-                        >
+                        <button onClick={goPay} className="font-bold text-emerald-600 hover:text-emerald-700 cursor-pointer">
                           Bayar Sekarang →
                         </button>
                       </>

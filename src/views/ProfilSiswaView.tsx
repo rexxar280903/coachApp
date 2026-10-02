@@ -1,4 +1,8 @@
 import React, { useState } from 'react';
+import { useToast } from '../components/Toast';
+import { isValidPhone } from '../utils/coaches';
+import { receiptForSubmission, submissionOutcome, defaultVerifyNote, effectiveDueStatus, isNonBillable, FEE_STATUS_LABEL } from '../utils/payments';
+import { getTodayISO, getCurrentYear, getYearOptions } from '../utils/constants';
 import { 
   Student, 
   ClassGroup, 
@@ -13,8 +17,8 @@ import {
 } from '../types/sportkit';
 import { formatRupiah, numberToWordsId } from '../utils/numberToWordsId';
 import { fileToCompressedDataUrl } from '../utils/image';
-import { useToast } from '../components/Toast';
 import { ImageUploadField } from '../components/ImageUploadField';
+import { ProofImage } from '../components/ProofImage';
 import { generateKodeAkses, normalizePhone } from '../utils/kodeAkses';
 import { 
   Phone, 
@@ -117,7 +121,7 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
 }) => {
   const { toast, confirm } = useToast();
   const [activeTab, setActiveTab] = useState<TabKey>('iuran');
-  const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
+  const [selectedYear, setSelectedYear] = useState<number>(getCurrentYear());
   const [isEditingBiodata, setIsEditingBiodata] = useState<boolean>(false);
   const [filterProofStatus, setFilterProofStatus] = useState<'all' | 'pending' | 'verified' | 'rejected'>('all');
   const [proofYearFilter, setProofYearFilter] = useState<number | 'all'>('all');
@@ -157,7 +161,7 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
 
   const [inputNominal, setInputNominal] = useState<number>(currentClass?.iuranBulanan || 100000);
   const [inputMetode, setInputMetode] = useState<PaymentMethod>('Transfer BCA');
-  const [inputTanggal, setInputTanggal] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [inputTanggal, setInputTanggal] = useState<string>(getTodayISO());
   const [inputBuktiUrl, setInputBuktiUrl] = useState<string>('');
   const [inputPesan, setInputPesan] = useState<string>('');
   const [inputCatatanAdmin, setInputCatatanAdmin] = useState<string>('Pembayaran diinput & diverifikasi oleh Admin.');
@@ -166,6 +170,16 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
     setEditForm(currentStudent);
     setIsEditingBiodata(false);
   }, [currentStudent]);
+
+  const verifyOutcome = verifyModalSub
+    ? submissionOutcome(verifyModalSub, monthlyDues, currentClass?.iuranBulanan || currentStudent?.iuranBulanan || verifyModalSub.nominal)
+    : null;
+
+  // Catatan default mengikuti hasil pembayaran (lunas / cicilan / kelebihan)
+  React.useEffect(() => {
+    if (verifyModalSub) setVerifyNote(defaultVerifyNote(verifyModalSub, verifyOutcome));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [verifyModalSub]);
 
   if (!currentStudent) {
     return (
@@ -202,26 +216,7 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
 
   const handleOpenReceiptForSub = (sub: PaymentSubmission) => {
     if (!onViewReceipt) return;
-    const existingTx = transactions?.find((t) => t.id === sub.transactionId || t.nomorKuitansi === sub.kuitansiId);
-    if (existingTx) {
-      onViewReceipt(existingTx);
-    } else {
-      const tx: PaymentTransaction = {
-        id: sub.transactionId || `tx-${sub.id}`,
-        nomorKuitansi: sub.kuitansiId || 'INVSP-OFFICIAL',
-        siswaId: sub.siswaId,
-        siswaNama: sub.siswaNama,
-        kelasNama: sub.kelasNama,
-        tanggal: sub.tanggalTransfer || sub.tanggalVerifikasi || new Date().toISOString().slice(0, 10),
-        nominal: sub.nominal,
-        terbilang: numberToWordsId(sub.nominal),
-        metodePembayaran: sub.metodePembayaran,
-        tipe: 'Iuran Rutin',
-        keterangan: sub.pesanSiswa || `Iuran Rutin ${sub.bulan ? FULL_MONTH_NAMES[sub.bulan - 1] : ''} ${sub.tahun || ''}`,
-        catatan: sub.catatanAdmin,
-      };
-      onViewReceipt(tx);
-    }
+    onViewReceipt(receiptForSubmission(sub, transactions || []));
   };
 
   const handleConfirmVerify = () => {
@@ -248,6 +243,8 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
         return 'bg-rose-500 hover:bg-rose-600 text-white cursor-pointer shadow-xs';
       case 'belum_bergabung':
         return 'bg-slate-200 text-slate-400 cursor-not-allowed';
+      case 'nonaktif':
+        return 'bg-slate-300 text-slate-500';
       case 'cuti':
         return 'bg-amber-100 text-amber-800 border border-amber-300';
       default:
@@ -256,10 +253,15 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
   };
 
   const openAdminInputProofModal = (monthNumber: number, year: number) => {
-    const defaultNominal = currentClass?.iuranBulanan || 100000;
+    // Untuk cicilan, default nominal = sisa tagihan
+    const existing = monthlyDues.find(
+      (d) => d.siswaId === currentStudent.id && d.bulan === monthNumber && d.tahun === year
+    );
+    const tagihan = existing && existing.nominal > 0 ? existing.nominal : currentClass?.iuranBulanan || 0;
+    const defaultNominal = Math.max(0, tagihan - (existing?.terbayar || 0));
     setInputNominal(defaultNominal);
     setInputMetode('Transfer BCA');
-    setInputTanggal(new Date().toISOString().split('T')[0]);
+    setInputTanggal(getTodayISO());
     setInputBuktiUrl('');
     setInputPesan(
       `Pembayaran iuran bulan ${FULL_MONTH_NAMES[monthNumber - 1]} ${year} dari wali murid ${
@@ -290,12 +292,12 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
     if (!adminInputProofModal) return;
 
     if (!inputBuktiUrl) {
-      alert('Mohon lampirkan struk / foto bukti pembayaran transfer.');
+      toast.error('Bukti pembayaran belum ada', 'Mohon lampirkan struk / foto bukti pembayaran transfer.');
       return;
     }
 
     if (!inputNominal || inputNominal <= 0) {
-      alert('Nominal pembayaran harus lebih dari 0.');
+      toast.error('Nominal tidak valid', 'Nominal pembayaran harus lebih dari 0.');
       return;
     }
 
@@ -321,9 +323,10 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
 
   const handleCellClick = (monthNumber: number) => {
     const record = studentDues.find((d) => d.bulan === monthNumber);
+    const status = effectiveDueStatus(currentStudent, record, monthNumber, selectedYear);
 
-    if (record && record.status === 'belum_bergabung') {
-      alert('Siswa belum bergabung pada bulan ini.');
+    if (isNonBillable(status)) {
+      toast.info(FEE_STATUS_LABEL[status], `Iuran bulan ${FULL_MONTH_NAMES[monthNumber - 1]} ${selectedYear} tidak ditagih.`);
       return;
     }
 
@@ -342,7 +345,7 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
           sub: monthSub,
         });
       } else {
-        alert(`Iuran bulan ${FULL_MONTH_NAMES[monthNumber - 1]} sudah lunas (${formatRupiah(record?.nominal || currentClass?.iuranBulanan || 100000)}).`);
+        toast.info('Sudah lunas', `Iuran bulan ${FULL_MONTH_NAMES[monthNumber - 1]} sudah lunas (${formatRupiah(record?.nominal || currentClass?.iuranBulanan || 0)}).`);
       }
       return;
     }
@@ -353,10 +356,42 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
 
   const handleSaveBiodata = (e: React.FormEvent) => {
     e.preventDefault();
-    if (editForm) {
-      onUpdateStudent(editForm);
-      setIsEditingBiodata(false);
+    if (!editForm) return;
+
+    const nama = editForm.nama.trim();
+    if (!nama) {
+      toast.error('Nama wajib diisi', 'Nama siswa tidak boleh kosong.');
+      return;
     }
+    // '-' dipakai sebagai penanda "tidak diisi"
+    const filled = (v?: string) => !!v && v.trim() !== '' && v.trim() !== '-';
+    const phones = [
+      { label: 'No. HP siswa', value: editForm.noHp },
+      { label: 'No. HP ayah', value: editForm.orangTua.noHpAyah },
+      { label: 'No. HP ibu', value: editForm.orangTua.noHpIbu },
+    ];
+    if (!phones.some((p) => filled(p.value))) {
+      toast.error('Nomor kontak wajib diisi', 'Isi minimal satu nomor HP siswa atau orang tua.');
+      return;
+    }
+    const badPhone = phones.find((p) => filled(p.value) && !isValidPhone(p.value));
+    if (badPhone) {
+      toast.error('Nomor HP tidak valid', `${badPhone.label} harus diawali 0 / 62 / +62 lalu 8–12 digit angka.`);
+      return;
+    }
+    if (filled(editForm.email) && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(editForm.email!.trim())) {
+      toast.error('Email tidak valid', 'Periksa kembali format alamat email.');
+      return;
+    }
+
+    onUpdateStudent({
+      ...editForm,
+      nama,
+      noHp: phones.find((p) => filled(p.value))!.value.trim(),
+      email: filled(editForm.email) ? editForm.email!.trim() : undefined,
+    });
+    setIsEditingBiodata(false);
+    toast.success('Biodata disimpan', `Data ${nama} berhasil diperbarui.`);
   };
 
   const cleanedPhone = currentStudent.noHp.replace(/[^0-9]/g, '');
@@ -516,12 +551,9 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
                   onChange={(e) => setSelectedYear(Number(e.target.value))}
                   className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-bold text-slate-800 shadow-xs cursor-pointer focus:outline-none focus:ring-2 focus:ring-emerald-500 font-mono"
                 >
-                  <option value={2022}>2022</option>
-                  <option value={2023}>2023</option>
-                  <option value={2024}>2024</option>
-                  <option value={2025}>2025</option>
-                  <option value={2026}>2026</option>
-                  <option value={2027}>2027</option>
+                  {getYearOptions(selectedYear).map((yr) => (
+                    <option key={yr} value={yr}>{yr}</option>
+                  ))}
                 </select>
               </div>
               <button
@@ -555,7 +587,7 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
                   </td>
                   {Array.from({ length: 12 }, (_, i) => i + 1).map((monthNum) => {
                     const due = studentDues.find((d) => d.bulan === monthNum);
-                    const status: FeeStatus = due ? due.status : 'belum_bayar';
+                    const status: FeeStatus = effectiveDueStatus(currentStudent, due, monthNum, selectedYear);
                     const monthSub = studentSubmissions.find(
                       (s) => s.bulan === monthNum && (!s.tahun || s.tahun === selectedYear)
                     );
@@ -573,7 +605,9 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
                         className={`p-2 border border-slate-200 transition-all cursor-pointer relative ${getCellColorClass(
                           status
                         )}`}
-                        title={`Bulan: ${FULL_MONTH_NAMES[monthNum - 1]} (${status.replace('_', ' ')})${
+                        title={`Bulan: ${FULL_MONTH_NAMES[monthNum - 1]} (${FEE_STATUS_LABEL[status]}${
+                          due && due.status === 'belum_lunas' ? `: ${formatRupiah(due.terbayar || 0)} dari ${formatRupiah(due.nominal)}` : ''
+                        })${
                           monthSub ? ` - Bukti Pembayaran: ${monthSub.status.toUpperCase()}` : ''
                         }`}
                       >
@@ -584,6 +618,7 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
                             {status === 'belum_bayar' && 'BAYAR'}
                             {status === 'belum_bergabung' && '-'}
                             {status === 'cuti' && 'CUTI'}
+                            {status === 'nonaktif' && 'NONAKTIF'}
                           </span>
                           {monthSub && (
                             <span
@@ -630,6 +665,10 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
             <div className="flex items-center gap-2">
               <span className="w-3.5 h-3.5 rounded bg-amber-100 border border-amber-300" />
               <span className="font-semibold text-amber-800">Cuti</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="w-3.5 h-3.5 rounded bg-slate-300" />
+              <span className="font-semibold text-slate-500">Nonaktif</span>
             </div>
             <div className="h-4 w-px bg-slate-300 hidden md:block" />
             <div className="flex items-center gap-2">
@@ -714,7 +753,7 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
                         className="relative w-16 h-20 rounded-lg overflow-hidden bg-slate-950 border border-slate-700 shrink-0 group cursor-pointer focus:outline-none"
                         title="Klik untuk memperbesar bukti transfer"
                       >
-                        <img
+                        <ProofImage
                           src={sub.buktiGambarUrl}
                           alt="Bukti Transfer"
                           className="w-full h-full object-cover group-hover:scale-105 transition-transform"
@@ -895,7 +934,7 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
               >
                 Semua Tahun
               </button>
-              {[2022, 2023, 2024, 2025, 2026, 2027].map((yr) => (
+              {getYearOptions().map((yr) => (
                 <button
                   key={yr}
                   onClick={() => setProofYearFilter(yr)}
@@ -998,7 +1037,7 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
                           className="w-28 h-36 rounded-xl overflow-hidden bg-slate-900 border border-slate-200 relative group cursor-pointer shrink-0 shadow-xs"
                           title="Klik untuk melihat bukti ukuran penuh"
                         >
-                          <img
+                          <ProofImage
                             src={sub.buktiGambarUrl}
                             alt="Struk Transfer"
                             className="w-full h-full object-cover group-hover:scale-105 transition-transform"
@@ -1592,10 +1631,10 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
             {/* Modal Image Body */}
             <div className="flex-1 overflow-y-auto p-4 bg-slate-100 flex flex-col items-center justify-center min-h-[300px]">
               <div className="rounded-2xl overflow-hidden shadow-lg border border-slate-300 bg-white max-w-md w-full">
-                <img
+                <ProofImage
                   src={previewImage.url}
                   alt={previewImage.title}
-                  className="w-full h-auto object-contain max-h-[50vh]"
+                  className="w-full h-auto object-contain max-h-[50vh] min-h-[200px]"
                 />
               </div>
             </div>
@@ -1720,7 +1759,25 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
                   <span className="text-slate-500 font-medium">Metode & Tgl:</span>
                   <span className="font-semibold text-slate-800">{verifyModalSub.metodePembayaran} ({verifyModalSub.tanggalTransfer})</span>
                 </div>
+                {verifyOutcome && (
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-500 font-medium">Sisa Tagihan:</span>
+                    <span className="font-bold text-slate-900 font-mono">{formatRupiah(verifyOutcome.sisa)}</span>
+                  </div>
+                )}
               </div>
+
+              {verifyOutcome && verifyOutcome.kind !== 'lunas' && (
+                <div
+                  className={`p-3 rounded-xl font-semibold border ${
+                    verifyOutcome.kind === 'lebih'
+                      ? 'bg-rose-50 border-rose-200 text-rose-800'
+                      : 'bg-amber-50 border-amber-200 text-amber-800'
+                  }`}
+                >
+                  ⚠️ Nominal transfer {verifyOutcome.text}.
+                </div>
+              )}
 
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">
@@ -1921,9 +1978,9 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
                     }}
                     className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-semibold text-slate-800 bg-white focus:outline-emerald-500 cursor-pointer"
                   >
-                    <option value={2024}>2024</option>
-                    <option value={2025}>2025</option>
-                    <option value={2026}>2026</option>
+                    {getYearOptions(adminInputProofModal.tahun).map((yr) => (
+                      <option key={yr} value={yr}>{yr}</option>
+                    ))}
                   </select>
                 </div>
               </div>

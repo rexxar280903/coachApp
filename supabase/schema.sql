@@ -207,6 +207,8 @@ create table if not exists public.transactions (
   created_at timestamptz not null default now()
 );
 create index if not exists transactions_siswa_idx on public.transactions (siswa_id);
+-- Pengaman agar dua kuitansi tidak pernah memiliki nomor yang sama.
+create unique index if not exists transactions_nomor_kuitansi_key on public.transactions (nomor_kuitansi);
 
 create table if not exists public.payment_submissions (
   id                 text primary key,

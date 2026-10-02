@@ -320,17 +320,28 @@ export const saveEventParticipants = (list: EventParticipant[]) => save(T.eventP
 export const getAttendanceSessions = () => load<AttendanceSession>(T.attendance);
 export const saveAttendanceSessions = (list: AttendanceSession[]) => save(T.attendance, list);
 
-export const getTransactions = () => load<PaymentTransaction>(T.transactions);
-export const saveTransactions = (list: PaymentTransaction[]) => save(T.transactions, list);
+export async function getTransactions(): Promise<PaymentTransaction[]> {
+  const items = await load<PaymentTransaction>(T.transactions);
+  rememberReceipts(items.map((t) => t.nomorKuitansi));
+  return items;
+}
+export function saveTransactions(list: PaymentTransaction[]) {
+  rememberReceipts(list.map((t) => t.nomorKuitansi));
+  return save(T.transactions, list);
+}
 
 export async function getPaymentSubmissions(): Promise<PaymentSubmission[]> {
   const raw = await load<PaymentSubmission>(T.submissions);
   // Snapshot memakai nilai yang tersimpan di state (URL bertanda tangan), konsisten dengan saat disimpan lagi.
   const signed = await withSignedProofUrls(raw);
+  rememberReceipts(signed.map((s) => s.kuitansiId));
   snapshots.set(T.submissions.table, new Map(signed.map((i) => [i.id, JSON.stringify(i)])));
   return signed;
 }
-export const savePaymentSubmissions = (list: PaymentSubmission[]) => save(T.submissions, list, prepareProof);
+export function savePaymentSubmissions(list: PaymentSubmission[]) {
+  rememberReceipts(list.map((s) => s.kuitansiId));
+  return save(T.submissions, list, prepareProof);
+}
 
 // Profil klub (satu baris, id = 1)
 const PROFILE_COLS = [
@@ -358,13 +369,34 @@ export async function saveClubProfile(profile: ClubProfile): Promise<void> {
   }
 }
 
+// Nomor kuitansi yang sudah dikenal di sesi ini (dimuat dari server + yang baru dibuat).
+const knownReceipts = new Set<string>();
+
+function rememberReceipts(numbers: (string | undefined)[]) {
+  for (const n of numbers) if (n) knownReceipts.add(n);
+}
+
+/**
+ * Nomor kuitansi berurutan per hari: INVSP-YYMMDD-NNN. Urutan diambil dari nomor terbesar
+ * yang dikenal untuk hari ini. Indeks unik di database (transactions.nomor_kuitansi) menjadi
+ * pengaman bila dua admin membuat nomor di saat bersamaan.
+ */
 export function generateReceiptNumber(): string {
   const now = new Date();
   const yy = now.getFullYear().toString().slice(-2);
   const mm = (now.getMonth() + 1).toString().padStart(2, '0');
   const dd = now.getDate().toString().padStart(2, '0');
-  const rand = Math.floor(100 + Math.random() * 900);
-  return `INVSP-${yy}${mm}${dd}-${rand}`;
+  const prefix = `INVSP-${yy}${mm}${dd}-`;
+
+  let maxSeq = 0;
+  for (const no of knownReceipts) {
+    if (!no.startsWith(prefix)) continue;
+    const seq = parseInt(no.slice(prefix.length), 10);
+    if (Number.isFinite(seq) && seq > maxSeq) maxSeq = seq;
+  }
+  const next = `${prefix}${(maxSeq + 1).toString().padStart(3, '0')}`;
+  knownReceipts.add(next);
+  return next;
 }
 
 // ─── Pendaftaran publik & portal siswa (tanpa akun Auth) ─────────────────────

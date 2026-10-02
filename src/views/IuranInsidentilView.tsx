@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
+import { getTodayISO, getCurrentYear } from '../utils/constants';
 import { Student, ClassGroup, ClubEvent, EventParticipant } from '../types/sportkit';
 import { formatRupiah } from '../utils/numberToWordsId';
-import { Plus, ChevronDown, CheckCircle2, Clock, XCircle, Award, Calendar, MapPin, Sparkles } from 'lucide-react';
+import { Plus, ChevronDown, CheckCircle2, Clock, XCircle, Award, Calendar, MapPin, Sparkles, UserPlus, Trash2, Search } from 'lucide-react';
+import { useToast } from '../components/Toast';
 
 interface IuranInsidentilViewProps {
   events: ClubEvent[];
@@ -11,6 +13,8 @@ interface IuranInsidentilViewProps {
   initialEventId?: string;
   onOpenEventPaymentModal: (event: ClubEvent, participant: EventParticipant, student: Student, classGroup: ClassGroup) => void;
   onAddNewEvent: (newEvent: ClubEvent) => void;
+  onAddParticipants: (eventId: string, siswaIds: string[]) => void;
+  onRemoveParticipant: (participantId: string) => void;
 }
 
 export const IuranInsidentilView: React.FC<IuranInsidentilViewProps> = ({
@@ -21,7 +25,14 @@ export const IuranInsidentilView: React.FC<IuranInsidentilViewProps> = ({
   initialEventId,
   onOpenEventPaymentModal,
   onAddNewEvent,
+  onAddParticipants,
+  onRemoveParticipant,
 }) => {
+  const { toast } = useToast();
+  const [showAddParticipantModal, setShowAddParticipantModal] = useState<boolean>(false);
+  const [participantSearch, setParticipantSearch] = useState<string>('');
+  const [participantClassFilter, setParticipantClassFilter] = useState<string>('all');
+  const [pickedIds, setPickedIds] = useState<string[]>([]);
   const [selectedEventId, setSelectedEventId] = useState<string>(initialEventId || events[0]?.id || '');
   const [showAddEventModal, setShowAddEventModal] = useState<boolean>(false);
   const [newEventName, setNewEventName] = useState<string>('');
@@ -37,6 +48,30 @@ export const IuranInsidentilView: React.FC<IuranInsidentilViewProps> = ({
     ? Math.round((lunasCount / currentParticipants.length) * 100) 
     : 0;
 
+  // Siswa aktif yang belum terdaftar di event ini
+  const registeredIds = new Set(currentParticipants.map((p) => p.siswaId));
+  const candidateStudents = students.filter((s) => {
+    if (s.status !== 'Aktif' || registeredIds.has(s.id)) return false;
+    if (participantClassFilter !== 'all' && s.kelasId !== participantClassFilter) return false;
+    return s.nama.toLowerCase().includes(participantSearch.toLowerCase());
+  });
+
+  const openAddParticipant = () => {
+    setPickedIds([]);
+    setParticipantSearch('');
+    setParticipantClassFilter('all');
+    setShowAddParticipantModal(true);
+  };
+
+  const togglePicked = (id: string) =>
+    setPickedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+
+  const handleSaveParticipants = () => {
+    if (!currentEvent || pickedIds.length === 0) return;
+    onAddParticipants(currentEvent.id, pickedIds);
+    setShowAddParticipantModal(false);
+  };
+
   const handleCreateEvent = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newEventName) return;
@@ -46,7 +81,7 @@ export const IuranInsidentilView: React.FC<IuranInsidentilViewProps> = ({
       nama: newEventName,
       deskripsi: 'Kegiatan insidentil dan kejuaraan',
       nominal: Number(newEventFee),
-      tanggal: newEventDate || new Date().toISOString().split('T')[0],
+      tanggal: newEventDate || getTodayISO(),
       lokasi: newEventLocation,
       totalPeserta: 0,
       pesertaLunas: 0,
@@ -65,7 +100,7 @@ export const IuranInsidentilView: React.FC<IuranInsidentilViewProps> = ({
     if (!std || !currentEvent) return;
 
     if (part.status === 'lunas') {
-      alert(`Iuran ${currentEvent.nama} untuk ${std.nama} sudah lunas.`);
+      toast.info('Sudah lunas', `Iuran ${currentEvent.nama} untuk ${std.nama} sudah lunas.`);
       return;
     }
 
@@ -169,9 +204,20 @@ export const IuranInsidentilView: React.FC<IuranInsidentilViewProps> = ({
               Klik "Bayar Sekarang" pada siswa yang belum melunasi untuk mencatat transaksi dan kuitansi
             </p>
           </div>
-          <span className="text-xs font-mono font-semibold text-slate-600 bg-slate-100 px-2.5 py-1 rounded-lg">
-            {currentParticipants.length} Peserta Terdaftar
-          </span>
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-mono font-semibold text-slate-600 bg-slate-100 px-2.5 py-1 rounded-lg">
+              {currentParticipants.length} Peserta Terdaftar
+            </span>
+            {currentEvent && (
+              <button
+                onClick={openAddParticipant}
+                className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
+              >
+                <UserPlus className="w-3.5 h-3.5" />
+                <span>Tambah Peserta</span>
+              </button>
+            )}
+          </div>
         </div>
 
         <div className="overflow-x-auto">
@@ -191,13 +237,17 @@ export const IuranInsidentilView: React.FC<IuranInsidentilViewProps> = ({
               {currentParticipants.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="py-12 text-center text-slate-400">
-                    Belum ada siswa yang didaftarkan pada event ini.
+                    {currentEvent
+                      ? 'Belum ada siswa yang didaftarkan pada event ini. Klik "Tambah Peserta" untuk mendaftarkan siswa.'
+                      : 'Belum ada event. Buat event baru terlebih dahulu.'}
                   </td>
                 </tr>
               ) : (
                 currentParticipants.map((part, idx) => {
                   const std = students.find((s) => s.id === part.siswaId);
+                  const stdClass = classes.find((c) => c.id === std?.kelasId);
                   const isLunas = part.status === 'lunas';
+                  const isPartial = part.status === 'belum_lunas';
 
                   return (
                     <tr key={part.id} className="hover:bg-slate-50/80 transition-colors">
@@ -208,19 +258,28 @@ export const IuranInsidentilView: React.FC<IuranInsidentilViewProps> = ({
                         {std?.nama || 'Siswa'}
                       </td>
                       <td className="py-3 px-4 text-slate-600">
-                        {std?.kelasId.toUpperCase() || '-'}
+                        {stdClass?.nama || std?.kelasId.toUpperCase() || '-'}
                       </td>
                       <td className="py-3 px-4 font-mono font-bold text-slate-800">
                         {formatRupiah(part.nominal)}
+                        {isPartial && (
+                          <span className="block text-[10px] font-semibold text-amber-600">
+                            Terbayar {formatRupiah(part.terbayar || 0)}
+                          </span>
+                        )}
                       </td>
                       <td className="py-3 px-4 text-center">
                         {isLunas ? (
                           <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-bold text-[11px] border border-emerald-200">
                             <CheckCircle2 className="w-3.5 h-3.5" /> Lunas
                           </span>
+                        ) : isPartial ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-700 font-bold text-[11px] border border-amber-200">
+                            <Clock className="w-3.5 h-3.5" /> Cicilan
+                          </span>
                         ) : (
                           <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-rose-50 text-rose-700 font-bold text-[11px] border border-rose-200">
-                            <XCircle className="w-3.5 h-3.5" /> Belum Lunas
+                            <XCircle className="w-3.5 h-3.5" /> Belum Bayar
                           </span>
                         )}
                       </td>
@@ -229,12 +288,23 @@ export const IuranInsidentilView: React.FC<IuranInsidentilViewProps> = ({
                       </td>
                       <td className="py-3 px-4 text-right">
                         {!isLunas ? (
-                          <button
-                            onClick={() => handleRowClick(part)}
-                            className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs shadow-xs transition-colors cursor-pointer"
-                          >
-                            Bayar Sekarang
-                          </button>
+                          <div className="inline-flex items-center gap-1.5">
+                            <button
+                              onClick={() => handleRowClick(part)}
+                              className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs shadow-xs transition-colors cursor-pointer"
+                            >
+                              {isPartial ? 'Bayar Sisa' : 'Bayar Sekarang'}
+                            </button>
+                            {(part.terbayar || 0) === 0 && (
+                              <button
+                                onClick={() => onRemoveParticipant(part.id)}
+                                title="Keluarkan dari event"
+                                className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </div>
                         ) : (
                           <span className="text-[11px] font-mono text-emerald-600 font-bold">
                             ✓ Lunas
@@ -249,6 +319,95 @@ export const IuranInsidentilView: React.FC<IuranInsidentilViewProps> = ({
           </table>
         </div>
       </div>
+
+      {/* Add Participant Modal */}
+      {showAddParticipantModal && currentEvent && (
+        <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 flex flex-col max-h-[90vh]">
+            <h3 className="text-base font-display font-bold text-slate-900 pb-2 border-b border-slate-100">
+              Tambah Peserta — {currentEvent.nama}
+            </h3>
+            <p className="text-xs text-slate-500 mt-2">
+              Pilih siswa aktif yang ikut event ini. Tagihan {formatRupiah(currentEvent.nominal)} per siswa.
+            </p>
+
+            <div className="flex flex-col sm:flex-row gap-2 mt-3">
+              <div className="relative flex-1">
+                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
+                <input
+                  type="text"
+                  placeholder="Cari nama siswa..."
+                  value={participantSearch}
+                  onChange={(e) => setParticipantSearch(e.target.value)}
+                  className="w-full text-xs rounded-xl border border-slate-300 pl-8 pr-3 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+              <select
+                value={participantClassFilter}
+                onChange={(e) => setParticipantClassFilter(e.target.value)}
+                className="text-xs rounded-xl border border-slate-300 px-3 py-2 text-slate-900 bg-white cursor-pointer"
+              >
+                <option value="all">Semua Kelas</option>
+                {classes.map((c) => (
+                  <option key={c.id} value={c.id}>{c.nama}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex items-center justify-between text-xs mt-3">
+              <span className="text-slate-500">{pickedIds.length} dipilih</span>
+              {candidateStudents.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setPickedIds(Array.from(new Set([...pickedIds, ...candidateStudents.map((s) => s.id)])))}
+                  className="font-semibold text-emerald-700 hover:underline cursor-pointer"
+                >
+                  Pilih semua ({candidateStudents.length})
+                </button>
+              )}
+            </div>
+
+            <div className="mt-2 flex-1 overflow-y-auto border border-slate-200 rounded-xl divide-y divide-slate-100 min-h-[120px]">
+              {candidateStudents.length === 0 ? (
+                <p className="p-6 text-center text-xs text-slate-400">
+                  Tidak ada siswa aktif yang bisa ditambahkan.
+                </p>
+              ) : (
+                candidateStudents.map((s) => (
+                  <label key={s.id} className="flex items-center gap-3 px-3 py-2 text-xs cursor-pointer hover:bg-slate-50">
+                    <input
+                      type="checkbox"
+                      checked={pickedIds.includes(s.id)}
+                      onChange={() => togglePicked(s.id)}
+                      className="accent-emerald-600"
+                    />
+                    <span className="font-semibold text-slate-800 flex-1">{s.nama}</span>
+                    <span className="text-slate-400">{classes.find((c) => c.id === s.kelasId)?.nama || '-'}</span>
+                  </label>
+                ))
+              )}
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-4 mt-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setShowAddParticipantModal(false)}
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100 transition-colors"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                disabled={pickedIds.length === 0}
+                onClick={handleSaveParticipants}
+                className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-bold shadow-sm transition-colors cursor-pointer"
+              >
+                Tambahkan {pickedIds.length > 0 ? `(${pickedIds.length})` : ''}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Add Event Modal */}
       {showAddEventModal && (
@@ -265,7 +424,7 @@ export const IuranInsidentilView: React.FC<IuranInsidentilViewProps> = ({
                 <input
                   type="text"
                   required
-                  placeholder="Contoh: Piala Walikota Cup 2024"
+                  placeholder={`Contoh: Piala Walikota Cup ${getCurrentYear()}`}
                   value={newEventName}
                   onChange={(e) => setNewEventName(e.target.value)}
                   className="w-full text-xs rounded-xl border border-slate-300 px-3 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
