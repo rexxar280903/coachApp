@@ -1,5 +1,6 @@
 import React from 'react';
 import { UserRole, ClubProfile } from '../types/sportkit';
+import { BRAND_LOGO, BRAND_TAGLINE } from '../utils/brand';
 import { Bell, Menu, CheckCircle2, LogOut } from 'lucide-react';
 
 interface HeaderProps {
@@ -43,17 +44,11 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* Brand Mark in Header */}
         <div className="flex items-center gap-2.5">
-          {clubProfile.logoUrl ? (
-            <img
-              src={clubProfile.logoUrl}
-              alt={`Logo ${clubProfile.namaKlub}`}
-              className="w-8 h-8 rounded-lg object-cover bg-white border border-slate-700"
-            />
-          ) : (
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-emerald-600 via-teal-500 to-emerald-400 flex items-center justify-center font-display font-black text-xs text-white shadow-sm border border-emerald-400/40">
-              SK
-            </div>
-          )}
+          <img
+            src={clubProfile.logoUrl || BRAND_LOGO}
+            alt={`Logo ${clubProfile.namaKlub}`}
+            className="w-8 h-8 rounded-lg object-contain bg-white border border-slate-700"
+          />
           <div>
             <div className="flex items-center gap-1.5">
               <span className="font-display font-bold text-sm tracking-tight text-white uppercase">
@@ -64,7 +59,7 @@ export const Header: React.FC<HeaderProps> = ({
               </span>
             </div>
             <p className="text-[10px] text-slate-400 hidden sm:block">
-              Sistem Manajemen Klub & Akademi
+              {BRAND_TAGLINE}
             </p>
           </div>
         </div>

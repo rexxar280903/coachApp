@@ -1,5 +1,5 @@
 /**
- * Shared constants used across the SportKit application.
+ * Shared constants used across the Hans Swimming application.
  */
 
 export const MONTH_NAMES = [

@@ -2,6 +2,7 @@ import React, { useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { PaymentTransaction, ClubProfile } from '../types/sportkit';
 import { formatRupiah } from '../utils/numberToWordsId';
+import { BRAND_NAME, BRAND_LOGO } from '../utils/brand';
 import { Printer, X, Share2, CheckCircle2, Building, ShieldCheck, Award } from 'lucide-react';
 
 interface ReceiptModalProps {
@@ -82,15 +83,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
           {/* Top Club Header */}
           <div className="flex items-start justify-between pb-6 border-b-2 border-slate-900 gap-4">
             <div className="flex items-center gap-3.5">
-              {profile.logoUrl ? (
-                <img src={profile.logoUrl} alt={`Logo ${profile.namaKlub}`} className="w-12 h-12 rounded-xl object-cover border border-slate-200" />
-              ) : (
-                <div className="w-12 h-12 rounded-xl bg-slate-900 flex flex-col items-center justify-center text-white shadow-sm">
-                  <span className="text-[7px] tracking-wider font-extrabold text-emerald-400">★ ★ ★</span>
-                  <span className="text-[11px] font-black tracking-tight uppercase leading-none font-display">SPORT</span>
-                  <span className="text-[7px] font-bold text-slate-300">ACADEMY</span>
-                </div>
-              )}
+              <img src={profile.logoUrl || BRAND_LOGO} alt={`Logo ${profile.namaKlub}`} className="w-12 h-12 rounded-xl object-contain bg-white border border-slate-200" />
               <div>
                 <h2 className="text-base font-display font-black tracking-tight text-slate-900 uppercase">
                   {profile.namaKlub}
@@ -169,7 +162,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
                 <span>PEMBAYARAN TERVERIFIKASI</span>
               </div>
               <p className="text-[10px] text-slate-400 mt-1">
-                Kuitansi ini sah dan dihasilkan secara digital oleh SportKit System.
+                Kuitansi ini sah dan dihasilkan secara digital oleh sistem {BRAND_NAME}.
               </p>
             </div>
 

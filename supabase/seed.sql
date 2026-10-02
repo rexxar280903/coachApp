@@ -2,7 +2,7 @@
 -- (semuanya juga bisa diubah dari menu Pengaturan / Kelas di aplikasi).
 
 update public.club_profile set
-  nama_klub = 'CLS SURABAYA',
+  nama_klub = 'Hans Swimming',
   cabang_olahraga = 'Basket, Renang & Akademi Olahraga',
   alamat = 'GOR Kertajaya, Kertajaya Indah Timur I No.1, Manyar Sabrangan, Kec. Mulyorejo',
   kota = 'Surabaya, Jawa Timur 60116',

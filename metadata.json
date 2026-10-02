@@ -1,5 +1,5 @@
 {
-  "name": "SportKit Club Administration",
+  "name": "Hans Swimming — Les Berenang",
   "description": "Sistem Informasi Manajemen Klub & Akademi Olahraga berbasis Web untuk Pencatatan Siswa, Iuran Rutin & Insidentil, Absensi Pelatih, dan Cetak Kuitansi.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]

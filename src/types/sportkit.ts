@@ -129,7 +129,7 @@ export interface PaymentTransaction {
 }
 
 export interface ClubProfile {
-  namaKlub: string; // "CLS SURABAYA"
+  namaKlub: string; // "Hans Swimming"
   cabangOlahraga: string;
   alamat: string;
   kota: string;

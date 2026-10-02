@@ -1,4 +1,5 @@
 import React from 'react';
+import { BRAND_NAME, BRAND_LOGO } from '../../utils/brand';
 
 interface AuthShellProps {
   title: string;
@@ -11,10 +12,8 @@ export const AuthShell: React.FC<AuthShellProps> = ({ title, subtitle, children,
   <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center px-4 py-10 font-sans antialiased">
     <div className="w-full max-w-sm">
       <div className="flex items-center justify-center gap-2.5 mb-6">
-        <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-emerald-600 via-teal-500 to-emerald-400 flex items-center justify-center font-display font-black text-sm text-white shadow-sm">
-          SK
-        </div>
-        <span className="font-display font-black text-lg tracking-tight text-slate-900 uppercase">SportKit</span>
+        <img src={BRAND_LOGO} alt={`Logo ${BRAND_NAME}`} className="w-12 h-12 rounded-xl object-contain bg-white border border-slate-200 shadow-sm" />
+        <span className="font-display font-black text-lg tracking-tight text-slate-900 uppercase">{BRAND_NAME}</span>
       </div>
       <div className="bg-white rounded-3xl border border-slate-200 shadow-sm p-6 sm:p-7 space-y-5">
         <div>

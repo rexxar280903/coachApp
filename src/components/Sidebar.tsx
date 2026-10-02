@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { UserRole } from '../types/sportkit';
+import { BRAND_NAME, BRAND_LOGO } from '../utils/brand';
 import { 
   LayoutDashboard, 
   Wallet, 
@@ -94,20 +95,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
         {/* Brand Banner */}
         <div className="p-5 border-b border-slate-800/80 bg-gradient-to-b from-[#0f172a] to-[#090e17]">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-500 via-teal-600 to-slate-900 p-0.5 shadow-md flex items-center justify-center border border-emerald-400/30">
-              <div className="text-center font-display">
-                <span className="text-[11px] font-black text-white tracking-wider uppercase">SPORT</span>
-              </div>
-            </div>
+            <img
+              src={BRAND_LOGO}
+              alt={`Logo ${BRAND_NAME}`}
+              className="w-11 h-11 rounded-xl object-contain bg-white shadow-md border border-slate-700"
+            />
             <div>
               <div className="flex items-center gap-1">
                 <h1 className="text-sm font-display font-black tracking-tight text-white uppercase leading-none">
-                  SPORTKIT
+                  {BRAND_NAME}
                 </h1>
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
               </div>
               <p className="text-[10px] font-medium tracking-wider text-slate-400 uppercase mt-0.5">
-                CLUB & ACADEMY ERP
+                Les Berenang
               </p>
             </div>
           </div>
