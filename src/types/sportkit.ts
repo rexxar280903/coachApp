@@ -52,6 +52,8 @@ export interface Student {
   iuranBulanan: number;
   totalBiayaPendaftaran: number;
   foto?: string;
+  /** Kode rahasia untuk login Portal Siswa (bersama No. HP). Dibuat otomatis. */
+  kodeAkses?: string;
 }
 
 export interface ClassGroup {
@@ -134,6 +136,10 @@ export interface ClubProfile {
   email: string;
   noWhatsApp: string;
   logoUrl?: string;
+  /** Rekening tujuan transfer iuran (ditampilkan di Portal Siswa). */
+  namaBank?: string;
+  noRekening?: string;
+  atasNama?: string;
 }
 
 export type UserRole = 'admin' | 'coach' | 'student' | 'public';

@@ -1,634 +1,361 @@
-import { 
-  Student, 
+/**
+ * Lapisan data (Supabase).
+ *
+ * Aplikasi menyimpan seluruh state di memori (App.tsx) dan memanggil `saveX(list)`
+ * setelah setiap perubahan. Di sini `saveX` membandingkan list baru dengan snapshot
+ * terakhir yang dikenal server, lalu hanya meng-upsert baris yang berubah dan
+ * menghapus baris yang hilang. Penulisan per tabel diserialkan agar tidak saling
+ * menimpa. Kegagalan dilaporkan lewat `setSyncErrorHandler`.
+ */
+import {
+  Student,
   Coach,
-  ClassGroup, 
-  MonthlyDueRecord, 
-  ClubEvent, 
-  EventParticipant, 
-  AttendanceSession, 
-  PaymentTransaction, 
+  ClassGroup,
+  MonthlyDueRecord,
+  ClubEvent,
+  EventParticipant,
+  AttendanceSession,
+  PaymentTransaction,
   ClubProfile,
-  FeeStatus,
-  PaymentSubmission 
+  PaymentSubmission,
 } from '../types/sportkit';
+import { supabase, SUPABASE_URL } from './supabase';
+import { dataUrlToBlob } from '../utils/image';
+import { generateKodeAkses } from '../utils/kodeAkses';
 
+// ─── Pemetaan baris ↔ objek ──────────────────────────────────────────────────
 
-const STORAGE_KEYS = {
-  STUDENTS: 'sportkit_students_v2',
-  COACHES: 'sportkit_coaches_v1',
-  CLASSES: 'sportkit_classes_v2',
-  MONTHLY_DUES: 'sportkit_monthly_dues_v2',
-  EVENTS: 'sportkit_events_v2',
-  EVENT_PARTICIPANTS: 'sportkit_event_participants_v2',
-  ATTENDANCE: 'sportkit_attendance_v2',
-  TRANSACTIONS: 'sportkit_transactions_v2',
-  PROFILE: 'sportkit_profile_v2',
-  PAYMENT_SUBMISSIONS: 'sportkit_payment_submissions_v2',
-};
+type Obj = Record<string, any>;
 
-export const INITIAL_CLASSES: ClassGroup[] = [
-  {
-    id: 'ku-10',
-    nama: 'KU-10',
-    deskripsi: 'Kelompok Umur 10 Tahun (Basket & Atletik Junior)',
-    iuranBulanan: 100000,
-    biayaPendaftaran: 1000000,
-    pelatih: 'Coach Dimas & Coach Rian',
+const toSnake = (s: string) => s.replace(/[A-Z]/g, (m) => '_' + m.toLowerCase());
+
+interface TableDef {
+  table: string;
+  /** Properti objek (camelCase) yang menjadi kolom (snake_case). */
+  cols: string[];
+  /** Kolom yang boleh null di database: `undefined` dikirim sebagai null (agar nilai lama terhapus). */
+  nullable?: string[];
+  /** Urutan tampil setelah reload (aplikasi menaruh data baru di depan / belakang). */
+  order: 'asc' | 'desc';
+}
+
+const T = {
+  students: {
+    table: 'students',
+    cols: [
+      'id', 'nama', 'kelasId', 'jenisKelamin', 'tempatLahir', 'tanggalLahir', 'noHp', 'email', 'alamat',
+      'orangTua', 'status', 'catatan', 'tanggalBergabung', 'biayaPendaftaran', 'iuranBulanan',
+      'totalBiayaPendaftaran', 'foto', 'kodeAkses',
+    ],
+    nullable: ['email', 'catatan', 'foto'],
+    order: 'desc',
   },
-  {
-    id: 'ku-12',
-    nama: 'KU-12',
-    deskripsi: 'Kelompok Umur 12 Tahun (Persiapan Kompetisi)',
-    iuranBulanan: 120000,
-    biayaPendaftaran: 1200000,
-    pelatih: 'Coach Wahyu',
+  coaches: {
+    table: 'coaches',
+    cols: ['id', 'nama', 'noHp', 'email', 'spesialisasi', 'status', 'catatan', 'tanggalBergabung', 'foto'],
+    nullable: ['email', 'catatan', 'foto'],
+    order: 'asc',
   },
-  {
-    id: 'ku-14',
-    nama: 'KU-14',
-    deskripsi: 'Kelompok Umur 14 Tahun (Akademi Prestasi)',
-    iuranBulanan: 150000,
-    biayaPendaftaran: 1350000,
-    pelatih: 'Coach Hendra',
+  classes: {
+    table: 'classes',
+    cols: ['id', 'nama', 'deskripsi', 'iuranBulanan', 'biayaPendaftaran', 'pelatihIds', 'pelatih'],
+    order: 'asc',
   },
-  {
-    id: 'renang-acm-1',
-    nama: 'RENANG ACM 1',
-    deskripsi: 'Kelas Renang Pemula & Teknik Dasar',
-    iuranBulanan: 150000,
-    biayaPendaftaran: 1000000,
-    pelatih: 'Coach Sarah',
+  monthlyDues: {
+    table: 'monthly_dues',
+    cols: ['id', 'siswaId', 'tahun', 'bulan', 'status', 'nominal', 'terbayar', 'tanggalBayar', 'kuitansiId'],
+    nullable: ['tanggalBayar', 'kuitansiId'],
+    order: 'asc',
   },
-  {
-    id: 'renang-acm-2',
-    nama: 'RENANG ACM 2',
-    deskripsi: 'Kelas Renang Lanjutan & Endurance',
-    iuranBulanan: 175000,
-    biayaPendaftaran: 1000000,
-    pelatih: 'Coach Sarah',
+  events: {
+    table: 'events',
+    cols: ['id', 'nama', 'deskripsi', 'nominal', 'tanggal', 'lokasi', 'totalPeserta', 'pesertaLunas'],
+    order: 'desc',
   },
-  {
-    id: 'english-class-v',
-    nama: 'ENGLISH CLASS V',
-    deskripsi: 'Kelas Pengantar Olahraga Berbahasa Inggris',
-    iuranBulanan: 100000,
-    biayaPendaftaran: 800000,
-    pelatih: 'Coach Michael',
+  eventParticipants: {
+    table: 'event_participants',
+    cols: ['id', 'eventId', 'siswaId', 'status', 'nominal', 'terbayar', 'tanggalBayar', 'kuitansiId'],
+    nullable: ['tanggalBayar', 'kuitansiId'],
+    order: 'asc',
   },
-];
+  attendance: {
+    table: 'attendance_sessions',
+    cols: ['id', 'tanggal', 'kelasId', 'catatan', 'pelatihId', 'pelatih', 'kehadiran'],
+    nullable: ['pelatihId'],
+    order: 'desc',
+  },
+  transactions: {
+    table: 'transactions',
+    cols: [
+      'id', 'nomorKuitansi', 'siswaId', 'siswaNama', 'kelasNama', 'tanggal', 'nominal', 'terbilang',
+      'metodePembayaran', 'tipe', 'keterangan', 'catatan',
+    ],
+    nullable: ['catatan'],
+    order: 'desc',
+  },
+  submissions: {
+    table: 'payment_submissions',
+    cols: [
+      'id', 'siswaId', 'siswaNama', 'kelasId', 'kelasNama', 'tipe', 'bulan', 'tahun', 'eventId', 'eventNama',
+      'nominal', 'metodePembayaran', 'tanggalTransfer', 'buktiGambarUrl', 'pesanSiswa', 'status', 'tanggalKirim',
+      'tanggalVerifikasi', 'diverifikasiOleh', 'catatanAdmin', 'kuitansiId', 'transactionId',
+    ],
+    nullable: [
+      'bulan', 'tahun', 'eventId', 'eventNama', 'pesanSiswa', 'tanggalVerifikasi', 'diverifikasiOleh',
+      'catatanAdmin', 'kuitansiId', 'transactionId',
+    ],
+    order: 'desc',
+  },
+} satisfies Record<string, TableDef>;
 
-export const INITIAL_PROFILE: ClubProfile = {
-  namaKlub: 'CLS SURABAYA',
-  cabangOlahraga: 'Basket, Renang & Akademi Olahraga',
-  alamat: 'GOR Kertajaya, Kertajaya Indah Timur I No.1, Manyar Sabrangan, Kec. Mulyorejo',
-  kota: 'Surabaya, Jawa Timur 60116',
-  noHp: '0897-2488-333',
-  email: 'admin@sportkit.id',
-  noWhatsApp: '628972488333',
-};
-
-const SEED_STUDENT_NAMES_KU10 = [
-  'Alya Adriana Zefira',
-  'Alyaa Bening Bestari',
-  'Amadis Nayyaro Hutagalung',
-  'Amira Khansa Faizah',
-  'Anindya Agfi Sasikirana',
-  'Arsenio Mirza Digdoyono',
-  'Azzahra Kinanthi Tyasutami',
-  'Batrisyia Danish Ramadhana',
-  'Cully Alma Renata',
-  'Dahayu Margie Sayogo',
-  'Dienussyifa Rindu Mori',
-  'Fairuz Khalisa Nur Azzimi',
-  'Farah Nadia Hadi Brata',
-  'Fillo Navyandra Bintang Irawan',
-  'Ghaisan Ghaits Fatih',
-  'Kamila Syahira',
-  'Karima Fayruzzani',
-  'Keisha Aqila Najwa',
-  'Khanza Ghayda Attaya Putri',
-  'Khumaira Ardina Putri',
-  'Kiara Anjani Putri',
-  'Kuinsila Putri Falisha',
-  'Maylinda Charylina',
-  'Muchammad Syafrie Azmi',
-  'Nabila Hidayatul Rizki',
-  'Naura Maheera',
-  'Rafa Azzamy Kautsar',
-  'Raizel Alendra Nadhif',
-  'Rasya Adya Faeyza',
-  'Zul Imani',
-];
-
-function generateSeedData() {
-  const students: Student[] = [];
-  const monthlyDues: MonthlyDueRecord[] = [];
-  const currentYear = 2024;
-
-  // Active students in KU-10
-  SEED_STUDENT_NAMES_KU10.forEach((nama, index) => {
-    const id = `std-${index + 1}`;
-    // Joined months: some joined Jan, some joined June (e.g. Kamila Syahira joined June)
-    const joinMonth = nama === 'Kamila Syahira' ? 6 : (index % 4 === 0 ? 3 : 1);
-    
-    students.push({
-      id,
-      nama,
-      kelasId: 'ku-10',
-      jenisKelamin: index % 2 === 0 ? 'Perempuan' : 'Laki-laki',
-      tempatLahir: 'Surabaya',
-      tanggalLahir: '2014-05-12',
-      noHp: `081234567${(10 + index).toString().padStart(3, '0')}`,
-      email: `${nama.toLowerCase().replace(/\s+/g, '')}@mailnator.com`,
-      alamat: 'Jl. Kertajaya Indah No. ' + (index + 12) + ', Surabaya',
-      orangTua: {
-        namaAyah: `Bpk. ${nama.split(' ')[0]} Senior`,
-        noHpAyah: `081234567${(10 + index).toString().padStart(3, '0')}`,
-        namaIbu: `Ibu ${nama.split(' ')[0]}`,
-        noHpIbu: `081987654${(10 + index).toString().padStart(3, '0')}`,
-      },
-      status: 'Aktif',
-      catatan: nama === 'Kamila Syahira' ? 'Siswa teladan, posisi Point Guard.' : 'Aktif latihan reguler.',
-      tanggalBergabung: `2024-0${joinMonth}-01`,
-      biayaPendaftaran: 1000000,
-      iuranBulanan: 100000,
-      totalBiayaPendaftaran: 1100000,
-    });
-
-    // Generate 12 months for 2024
-    for (let m = 1; m <= 12; m++) {
-      let status: FeeStatus = 'lunas';
-      let terbayar = 100000;
-
-      if (m < joinMonth) {
-        status = 'belum_bergabung';
-        terbayar = 0;
-      } else if (m <= 10) { // Up to October is mostly paid
-        if (index === 12 && m === 10) { // Farah Nadia paid partial in Oct
-          status = 'belum_lunas';
-          terbayar = 50000;
-        } else {
-          status = 'lunas';
-          terbayar = 100000;
-        }
-      } else if (m === 11) { // November: some unpaid (like in video!)
-        if (nama === 'Kamila Syahira' || index % 3 === 0 || index % 5 === 0) {
-          status = 'belum_bayar';
-          terbayar = 0;
-        } else {
-          status = 'lunas';
-          terbayar = 100000;
-        }
-      } else { // December: mostly unpaid
-        status = 'belum_bayar';
-        terbayar = 0;
-      }
-
-      monthlyDues.push({
-        id: `due-${id}-2024-${m}`,
-        siswaId: id,
-        tahun: 2024,
-        bulan: m,
-        status,
-        nominal: 100000,
-        terbayar,
-        tanggalBayar: status === 'lunas' ? `2024-${m.toString().padStart(2, '0')}-05` : undefined,
-        kuitansiId: status === 'lunas' ? `INVSP-24${m.toString().padStart(2, '0')}05-${(index + 10).toString().padStart(3, '0')}` : undefined,
-      });
+export function toRow(def: TableDef, item: Obj): Obj {
+  const row: Obj = {};
+  for (const c of def.cols) {
+    const v = item[c];
+    if (v === undefined) {
+      // Kolom NOT NULL dilewati agar default database berlaku (mis. kode_akses).
+      if (def.nullable?.includes(c)) row[toSnake(c)] = null;
+      continue;
     }
-  });
-
-  // Applicants (Calon Siswa) matching video (John Doe & testingxxx)
-  const applicants: Student[] = [
-    {
-      id: 'app-1',
-      nama: 'John Doe',
-      kelasId: 'ku-10',
-      jenisKelamin: 'Laki-laki',
-      tempatLahir: 'Surabaya',
-      tanggalLahir: '2014-03-15',
-      noHp: '0813564789',
-      email: 'johndoe@gmail.com',
-      alamat: 'Jl. Manyar Rejo No. 44, Surabaya',
-      orangTua: {
-        namaAyah: 'Robert Doe',
-        noHpAyah: '0813564789',
-        namaIbu: 'Maria Doe',
-        noHpIbu: '0813564790',
-      },
-      status: 'Calon',
-      catatan: 'Daftar mandiri via web bio Instagram.',
-      tanggalBergabung: '2024-11-05',
-      biayaPendaftaran: 1000000,
-      iuranBulanan: 100000,
-      totalBiayaPendaftaran: 1100000,
-    },
-    {
-      id: 'app-2',
-      nama: 'testingxxx',
-      kelasId: 'ku-12',
-      jenisKelamin: 'Laki-laki',
-      tempatLahir: 'Sidoarjo',
-      tanggalLahir: '2012-08-20',
-      noHp: '082199887766',
-      email: 'testing@example.com',
-      alamat: 'Puri Surya Jaya Blok B, Sidoarjo',
-      orangTua: {
-        namaAyah: 'Budi Santoso',
-        noHpAyah: '082199887766',
-        namaIbu: 'Siti Rahma',
-        noHpIbu: '082199887767',
-      },
-      status: 'Calon',
-      catatan: 'Ingin mencoba trial class.',
-      tanggalBergabung: '2024-11-05',
-      biayaPendaftaran: 1200000,
-      iuranBulanan: 120000,
-      totalBiayaPendaftaran: 1320000,
-    },
-  ];
-
-  students.push(...applicants);
-
-  // Events matching video
-  const events: ClubEvent[] = [
-    {
-      id: 'evt-familia-cup',
-      nama: 'Familia Cup',
-      deskripsi: 'Turnamen internal antar kelompok umur CLS Surabaya',
-      nominal: 400000,
-      tanggal: '2024-11-20',
-      lokasi: 'GOR Kertajaya Surabaya',
-      totalPeserta: 7,
-      pesertaLunas: 5,
-    },
-    {
-      id: 'evt-kejurnas-2023',
-      nama: 'Kejurnas 2023',
-      deskripsi: 'Kejuaraan Nasional Basket Junior',
-      nominal: 750000,
-      tanggal: '2024-12-10',
-      lokasi: 'DBL Arena Surabaya',
-      totalPeserta: 12,
-      pesertaLunas: 9,
-    },
-    {
-      id: 'evt-latihan-sabtu',
-      nama: 'Latihan Tambahan Sabtu',
-      deskripsi: 'Intensive drills & skill development',
-      nominal: 50000,
-      tanggal: '2024-11-16',
-      lokasi: 'Lapangan Outdoor Kertajaya',
-      totalPeserta: 18,
-      pesertaLunas: 16,
-    },
-    {
-      id: 'evt-sehati',
-      nama: 'Turnamen Invitation Sehati 2023',
-      deskripsi: 'Invitasi persahabatan antar klub Jawa Timur',
-      nominal: 350000,
-      tanggal: '2024-11-28',
-      lokasi: 'GOR Bimasakti Malang',
-      totalPeserta: 10,
-      pesertaLunas: 8,
-    },
-    {
-      id: 'evt-jateng',
-      nama: 'Turnamen Kejurnas Jateng 2023',
-      deskripsi: 'Turnamen regional Jawa Tengah',
-      nominal: 500000,
-      tanggal: '2024-12-05',
-      lokasi: 'GOR Sahabat Semarang',
-      totalPeserta: 8,
-      pesertaLunas: 6,
-    },
-  ];
-
-  // Event participants for Familia Cup (matching video timestamp 02:56: Zul Imani, Raizel, Rafa, Maylinda, Kuinsila, Khumaira, Kamila Syahira)
-  const eventParticipants: EventParticipant[] = [
-    { id: 'ep-1', eventId: 'evt-familia-cup', siswaId: 'std-30', status: 'lunas', nominal: 400000, terbayar: 400000, tanggalBayar: '2024-11-01', kuitansiId: 'INVSP-241101-101' },
-    { id: 'ep-2', eventId: 'evt-familia-cup', siswaId: 'std-28', status: 'lunas', nominal: 400000, terbayar: 400000, tanggalBayar: '2024-11-02', kuitansiId: 'INVSP-241102-102' },
-    { id: 'ep-3', eventId: 'evt-familia-cup', siswaId: 'std-27', status: 'lunas', nominal: 400000, terbayar: 400000, tanggalBayar: '2024-11-03', kuitansiId: 'INVSP-241103-103' },
-    { id: 'ep-4', eventId: 'evt-familia-cup', siswaId: 'std-23', status: 'lunas', nominal: 400000, terbayar: 400000, tanggalBayar: '2024-11-04', kuitansiId: 'INVSP-241104-104' },
-    { id: 'ep-5', eventId: 'evt-familia-cup', siswaId: 'std-22', status: 'belum_bayar', nominal: 400000, terbayar: 0 }, // Kuinsila
-    { id: 'ep-6', eventId: 'evt-familia-cup', siswaId: 'std-20', status: 'belum_lunas', nominal: 400000, terbayar: 200000, tanggalBayar: '2024-11-04' }, // Khumaira
-    { id: 'ep-7', eventId: 'evt-familia-cup', siswaId: 'std-16', status: 'lunas', nominal: 400000, terbayar: 400000, tanggalBayar: '2024-11-05', kuitansiId: 'INVSP-241105-110' }, // Kamila Syahira
-  ];
-
-  // Attendance Sessions (matching video timestamps 03:34, 03:56)
-  // Training sessions in October: 2, 4, 7, 9, 11, 14, 16, 18, 21, 23, 25, 30
-  const octDates = ['02', '04', '07', '09', '11', '14', '16', '18', '21', '23', '25', '30'];
-  const attendanceSessions: AttendanceSession[] = [];
-
-  octDates.forEach((day, idx) => {
-    const kehadiranMap: { [sid: string]: boolean } = {};
-    SEED_STUDENT_NAMES_KU10.forEach((_, sIdx) => {
-      const sid = `std-${sIdx + 1}`;
-      // Most students attend (green check), occasionally absent (red X) like in video
-      if (sIdx === 2 && (idx === 3 || idx === 8)) {
-        kehadiranMap[sid] = false;
-      } else if (sIdx === 6 && idx === 6) {
-        kehadiranMap[sid] = false;
-      } else if (sIdx === 15) { // Kamila Syahira is very diligent (all present!)
-        kehadiranMap[sid] = true;
-      } else if (sIdx === 21 && idx === 5) {
-        kehadiranMap[sid] = false;
-      } else {
-        kehadiranMap[sid] = Math.random() > 0.12;
-      }
-    });
-
-    attendanceSessions.push({
-      id: `att-2024-10-${day}`,
-      tanggal: `2024-10-${day}`,
-      kelasId: 'ku-10',
-      catatan: idx % 2 === 0 ? 'Latihan dribble, passing & defense' : 'Scrum match & shooting practice',
-      pelatih: 'Coach Dimas',
-      kehadiran: kehadiranMap,
-    });
-  });
-
-  // November sessions (04, 11, 18)
-  const novDates = ['04', '05', '11', '18'];
-  novDates.forEach((day, idx) => {
-    const kehadiranMap: { [sid: string]: boolean } = {};
-    SEED_STUDENT_NAMES_KU10.forEach((_, sIdx) => {
-      const sid = `std-${sIdx + 1}`;
-      kehadiranMap[sid] = sIdx % 7 !== 0;
-    });
-
-    attendanceSessions.push({
-      id: `att-2024-11-${day}`,
-      tanggal: `2024-11-${day}`,
-      kelasId: idx === 0 ? 'renang-acm-2' : 'ku-10',
-      catatan: 'Latihan fisik & simulasi tanding',
-      pelatih: idx === 0 ? 'Coach Sarah' : 'Coach Dimas',
-      kehadiran: kehadiranMap,
-    });
-  });
-
-  // Recent Transactions
-  const transactions: PaymentTransaction[] = [
-    {
-      id: 'tx-1',
-      nomorKuitansi: 'INVSP-241105-006',
-      siswaId: 'app-1',
-      siswaNama: 'John Doe',
-      kelasNama: 'KU-10',
-      tanggal: '2024-11-05',
-      nominal: 1100000,
-      terbilang: 'Satu Juta Seratus Ribu Rupiah',
-      metodePembayaran: 'Transfer BCA',
-      tipe: 'Pendaftaran Siswa Baru',
-      keterangan: 'Pendaftaran Siswa Baru + Iuran Rutin Bulan Pertama',
-      catatan: 'Bukti transfer terverifikasi m-BCA.',
-    },
-    {
-      id: 'tx-2',
-      nomorKuitansi: 'INVSP-241105-007',
-      siswaId: 'std-16',
-      siswaNama: 'Kamila Syahira',
-      kelasNama: 'KU-10',
-      tanggal: '2024-11-05',
-      nominal: 100000,
-      terbilang: 'Seratus Ribu Rupiah',
-      metodePembayaran: 'QRIS',
-      tipe: 'Iuran Rutin',
-      keterangan: 'Pembayaran Iuran Rutin November 2024',
-      catatan: 'Bayar via QRIS di loket admin.',
-    },
-    {
-      id: 'tx-3',
-      nomorKuitansi: 'INVSP-241105-008',
-      siswaId: 'std-16',
-      siswaNama: 'Kamila Syahira',
-      kelasNama: 'KU-10',
-      tanggal: '2024-11-05',
-      nominal: 400000,
-      terbilang: 'Empat Ratus Ribu Rupiah',
-      metodePembayaran: 'Transfer BCA',
-      tipe: 'Iuran Insidentil',
-      keterangan: 'Pendaftaran Turnamen Familia Cup 2024',
-    },
-  ];
-
-  return {
-    students,
-    classes: INITIAL_CLASSES,
-    monthlyDues,
-    events,
-    eventParticipants,
-    attendanceSessions,
-    transactions,
-    profile: INITIAL_PROFILE,
-  };
-}
-
-export const SAMPLE_TRANSFER_PROOF_SVG = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="400" height="520" viewBox="0 0 400 520" fill="none"><rect width="400" height="520" rx="16" fill="%23FFFFFF"/><rect width="400" height="80" rx="16" fill="%2300529C"/><text x="20" y="48" fill="%23FFFFFF" font-family="sans-serif" font-weight="bold" font-size="20">m-Transfer BCA BERHASIL</text><circle cx="200" cy="140" r="32" fill="%2310B981"/><path d="M188 140l8 8 16-16" stroke="%23FFFFFF" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/><text x="200" y="200" text-anchor="middle" fill="%231E293B" font-family="sans-serif" font-weight="bold" font-size="16">TRANSFER BERHASIL</text><text x="200" y="235" text-anchor="middle" fill="%23059669" font-family="sans-serif" font-weight="900" font-size="24">Rp 100.000</text><line x1="30" y1="265" x2="370" y2="265" stroke="%23E2E8F0" stroke-width="2" stroke-dasharray="4 4"/><text x="40" y="300" fill="%2364748B" font-family="sans-serif" font-size="12">Tanggal</text><text x="360" y="300" text-anchor="end" fill="%230F172A" font-family="sans-serif" font-weight="600" font-size="12">28/09/2026 14:22 WIB</text><text x="40" y="335" fill="%2364748B" font-family="sans-serif" font-size="12">Penerima</text><text x="360" y="335" text-anchor="end" fill="%230F172A" font-family="sans-serif" font-weight="600" font-size="12">CLS SURABAYA ACADEMY</text><text x="40" y="370" fill="%2364748B" font-family="sans-serif" font-size="12">No. Rekening Tujuan</text><text x="360" y="370" text-anchor="end" fill="%230F172A" font-family="monospace" font-weight="bold" font-size="12">088-294-8833</text><text x="40" y="405" fill="%2364748B" font-family="sans-serif" font-size="12">Berita / Catatan</text><text x="360" y="405" text-anchor="end" fill="%23059669" font-family="sans-serif" font-weight="bold" font-size="12">SPP Nov Kamila Syahira</text><rect x="30" y="445" width="340" height="45" rx="8" fill="%23F8FAFC" stroke="%23E2E8F0"/><text x="200" y="472" text-anchor="middle" fill="%2364748B" font-family="monospace" font-size="11">REF: BCA-TRX-948271049281</text></svg>`;
-
-export const INITIAL_SUBMISSIONS: PaymentSubmission[] = [
-  {
-    id: 'sub-1',
-    siswaId: 'std-16',
-    siswaNama: 'Kamila Syahira',
-    kelasId: 'ku-10',
-    kelasNama: 'KU-10',
-    tipe: 'Iuran Rutin',
-    bulan: 11,
-    tahun: 2024,
-    nominal: 100000,
-    metodePembayaran: 'Transfer BCA',
-    tanggalTransfer: '2024-11-06',
-    buktiGambarUrl: SAMPLE_TRANSFER_PROOF_SVG,
-    pesanSiswa: 'Halo Admin CLS, ini bukti transfer m-BCA dari Bpk. Syahira untuk iuran rutin bulan November. Mohon dicek dan diverifikasi ya, terima kasih!',
-    status: 'pending',
-    tanggalKirim: '2024-11-06 10:15',
-  },
-  {
-    id: 'sub-2',
-    siswaId: 'std-16',
-    siswaNama: 'Kamila Syahira',
-    kelasId: 'ku-10',
-    kelasNama: 'KU-10',
-    tipe: 'Iuran Rutin',
-    bulan: 10,
-    tahun: 2024,
-    nominal: 100000,
-    metodePembayaran: 'Transfer BCA',
-    tanggalTransfer: '2024-10-05',
-    buktiGambarUrl: SAMPLE_TRANSFER_PROOF_SVG,
-    pesanSiswa: 'Iuran bulan Oktober via m-BCA a.n Syahira Senior.',
-    status: 'verified',
-    tanggalKirim: '2024-10-05 08:30',
-    tanggalVerifikasi: '2024-10-05 09:15',
-    diverifikasiOleh: 'Super Admin',
-    catatanAdmin: 'Dana Rp 100.000 sudah masuk rekening BCA klub. Terverifikasi.',
-    kuitansiId: 'INVSP-241005-007',
-    transactionId: 'tx-2',
-  },
-  {
-    id: 'sub-3',
-    siswaId: 'std-16',
-    siswaNama: 'Kamila Syahira',
-    kelasId: 'ku-10',
-    kelasNama: 'KU-10',
-    tipe: 'Iuran Insidentil',
-    nominal: 400000,
-    metodePembayaran: 'Transfer BCA',
-    tanggalTransfer: '2024-11-05',
-    buktiGambarUrl: SAMPLE_TRANSFER_PROOF_SVG,
-    pesanSiswa: 'Biaya pendaftaran Turnamen Familia Cup 2024.',
-    status: 'verified',
-    tanggalKirim: '2024-11-05 13:00',
-    tanggalVerifikasi: '2024-11-05 14:00',
-    diverifikasiOleh: 'Super Admin',
-    catatanAdmin: 'Turnamen Familia Cup terverifikasi lunas.',
-    kuitansiId: 'INVSP-241105-008',
-    transactionId: 'tx-3',
-  },
-  {
-    id: 'sub-4',
-    siswaId: 'std-2',
-    siswaNama: 'Alyaa Bening Bestari',
-    kelasId: 'ku-10',
-    kelasNama: 'KU-10',
-    tipe: 'Iuran Rutin',
-    bulan: 10,
-    tahun: 2024,
-    nominal: 100000,
-    metodePembayaran: 'QRIS',
-    tanggalTransfer: '2024-10-05',
-    buktiGambarUrl: SAMPLE_TRANSFER_PROOF_SVG,
-    pesanSiswa: 'Pembayaran SPP Oktober sudah lunas via QRIS.',
-    status: 'verified',
-    tanggalKirim: '2024-10-05 09:30',
-    tanggalVerifikasi: '2024-10-05 10:00',
-    diverifikasiOleh: 'Super Admin',
-    catatanAdmin: 'Dana masuk rekening BCA verified. Kuitansi resmi diterbitkan.',
-    kuitansiId: 'INVSP-241005-001',
-    transactionId: 'tx-alyaa-oct',
-  },
-];
-
-export function initializeStorage() {
-  if (!localStorage.getItem(STORAGE_KEYS.STUDENTS)) {
-    // Start database completely clean from zero (kosong)
-    localStorage.setItem(STORAGE_KEYS.STUDENTS, JSON.stringify([]));
-    localStorage.setItem(STORAGE_KEYS.CLASSES, JSON.stringify(INITIAL_CLASSES));
-    localStorage.setItem(STORAGE_KEYS.MONTHLY_DUES, JSON.stringify([]));
-    localStorage.setItem(STORAGE_KEYS.EVENTS, JSON.stringify([]));
-    localStorage.setItem(STORAGE_KEYS.EVENT_PARTICIPANTS, JSON.stringify([]));
-    localStorage.setItem(STORAGE_KEYS.ATTENDANCE, JSON.stringify([]));
-    localStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify([]));
-    localStorage.setItem(STORAGE_KEYS.PROFILE, JSON.stringify(INITIAL_PROFILE));
-    localStorage.setItem(STORAGE_KEYS.PAYMENT_SUBMISSIONS, JSON.stringify([]));
+    row[toSnake(c)] = v;
   }
+  return row;
 }
 
-export function clearDatabaseToZero() {
-  localStorage.setItem(STORAGE_KEYS.STUDENTS, JSON.stringify([]));
-  localStorage.setItem(STORAGE_KEYS.CLASSES, JSON.stringify(INITIAL_CLASSES));
-  localStorage.setItem(STORAGE_KEYS.MONTHLY_DUES, JSON.stringify([]));
-  localStorage.setItem(STORAGE_KEYS.EVENTS, JSON.stringify([]));
-  localStorage.setItem(STORAGE_KEYS.EVENT_PARTICIPANTS, JSON.stringify([]));
-  localStorage.setItem(STORAGE_KEYS.ATTENDANCE, JSON.stringify([]));
-  localStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify([]));
-  localStorage.setItem(STORAGE_KEYS.PROFILE, JSON.stringify(INITIAL_PROFILE));
-  localStorage.setItem(STORAGE_KEYS.PAYMENT_SUBMISSIONS, JSON.stringify([]));
+export function fromRow<T>(def: TableDef, row: Obj): T {
+  const obj: Obj = {};
+  for (const c of def.cols) {
+    const v = row[toSnake(c)];
+    if (v !== null && v !== undefined) obj[c] = v;
+  }
+  return obj as T;
 }
 
-export function resetToSeedData() {
-  const seed = generateSeedData();
-  localStorage.setItem(STORAGE_KEYS.STUDENTS, JSON.stringify(seed.students));
-  localStorage.setItem(STORAGE_KEYS.CLASSES, JSON.stringify(seed.classes));
-  localStorage.setItem(STORAGE_KEYS.MONTHLY_DUES, JSON.stringify(seed.monthlyDues));
-  localStorage.setItem(STORAGE_KEYS.EVENTS, JSON.stringify(seed.events));
-  localStorage.setItem(STORAGE_KEYS.EVENT_PARTICIPANTS, JSON.stringify(seed.eventParticipants));
-  localStorage.setItem(STORAGE_KEYS.ATTENDANCE, JSON.stringify(seed.attendanceSessions));
-  localStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(seed.transactions));
-  localStorage.setItem(STORAGE_KEYS.PROFILE, JSON.stringify(seed.profile));
-  localStorage.setItem(STORAGE_KEYS.PAYMENT_SUBMISSIONS, JSON.stringify(INITIAL_SUBMISSIONS));
+// ─── Upload gambar ───────────────────────────────────────────────────────────
+
+const PROOF_BUCKET = 'payment-proofs';
+const AVATAR_BUCKET = 'avatars';
+const SIGNED_URL_TTL = 60 * 60 * 8; // 8 jam
+const SIGN_PREFIX = `${SUPABASE_URL}/storage/v1/object/sign/${PROOF_BUCKET}/`;
+
+const isDataUrl = (v: unknown): boolean => typeof v === 'string' && v.startsWith('data:');
+const uuid = () => crypto.randomUUID();
+
+// "bucket:data URL" yang sudah diunggah → hasil unggahan (hindari unggah ganda saat baris yang sama disimpan lagi).
+const uploadMemo = new Map<string, string>();
+
+function extFor(dataUrl: string): 'jpg' | 'png' | 'webp' | null {
+  if (dataUrl.startsWith('data:image/jpeg')) return 'jpg';
+  if (dataUrl.startsWith('data:image/png')) return 'png';
+  if (dataUrl.startsWith('data:image/webp')) return 'webp';
+  return null;
 }
 
-// Data Getters & Setters
-export function getStudents(): Student[] {
-  initializeStorage();
-  const raw = localStorage.getItem(STORAGE_KEYS.STUDENTS);
-  return raw ? JSON.parse(raw) : [];
+/** Unggah ke bucket publik `avatars` dan kembalikan URL publiknya. */
+async function uploadAvatar(dataUrl: string, folder: string): Promise<string> {
+  const memoKey = `${AVATAR_BUCKET}:${dataUrl}`;
+  const memo = uploadMemo.get(memoKey);
+  if (memo) return memo;
+  const ext = extFor(dataUrl);
+  if (!ext) throw new Error('Format gambar tidak didukung (gunakan JPG, PNG, atau WebP).');
+  const path = `${folder}/${uuid()}.${ext}`;
+  const { error } = await supabase.storage.from(AVATAR_BUCKET).upload(path, dataUrlToBlob(dataUrl), {
+    contentType: `image/${ext === 'jpg' ? 'jpeg' : ext}`,
+  });
+  if (error) throw new Error(`Gagal mengunggah foto: ${error.message}`);
+  const url = supabase.storage.from(AVATAR_BUCKET).getPublicUrl(path).data.publicUrl;
+  uploadMemo.set(memoKey, url);
+  return url;
 }
 
-export function saveStudents(students: Student[]) {
-  localStorage.setItem(STORAGE_KEYS.STUDENTS, JSON.stringify(students));
+/** Unggah ke bucket privat `payment-proofs` dan kembalikan path-nya. */
+export async function uploadPaymentProof(dataUrl: string): Promise<string> {
+  const memoKey = `${PROOF_BUCKET}:${dataUrl}`;
+  const memo = uploadMemo.get(memoKey);
+  if (memo) return memo;
+  const ext = extFor(dataUrl);
+  if (!ext) throw new Error('Format bukti transfer tidak didukung (gunakan JPG, PNG, atau WebP).');
+  const path = `${uuid()}.${ext}`;
+  const { error } = await supabase.storage.from(PROOF_BUCKET).upload(path, dataUrlToBlob(dataUrl), {
+    contentType: `image/${ext === 'jpg' ? 'jpeg' : ext}`,
+  });
+  if (error) throw new Error(`Gagal mengunggah bukti transfer: ${error.message}`);
+  uploadMemo.set(memoKey, path);
+  return path;
 }
 
-export function getClasses(): ClassGroup[] {
-  initializeStorage();
-  const raw = localStorage.getItem(STORAGE_KEYS.CLASSES);
-  return raw ? JSON.parse(raw) : INITIAL_CLASSES;
+/** Path bukti dari nilai yang tersimpan di state (data URL baru, signed URL, atau path). */
+async function toProofPath(value: string): Promise<string> {
+  if (!value) return '';
+  if (isDataUrl(value)) {
+    // SVG placeholder lama bukan bukti nyata → dikosongkan.
+    return extFor(value) ? uploadPaymentProof(value) : '';
+  }
+  if (SUPABASE_URL && value.startsWith(SIGN_PREFIX)) {
+    return decodeURIComponent(value.slice(SIGN_PREFIX.length).split('?')[0]);
+  }
+  return value;
 }
 
-export function saveClasses(classes: ClassGroup[]) {
-  localStorage.setItem(STORAGE_KEYS.CLASSES, JSON.stringify(classes));
+async function withSignedProofUrls(subs: PaymentSubmission[]): Promise<PaymentSubmission[]> {
+  const paths = [...new Set(subs.map((s) => s.buktiGambarUrl).filter((p) => p && !p.startsWith('http') && !isDataUrl(p)))];
+  if (paths.length === 0) return subs;
+  const { data, error } = await supabase.storage.from(PROOF_BUCKET).createSignedUrls(paths, SIGNED_URL_TTL);
+  // Jika gagal, path asli dipertahankan di state (gambar tampak rusak, tetapi tidak menimpa path saat disimpan).
+  if (error || !data) return subs;
+  const byPath = new Map(data.map((d) => [d.path ?? '', d.signedUrl ?? '']));
+  return subs.map((s) => ({ ...s, buktiGambarUrl: byPath.get(s.buktiGambarUrl) || s.buktiGambarUrl }));
 }
 
-export function getMonthlyDues(): MonthlyDueRecord[] {
-  initializeStorage();
-  const raw = localStorage.getItem(STORAGE_KEYS.MONTHLY_DUES);
-  return raw ? JSON.parse(raw) : [];
+// ─── Baca & tulis tabel ──────────────────────────────────────────────────────
+
+const PAGE = 1000;
+const snapshots = new Map<string, Map<string, string>>();
+const queues = new Map<string, Promise<unknown>>();
+let syncErrorHandler: ((table: string, error: Error) => void) | null = null;
+
+export function setSyncErrorHandler(fn: ((table: string, error: Error) => void) | null) {
+  syncErrorHandler = fn;
 }
 
-export function saveMonthlyDues(dues: MonthlyDueRecord[]) {
-  localStorage.setItem(STORAGE_KEYS.MONTHLY_DUES, JSON.stringify(dues));
+async function fetchAll<T extends { id: string }>(def: TableDef): Promise<T[]> {
+  const rows: Obj[] = [];
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await supabase
+      .from(def.table)
+      .select('*')
+      .order('created_at', { ascending: def.order === 'asc' })
+      .order('id', { ascending: def.order === 'asc' })
+      .range(from, from + PAGE - 1);
+    if (error) throw new Error(`Gagal memuat ${def.table}: ${error.message}`);
+    rows.push(...(data ?? []));
+    if (!data || data.length < PAGE) break;
+  }
+  return rows.map((r) => fromRow<T>(def, r));
 }
 
-export function getEvents(): ClubEvent[] {
-  initializeStorage();
-  const raw = localStorage.getItem(STORAGE_KEYS.EVENTS);
-  return raw ? JSON.parse(raw) : [];
+async function load<T extends { id: string }>(def: TableDef): Promise<T[]> {
+  const items = await fetchAll<T>(def);
+  snapshots.set(def.table, new Map(items.map((i) => [i.id, JSON.stringify(i)])));
+  return items;
 }
 
-export function saveEvents(events: ClubEvent[]) {
-  localStorage.setItem(STORAGE_KEYS.EVENTS, JSON.stringify(events));
+/** Siapkan satu item untuk dikirim: unggah gambar baru dan ganti dengan referensi storage. */
+type Prepare = (row: Obj, item: Obj) => Promise<Obj>;
+
+async function syncTable<T extends { id: string }>(def: TableDef, list: T[], prepare?: Prepare): Promise<void> {
+  const prev = snapshots.get(def.table) ?? new Map<string, string>();
+  const next = new Map(list.map((i) => [i.id, JSON.stringify(i)]));
+
+  const changed = list.filter((i) => prev.get(i.id) !== next.get(i.id));
+  const removedIds = [...prev.keys()].filter((id) => !next.has(id));
+
+  if (changed.length > 0) {
+    const rows = await Promise.all(
+      changed.map(async (item) => {
+        const row = toRow(def, item);
+        return prepare ? prepare(row, item) : row;
+      }),
+    );
+    const { error } = await supabase.from(def.table).upsert(rows, { onConflict: 'id', defaultToNull: false });
+    if (error) throw new Error(error.message);
+  }
+  if (removedIds.length > 0) {
+    // Hapus per potongan agar URL permintaan tidak terlalu panjang.
+    for (let i = 0; i < removedIds.length; i += 100) {
+      const { error } = await supabase.from(def.table).delete().in('id', removedIds.slice(i, i + 100));
+      if (error) throw new Error(error.message);
+    }
+  }
+  snapshots.set(def.table, next);
 }
 
-export function getEventParticipants(): EventParticipant[] {
-  initializeStorage();
-  const raw = localStorage.getItem(STORAGE_KEYS.EVENT_PARTICIPANTS);
-  return raw ? JSON.parse(raw) : [];
+function save<T extends { id: string }>(def: TableDef, list: T[], prepare?: Prepare): Promise<void> {
+  const run = (queues.get(def.table) ?? Promise.resolve()).then(() => syncTable(def, list, prepare));
+  const settled = run.catch((e: Error) => {
+    syncErrorHandler?.(def.table, e);
+  });
+  queues.set(def.table, settled);
+  return settled;
 }
 
-export function saveEventParticipants(participants: EventParticipant[]) {
-  localStorage.setItem(STORAGE_KEYS.EVENT_PARTICIPANTS, JSON.stringify(participants));
+const prepareFoto: Prepare = async (row, item) => {
+  if (isDataUrl(item.foto)) row.foto = await uploadAvatar(item.foto, 'people');
+  return row;
+};
+
+// Upsert massal mengisi kolom yang hilang dengan default → pastikan kode akses selalu ikut terkirim,
+// supaya siswa lama tidak mendapat kode baru setiap disimpan.
+const prepareStudent: Prepare = async (row, item) => {
+  const out = await prepareFoto(row, item);
+  if (!out.kode_akses) out.kode_akses = generateKodeAkses();
+  return out;
+};
+
+const prepareProof: Prepare = async (row, item) => {
+  row.bukti_gambar_url = await toProofPath(item.buktiGambarUrl ?? '');
+  return row;
+};
+
+// ─── API publik (dipakai App.tsx) ────────────────────────────────────────────
+
+export const getStudents = () => load<Student>(T.students);
+export const saveStudents = (list: Student[]) => save(T.students, list, prepareStudent);
+
+export const getCoaches = () => load<Coach>(T.coaches);
+export const saveCoaches = (list: Coach[]) => save(T.coaches, list, prepareFoto);
+
+export const getClasses = () => load<ClassGroup>(T.classes);
+export const saveClasses = (list: ClassGroup[]) => save(T.classes, list);
+
+export const getMonthlyDues = () => load<MonthlyDueRecord>(T.monthlyDues);
+export const saveMonthlyDues = (list: MonthlyDueRecord[]) => save(T.monthlyDues, list);
+
+export const getEvents = () => load<ClubEvent>(T.events);
+export const saveEvents = (list: ClubEvent[]) => save(T.events, list);
+
+export const getEventParticipants = () => load<EventParticipant>(T.eventParticipants);
+export const saveEventParticipants = (list: EventParticipant[]) => save(T.eventParticipants, list);
+
+export const getAttendanceSessions = () => load<AttendanceSession>(T.attendance);
+export const saveAttendanceSessions = (list: AttendanceSession[]) => save(T.attendance, list);
+
+export const getTransactions = () => load<PaymentTransaction>(T.transactions);
+export const saveTransactions = (list: PaymentTransaction[]) => save(T.transactions, list);
+
+export async function getPaymentSubmissions(): Promise<PaymentSubmission[]> {
+  const raw = await load<PaymentSubmission>(T.submissions);
+  // Snapshot memakai nilai yang tersimpan di state (URL bertanda tangan), konsisten dengan saat disimpan lagi.
+  const signed = await withSignedProofUrls(raw);
+  snapshots.set(T.submissions.table, new Map(signed.map((i) => [i.id, JSON.stringify(i)])));
+  return signed;
+}
+export const savePaymentSubmissions = (list: PaymentSubmission[]) => save(T.submissions, list, prepareProof);
+
+// Profil klub (satu baris, id = 1)
+const PROFILE_COLS = [
+  'namaKlub', 'cabangOlahraga', 'alamat', 'kota', 'noHp', 'email', 'noWhatsApp', 'logoUrl',
+  'namaBank', 'noRekening', 'atasNama',
+];
+const PROFILE_NULLABLE = ['logoUrl', 'namaBank', 'noRekening', 'atasNama'];
+
+export async function getClubProfile(): Promise<ClubProfile> {
+  const { data, error } = await supabase.from('club_profile').select('*').eq('id', 1).maybeSingle();
+  if (error) throw new Error(`Gagal memuat profil klub: ${error.message}`);
+  const row = data ?? {};
+  return fromRow<ClubProfile>({ table: 'club_profile', cols: PROFILE_COLS, order: 'asc' }, row);
 }
 
-export function getAttendanceSessions(): AttendanceSession[] {
-  initializeStorage();
-  const raw = localStorage.getItem(STORAGE_KEYS.ATTENDANCE);
-  return raw ? JSON.parse(raw) : [];
-}
-
-export function saveAttendanceSessions(sessions: AttendanceSession[]) {
-  localStorage.setItem(STORAGE_KEYS.ATTENDANCE, JSON.stringify(sessions));
-}
-
-export function getTransactions(): PaymentTransaction[] {
-  initializeStorage();
-  const raw = localStorage.getItem(STORAGE_KEYS.TRANSACTIONS);
-  return raw ? JSON.parse(raw) : [];
-}
-
-export function saveTransactions(transactions: PaymentTransaction[]) {
-  localStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(transactions));
-}
-
-export function getClubProfile(): ClubProfile {
-  initializeStorage();
-  const raw = localStorage.getItem(STORAGE_KEYS.PROFILE);
-  return raw ? JSON.parse(raw) : INITIAL_PROFILE;
-}
-
-export function saveClubProfile(profile: ClubProfile) {
-  localStorage.setItem(STORAGE_KEYS.PROFILE, JSON.stringify(profile));
+export async function saveClubProfile(profile: ClubProfile): Promise<void> {
+  try {
+    const rawLogo = profile.logoUrl;
+    const logoUrl = rawLogo && isDataUrl(rawLogo) ? await uploadAvatar(rawLogo, 'club') : rawLogo;
+    const row = toRow({ table: 'club_profile', cols: PROFILE_COLS, nullable: PROFILE_NULLABLE, order: 'asc' }, { ...profile, logoUrl });
+    const { error } = await supabase.from('club_profile').upsert({ id: 1, ...row }, { onConflict: 'id' });
+    if (error) throw new Error(error.message);
+  } catch (e) {
+    syncErrorHandler?.('club_profile', e as Error);
+  }
 }
 
 export function generateReceiptNumber(): string {
@@ -640,98 +367,89 @@ export function generateReceiptNumber(): string {
   return `INVSP-${yy}${mm}${dd}-${rand}`;
 }
 
-export function getPaymentSubmissions(): PaymentSubmission[] {
-  initializeStorage();
-  const raw = localStorage.getItem(STORAGE_KEYS.PAYMENT_SUBMISSIONS);
-  if (!raw || raw === '[]') {
-    const rawStudents = localStorage.getItem(STORAGE_KEYS.STUDENTS);
-    if (rawStudents && JSON.parse(rawStudents).length > 0) {
-      localStorage.setItem(STORAGE_KEYS.PAYMENT_SUBMISSIONS, JSON.stringify(INITIAL_SUBMISSIONS));
-      return INITIAL_SUBMISSIONS;
-    }
-    return [];
-  }
-  return JSON.parse(raw);
+// ─── Pendaftaran publik & portal siswa (tanpa akun Auth) ─────────────────────
+
+export interface PortalCredentials {
+  hp: string;
+  kode: string;
 }
 
-export function savePaymentSubmissions(submissions: PaymentSubmission[]) {
-  localStorage.setItem(STORAGE_KEYS.PAYMENT_SUBMISSIONS, JSON.stringify(submissions));
+export interface PortalBundle {
+  student: Student;
+  classes: ClassGroup[];
+  monthlyDues: MonthlyDueRecord[];
+  attendanceSessions: AttendanceSession[];
+  transactions: PaymentTransaction[];
+  submissions: PaymentSubmission[];
+  profile: ClubProfile;
 }
 
-// ─── COACHES ─────────────────────────────────────────────────────────────────
+// Pratinjau bukti yang baru dikirim siswa pada sesi ini (path di bucket privat tidak bisa dibuka siswa).
+const localProofPreviews = new Map<string, string>();
 
-export const INITIAL_COACHES: Coach[] = [
-  {
-    id: 'coach-dimas',
-    nama: 'Coach Dimas',
-    noHp: '0812-3456-7890',
-    email: 'dimas@sportkit.id',
-    spesialisasi: 'Basket & Atletik',
-    status: 'Aktif',
-    tanggalBergabung: '2022-01-15',
-    catatan: 'Pelatih utama KU-10 & KU-12. Berpengalaman 8 tahun.',
-  },
-  {
-    id: 'coach-rian',
-    nama: 'Coach Rian',
-    noHp: '0813-9876-5432',
-    email: 'rian@sportkit.id',
-    spesialisasi: 'Basket',
-    status: 'Aktif',
-    tanggalBergabung: '2022-03-01',
-    catatan: 'Asisten pelatih KU-10. Spesialis teknik dribbling.',
-  },
-  {
-    id: 'coach-wahyu',
-    nama: 'Coach Wahyu',
-    noHp: '0857-1234-5678',
-    email: 'wahyu@sportkit.id',
-    spesialisasi: 'Basket Kompetisi',
-    status: 'Aktif',
-    tanggalBergabung: '2021-06-10',
-    catatan: 'Pelatih KU-12. Fokus persiapan kejuaraan antar sekolah.',
-  },
-  {
-    id: 'coach-hendra',
-    nama: 'Coach Hendra',
-    noHp: '0878-8765-4321',
-    email: 'hendra@sportkit.id',
-    spesialisasi: 'Akademi Prestasi',
-    status: 'Aktif',
-    tanggalBergabung: '2020-09-01',
-    catatan: 'Pelatih senior KU-14. Mantan atlet nasional.',
-  },
-  {
-    id: 'coach-sarah',
-    nama: 'Coach Sarah',
-    noHp: '0819-1122-3344',
-    email: 'sarah@sportkit.id',
-    spesialisasi: 'Renang',
-    status: 'Aktif',
-    tanggalBergabung: '2021-01-20',
-    catatan: 'Pelatih Renang ACM 1 & 2. Sertifikasi PRSI Level 2.',
-  },
-  {
-    id: 'coach-michael',
-    nama: 'Coach Michael',
-    noHp: '0856-5544-3322',
-    email: 'michael@sportkit.id',
-    spesialisasi: 'English Sport Academy',
-    status: 'Aktif',
-    tanggalBergabung: '2023-02-01',
-    catatan: 'Pelatih English Class. Native speaker, lulusan luar negeri.',
-  },
-];
-
-export function getCoaches(): Coach[] {
-  const raw = localStorage.getItem(STORAGE_KEYS.COACHES);
-  if (!raw) {
-    localStorage.setItem(STORAGE_KEYS.COACHES, JSON.stringify(INITIAL_COACHES));
-    return INITIAL_COACHES;
-  }
-  return JSON.parse(raw);
+function rpcMessage(error: { message: string }): Error {
+  return new Error(error.message);
 }
 
-export function saveCoaches(coaches: Coach[]) {
-  localStorage.setItem(STORAGE_KEYS.COACHES, JSON.stringify(coaches));
+/** Mengembalikan null jika No. HP / kode akses tidak cocok. */
+export async function portalLogin({ hp, kode }: PortalCredentials): Promise<PortalBundle | null> {
+  const { data, error } = await supabase.rpc('portal_data', { p_hp: hp, p_kode: kode });
+  if (error) throw rpcMessage(error);
+  if (!data) return null;
+  const b = data as Obj;
+  return {
+    student: fromRow<Student>(T.students, b.student),
+    classes: (b.classes as Obj[]).map((r) => fromRow<ClassGroup>(T.classes, r)),
+    monthlyDues: (b.monthly_dues as Obj[]).map((r) => fromRow<MonthlyDueRecord>(T.monthlyDues, r)),
+    attendanceSessions: (b.attendance_sessions as Obj[]).map((r) => fromRow<AttendanceSession>(T.attendance, r)),
+    transactions: (b.transactions as Obj[]).map((r) => fromRow<PaymentTransaction>(T.transactions, r)),
+    submissions: (b.payment_submissions as Obj[]).map((r) => {
+      const s = fromRow<PaymentSubmission>(T.submissions, r);
+      return { ...s, buktiGambarUrl: localProofPreviews.get(s.buktiGambarUrl) ?? '' };
+    }),
+    profile: fromRow<ClubProfile>({ table: 'club_profile', cols: PROFILE_COLS, order: 'asc' }, b.club_profile ?? {}),
+  };
+}
+
+export async function portalSubmitPayment(
+  creds: PortalCredentials,
+  input: Pick<PaymentSubmission, 'bulan' | 'tahun' | 'nominal' | 'metodePembayaran' | 'tanggalTransfer' | 'pesanSiswa'> & {
+    buktiGambarUrl: string;
+  },
+): Promise<void> {
+  if (!isDataUrl(input.buktiGambarUrl)) throw new Error('Bukti transfer wajib diunggah.');
+  const path = await uploadPaymentProof(input.buktiGambarUrl);
+  const { error } = await supabase.rpc('portal_submit_payment', {
+    p_hp: creds.hp,
+    p_kode: creds.kode,
+    p: {
+      bulan: input.bulan,
+      tahun: input.tahun,
+      nominal: input.nominal,
+      metode_pembayaran: input.metodePembayaran,
+      tanggal_transfer: input.tanggalTransfer,
+      pesan_siswa: input.pesanSiswa,
+      bukti_path: path,
+    },
+  });
+  if (error) throw rpcMessage(error);
+  localProofPreviews.set(path, input.buktiGambarUrl);
+}
+
+export async function registerPublic(s: Student): Promise<void> {
+  const { error } = await supabase.rpc('public_register', {
+    p: {
+      nama: s.nama,
+      kelas_id: s.kelasId,
+      jenis_kelamin: s.jenisKelamin,
+      tempat_lahir: s.tempatLahir,
+      tanggal_lahir: s.tanggalLahir,
+      no_hp: s.noHp,
+      email: s.email ?? null,
+      alamat: s.alamat,
+      orang_tua: s.orangTua,
+      catatan: s.catatan ?? null,
+    },
+  });
+  if (error) throw rpcMessage(error);
 }

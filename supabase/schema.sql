@@ -78,8 +78,15 @@ create table if not exists public.club_profile (
   no_hp           text not null default '',
   email           text not null default '',
   no_whatsapp     text not null default '',
-  logo_url        text
+  logo_url        text,
+  nama_bank       text,   -- rekening tujuan transfer yang ditampilkan di Portal Siswa
+  no_rekening     text,
+  atas_nama       text
 );
+-- Untuk database yang dibuat dari versi skema sebelumnya:
+alter table public.club_profile add column if not exists nama_bank text;
+alter table public.club_profile add column if not exists no_rekening text;
+alter table public.club_profile add column if not exists atas_nama text;
 insert into public.club_profile (id, nama_klub) values (1, 'Nama Klub Anda')
   on conflict (id) do nothing;
 
