@@ -43,14 +43,16 @@ export const PendaftaranView: React.FC<PendaftaranViewProps> = ({
   const [successBanner, setSuccessBanner] = useState<boolean>(false);
 
   useEffect(() => {
-    if (classes.length > 0) {
-      if (initialClassId && classes.some((c) => c.id === initialClassId)) {
-        setSelectedClassId(initialClassId);
-      } else if (!classes.some((c) => c.id === selectedClassId)) {
-        setSelectedClassId(classes[0].id);
-      }
+    if (initialClassId && classes.some((c) => c.id === initialClassId)) {
+      setSelectedClassId(initialClassId);
     }
-  }, [classes, initialClassId, selectedClassId]);
+  }, [initialClassId]);
+
+  useEffect(() => {
+    if (classes.length > 0 && !classes.some((c) => c.id === selectedClassId)) {
+      setSelectedClassId(classes[0].id);
+    }
+  }, [classes, selectedClassId]);
 
   const selectedClass = classes.find((c) => c.id === selectedClassId) || classes[0];
   const biayaPendaftaran = Number(selectedClass?.biayaPendaftaran ?? 0);

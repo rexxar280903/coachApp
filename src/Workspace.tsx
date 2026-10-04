@@ -428,6 +428,9 @@ export default function Workspace({ mode, staff, portal, onLogout }: WorkspacePr
 
   // Open Payment for Calon Siswa (Registration payment)
   const handleOpenApplicantPaymentModal = (student: Student, classGroup: ClassGroup) => {
+    const feeDaftar = Number(classGroup?.biayaPendaftaran ?? student.biayaPendaftaran ?? 0);
+    const feeIuran = Number(classGroup?.iuranBulanan ?? student.iuranBulanan ?? 0);
+    const total = feeDaftar + feeIuran;
     setPaymentModalState({
       isOpen: true,
       title: 'Pembayaran Pendaftaran Siswa Baru',
@@ -436,9 +439,9 @@ export default function Workspace({ mode, staff, portal, onLogout }: WorkspacePr
       kelasId: classGroup.id,
       kelasNama: classGroup.nama,
       noHp: student.noHp,
-      nominalAwal: student.totalBiayaPendaftaran,
-      biayaPendaftaran: student.biayaPendaftaran,
-      iuranBulanan: student.iuranBulanan,
+      nominalAwal: total > 0 ? total : student.totalBiayaPendaftaran,
+      biayaPendaftaran: feeDaftar,
+      iuranBulanan: feeIuran,
       tipe: 'Pendaftaran Siswa Baru',
       keterangan: 'Pendaftaran Siswa Baru & Iuran Perdana',
       isApplicantApproval: true,

@@ -267,6 +267,27 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
               </div>
             </div>
 
+            {/* Rincian Biaya Masuk for Pendaftaran Siswa Baru */}
+            {tipe === 'Pendaftaran Siswa Baru' && (
+              <div className="p-3.5 rounded-2xl bg-emerald-50/70 border border-emerald-200 text-xs space-y-1.5">
+                <span className="text-[11px] font-bold text-emerald-800 uppercase tracking-wider block">
+                  Rincian Biaya Masuk
+                </span>
+                <div className="flex justify-between text-slate-600">
+                  <span>Biaya Pendaftaran Awal:</span>
+                  <span className="font-mono font-semibold">{formatRupiah(biayaPendaftaran ?? 0)}</span>
+                </div>
+                <div className="flex justify-between text-slate-600">
+                  <span>Iuran SPP Perdana:</span>
+                  <span className="font-mono font-semibold">{formatRupiah(iuranBulanan ?? 0)}</span>
+                </div>
+                <div className="flex justify-between text-emerald-900 font-bold pt-1.5 border-t border-emerald-200">
+                  <span>Total Tagihan Masuk:</span>
+                  <span className="font-mono text-sm">{formatRupiah(nominalAwal)}</span>
+                </div>
+              </div>
+            )}
+
             {/* Target Periode (Bulan & Tahun) for Iuran Rutin */}
             {tipe === 'Iuran Rutin' && (
               <div className="p-3.5 rounded-2xl bg-emerald-50/70 border border-emerald-200 space-y-2">
