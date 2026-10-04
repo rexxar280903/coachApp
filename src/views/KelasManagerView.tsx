@@ -68,8 +68,8 @@ export const KelasManagerView: React.FC<KelasManagerViewProps> = ({
     setEditingClass(cls);
     setNama(cls.nama);
     setDeskripsi(cls.deskripsi);
-    setIuranBulanan(cls.iuranBulanan);
-    setBiayaPendaftaran(cls.biayaPendaftaran);
+    setIuranBulanan(cls.iuranBulanan ?? 0);
+    setBiayaPendaftaran(cls.biayaPendaftaran ?? 0);
     setPelatihIds(getClassCoaches(cls, coaches).map((c) => c.id));
     setShowModal(true);
   };

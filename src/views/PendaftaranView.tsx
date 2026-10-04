@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { getTodayISO } from '../utils/constants';
 import { Student, ClassGroup, Gender, ParentInfo } from '../types/sportkit';
 import { formatRupiah } from '../utils/numberToWordsId';
@@ -39,12 +39,22 @@ export const PendaftaranView: React.FC<PendaftaranViewProps> = ({
   const [namaIbu, setNamaIbu] = useState<string>('');
   const [noHpIbu, setNoHpIbu] = useState<string>('');
 
-  const [selectedClassId, setSelectedClassId] = useState<string>(initialClassId || classes[0]?.id || 'ku-10');
+  const [selectedClassId, setSelectedClassId] = useState<string>(initialClassId || classes[0]?.id || '');
   const [successBanner, setSuccessBanner] = useState<boolean>(false);
 
+  useEffect(() => {
+    if (classes.length > 0) {
+      if (initialClassId && classes.some((c) => c.id === initialClassId)) {
+        setSelectedClassId(initialClassId);
+      } else if (!classes.some((c) => c.id === selectedClassId)) {
+        setSelectedClassId(classes[0].id);
+      }
+    }
+  }, [classes, initialClassId, selectedClassId]);
+
   const selectedClass = classes.find((c) => c.id === selectedClassId) || classes[0];
-  const biayaPendaftaran = selectedClass?.biayaPendaftaran || 1000000;
-  const iuranBulanan = selectedClass?.iuranBulanan || 100000;
+  const biayaPendaftaran = Number(selectedClass?.biayaPendaftaran ?? 0);
+  const iuranBulanan = Number(selectedClass?.iuranBulanan ?? 0);
   const totalBiaya = biayaPendaftaran + iuranBulanan;
 
   const [submitting, setSubmitting] = useState<boolean>(false);
@@ -223,7 +233,7 @@ export const PendaftaranView: React.FC<PendaftaranViewProps> = ({
               >
                 {classes.map((cls) => (
                   <option key={cls.id} value={cls.id}>
-                    {cls.nama} — {cls.deskripsi} (SPP: {formatRupiah(cls.iuranBulanan)}/bln)
+                    {cls.nama} — {cls.deskripsi} (Daftar: {formatRupiah(cls.biayaPendaftaran ?? 0)} | SPP: {formatRupiah(cls.iuranBulanan)}/bln)
                   </option>
                 ))}
               </select>

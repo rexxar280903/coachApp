@@ -673,13 +673,17 @@ export default function Workspace({ mode, staff, portal, onLogout }: WorkspacePr
   };
 
   // Tarif siswa mengikuti kelasnya. Biaya pendaftaran hanya relevan bagi calon siswa.
-  const withClassFees = (s: Student, cls: ClassGroup): Student => ({
-    ...s,
-    iuranBulanan: cls.iuranBulanan,
-    ...(s.status === 'Calon'
-      ? { biayaPendaftaran: cls.biayaPendaftaran, totalBiayaPendaftaran: cls.biayaPendaftaran + cls.iuranBulanan }
-      : {}),
-  });
+  const withClassFees = (s: Student, cls: ClassGroup): Student => {
+    const feeDaftar = Number(cls.biayaPendaftaran ?? 0);
+    const feeIuran = Number(cls.iuranBulanan ?? 0);
+    return {
+      ...s,
+      iuranBulanan: feeIuran,
+      ...(s.status === 'Calon'
+        ? { biayaPendaftaran: feeDaftar, totalBiayaPendaftaran: feeDaftar + feeIuran }
+        : {}),
+    };
+  };
 
   // Class Management Handlers
   const handleAddClass = (newClass: ClassGroup) => {
