@@ -74,8 +74,8 @@ transfer** (ditampilkan kepada siswa di Portal Siswa).
 | Pengguna | Halaman | Login | Akses data |
 | --- | --- | --- | --- |
 | Admin | `/` | Email + kata sandi | Semua tabel (RLS `is_admin()`) |
-| Pelatih | `/sesi-absensi` | Email + kata sandi | Baca siswa/kelas/pelatih, baca-tulis absensi |
-| Siswa / wali | `/portal` | No. HP + **kode akses** | Hanya data siswa itu, lewat fungsi `portal_*` |
+| Pelatih | `/sesi-absensi`, `/rapor` | Email + kata sandi | Baca siswa/kelas/pelatih/template & folder rapor, baca-tulis absensi & isian rapor |
+| Siswa / wali | `/portal` | No. HP + **kode akses** | Hanya data siswa itu (termasuk rapor dari folder yang *diterbitkan*), lewat fungsi `portal_*` |
 | Calon siswa | `/daftar` | Tanpa login | Hanya mengirim pendaftaran (status selalu *Calon*) |
 
 Tautan untuk bio Instagram / WhatsApp: `https://domain-anda/daftar`. Tautan portal: `https://domain-anda/portal`.

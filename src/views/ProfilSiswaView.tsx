@@ -13,8 +13,13 @@ import {
   FeeStatus,
   PaymentSubmission,
   PaymentTransaction,
-  PaymentMethod
+  PaymentMethod,
+  RaporTemplate,
+  RaporFolder,
+  RaporEntry,
 } from '../types/sportkit';
+import { RaporSiswaList } from '../components/RaporSiswaList';
+import { RaporDocData } from '../components/RaporPrintModal';
 import { formatRupiah, numberToWordsId } from '../utils/numberToWordsId';
 import { fileToCompressedDataUrl } from '../utils/image';
 import { ImageUploadField } from '../components/ImageUploadField';
@@ -73,6 +78,10 @@ interface ProfilSiswaViewProps {
   onVerifySubmission?: (submissionId: string, catatanAdmin: string) => void;
   onRejectSubmission?: (submissionId: string, alasan: string) => void;
   onViewReceipt?: (tx: PaymentTransaction) => void;
+  raporTemplates?: RaporTemplate[];
+  raporFolders?: RaporFolder[];
+  raporEntries?: RaporEntry[];
+  onOpenRapor?: (data: RaporDocData) => void;
   onAdminRecordPaymentWithProof?: (data: {
     siswaId: string;
     siswaNama: string;
@@ -89,7 +98,7 @@ interface ProfilSiswaViewProps {
   }) => void;
 }
 
-type TabKey = 'iuran' | 'bukti' | 'event' | 'absensi' | 'biodata';
+type TabKey = 'iuran' | 'bukti' | 'event' | 'absensi' | 'rapor' | 'biodata';
 
 const MONTH_NAMES = [
   'Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agt', 'Sep', 'Okt', 'Nov', 'Des'
@@ -117,6 +126,10 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
   onVerifySubmission,
   onRejectSubmission,
   onViewReceipt,
+  raporTemplates = [],
+  raporFolders = [],
+  raporEntries = [],
+  onOpenRapor,
   onAdminRecordPaymentWithProof,
 }) => {
   const { toast, confirm } = useToast();
@@ -478,7 +491,7 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
 
         {/* Tab Navigation */}
         <div className="flex items-center gap-1 p-2 bg-slate-50 border-b border-slate-200 overflow-x-auto">
-          {(['iuran', 'bukti', 'event', 'absensi', 'biodata'] as TabKey[]).map((tab) => {
+          {(['iuran', 'bukti', 'event', 'absensi', 'rapor', 'biodata'] as TabKey[]).map((tab) => {
             const meta: { [k in TabKey]: { name: string; icon: any; count?: number; hasPending?: boolean } } = {
               iuran: { name: 'Iuran Rutin Bulanan', icon: CreditCard },
               bukti: { 
@@ -489,6 +502,11 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
               },
               event: { name: 'Event & Turnamen', icon: Award },
               absensi: { name: 'Kalender Presensi', icon: Calendar },
+              rapor: {
+                name: 'Rapor',
+                icon: FileText,
+                count: raporEntries.filter((e) => e.siswaId === currentStudent?.id).length,
+              },
               biodata: { name: 'Biodata & Ortu', icon: User },
             };
             const item = meta[tab];
@@ -1349,6 +1367,26 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
               );
             })}
           </div>
+        </div>
+      )}
+
+      {/* TAB RAPOR */}
+      {activeTab === 'rapor' && currentStudent && (
+        <div className="sports-card rounded-2xl p-6 space-y-4">
+          <div className="pb-4 border-b border-slate-100">
+            <h2 className="text-base font-display font-bold text-slate-900">Rapor Perkembangan Siswa</h2>
+            <p className="text-xs text-slate-500">
+              Rapor yang sudah diisi di menu Rapor Siswa. Klik untuk melihat, mencetak, atau menyimpan PDF.
+            </p>
+          </div>
+          <RaporSiswaList
+            student={currentStudent}
+            classes={classes}
+            folders={raporFolders}
+            templates={raporTemplates}
+            entries={raporEntries}
+            onOpen={(d) => onOpenRapor?.(d)}
+          />
         </div>
       )}
 

@@ -10,8 +10,13 @@ import {
   PaymentTransaction, 
   PaymentSubmission,
   ClubProfile,
-  PaymentMethod 
+  PaymentMethod,
+  RaporTemplate,
+  RaporFolder,
+  RaporEntry,
 } from '../types/sportkit';
+import { RaporSiswaList } from '../components/RaporSiswaList';
+import { RaporDocData } from '../components/RaporPrintModal';
 import { 
   CheckCircle2, 
   Clock, 
@@ -51,6 +56,10 @@ interface StudentPortalViewProps {
   onSelectStudent: (studentId: string) => void;
   onSubmitPaymentProof: (newSubmission: Omit<PaymentSubmission, 'id' | 'status' | 'tanggalKirim'>) => Promise<boolean>;
   onViewReceipt: (tx: PaymentTransaction) => void;
+  raporTemplates?: RaporTemplate[];
+  raporFolders?: RaporFolder[];
+  raporEntries?: RaporEntry[];
+  onOpenRapor?: (data: RaporDocData) => void;
 }
 
 export const StudentPortalView: React.FC<StudentPortalViewProps> = ({
@@ -65,9 +74,14 @@ export const StudentPortalView: React.FC<StudentPortalViewProps> = ({
   onSelectStudent,
   onSubmitPaymentProof,
   onViewReceipt,
+  raporTemplates = [],
+  raporFolders = [],
+  raporEntries = [],
+  onOpenRapor,
 }) => {
   const { toast } = useToast();
-  const [activeTab, setActiveTab] = useState<'upload' | 'iuran' | 'absensi'>('upload');
+  const [activeTab, setActiveTab] = useState<'upload' | 'iuran' | 'absensi' | 'rapor'>('upload');
+  const raporCount = raporEntries.filter((e) => e.siswaId === currentStudent.id).length;
   
   // Student's specific class
   const studentClass = classes.find((c) => c.id === currentStudent.kelasId) || classes[0];
@@ -348,6 +362,18 @@ export const StudentPortalView: React.FC<StudentPortalViewProps> = ({
           >
             <Calendar className="w-3.5 h-3.5" />
             <span>Rekap Kehadiran Latihan ({attendanceRate}%)</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('rapor')}
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer ${
+              activeTab === 'rapor'
+                ? 'bg-emerald-600 text-white shadow-xs'
+                : 'bg-slate-100 text-slate-600 hover:text-slate-900 hover:bg-slate-200'
+            }`}
+          >
+            <FileText className="w-3.5 h-3.5" />
+            <span>Rapor{raporCount > 0 ? ` (${raporCount})` : ''}</span>
           </button>
         </div>
       </div>
@@ -938,6 +964,27 @@ export const StudentPortalView: React.FC<StudentPortalViewProps> = ({
               );
             })}
           </div>
+        </div>
+      )}
+
+      {/* TAB 4: RAPOR */}
+      {activeTab === 'rapor' && (
+        <div className="bg-white rounded-3xl border border-slate-200/80 p-6 shadow-xs space-y-4">
+          <div>
+            <h2 className="text-base font-display font-bold text-slate-900">Rapor Perkembangan Siswa</h2>
+            <p className="text-xs text-slate-500">
+              Laporan penilaian dari pelatih. Ketuk rapor untuk melihat, mencetak, atau menyimpannya sebagai PDF.
+            </p>
+          </div>
+          <RaporSiswaList
+            student={currentStudent}
+            classes={classes}
+            folders={raporFolders}
+            templates={raporTemplates}
+            entries={raporEntries}
+            onOpen={(d) => onOpenRapor?.(d)}
+            emptyText="Belum ada rapor yang diterbitkan."
+          />
         </div>
       )}
 

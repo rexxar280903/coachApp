@@ -238,6 +238,40 @@ create table if not exists public.payment_submissions (
 create index if not exists payment_submissions_siswa_idx on public.payment_submissions (siswa_id);
 create index if not exists payment_submissions_status_idx on public.payment_submissions (status);
 
+-- Rapor: template (blangko) → folder (periode + kelas) → isian per siswa.
+create table if not exists public.rapor_templates (
+  id         text primary key,
+  nama       text not null,
+  header     text not null default '',
+  items      jsonb not null default '[]'::jsonb,   -- RaporItem[]
+  footer     text not null default '',
+  created_at timestamptz not null default now()
+);
+
+create table if not exists public.rapor_folders (
+  id              text primary key,
+  nama            text not null,
+  awal_penilaian  text not null default '',
+  akhir_penilaian text not null default '',
+  kelas_id        text not null,
+  template_id     text not null,
+  diterbitkan     boolean not null default false,
+  created_at timestamptz not null default now()
+);
+create index if not exists rapor_folders_kelas_idx on public.rapor_folders (kelas_id);
+
+create table if not exists public.rapor_entries (
+  id          text primary key,
+  folder_id   text not null,
+  siswa_id    text not null,
+  jawaban     jsonb not null default '{}'::jsonb,  -- { [item_id]: string | string[] }
+  diisi_oleh  text not null default '',
+  tanggal_isi text not null default '',
+  created_at timestamptz not null default now()
+);
+create unique index if not exists rapor_entries_folder_siswa_key on public.rapor_entries (folder_id, siswa_id);
+create index if not exists rapor_entries_siswa_idx on public.rapor_entries (siswa_id);
+
 -- Percobaan login portal yang gagal (anti tebak-tebakan kode). Tidak punya policy
 -- sama sekali → hanya bisa diakses fungsi security definer di bawah.
 create table if not exists public.portal_login_failures (
@@ -255,7 +289,8 @@ begin
   foreach t in array array[
     'profiles', 'club_profile', 'classes', 'coaches', 'students', 'monthly_dues',
     'events', 'event_participants', 'attendance_sessions', 'transactions',
-    'payment_submissions', 'portal_login_failures'
+    'payment_submissions', 'portal_login_failures',
+    'rapor_templates', 'rapor_folders', 'rapor_entries'
   ] loop
     execute format('alter table public.%I enable row level security', t);
   end loop;
@@ -264,7 +299,7 @@ begin
   foreach t in array array[
     'profiles', 'club_profile', 'classes', 'coaches', 'students', 'monthly_dues',
     'events', 'event_participants', 'attendance_sessions', 'transactions',
-    'payment_submissions'
+    'payment_submissions', 'rapor_templates', 'rapor_folders', 'rapor_entries'
   ] loop
     execute format('drop policy if exists admin_all on public.%I', t);
     execute format(
@@ -273,7 +308,10 @@ begin
   end loop;
 
   -- Pelatih: hanya baca data dasar.
-  foreach t in array array['students', 'classes', 'coaches', 'attendance_sessions'] loop
+  foreach t in array array[
+    'students', 'classes', 'coaches', 'attendance_sessions',
+    'rapor_templates', 'rapor_folders', 'rapor_entries'
+  ] loop
     execute format('drop policy if exists coach_read on public.%I', t);
     execute format(
       'create policy coach_read on public.%I for select to authenticated
@@ -284,6 +322,12 @@ end $$;
 -- Pelatih boleh mencatat / mengubah absensi.
 drop policy if exists coach_write on public.attendance_sessions;
 create policy coach_write on public.attendance_sessions for all to authenticated
+  using (public.current_staff_role() = 'coach')
+  with check (public.current_staff_role() = 'coach');
+
+-- Pelatih boleh mengisi rapor siswa (template & folder tetap diatur admin).
+drop policy if exists coach_write on public.rapor_entries;
+create policy coach_write on public.rapor_entries for all to authenticated
   using (public.current_staff_role() = 'coach')
   with check (public.current_staff_role() = 'coach');
 
@@ -442,6 +486,29 @@ begin
     'payment_submissions', coalesce((
       select jsonb_agg(to_jsonb(s) order by s.tanggal_kirim desc)
       from public.payment_submissions s where s.siswa_id = v_id
+    ), '[]'::jsonb),
+    -- Rapor hanya dari folder yang sudah diterbitkan admin.
+    'rapor_entries', coalesce((
+      select jsonb_agg(to_jsonb(e))
+      from public.rapor_entries e
+      join public.rapor_folders f on f.id = e.folder_id and f.diterbitkan
+      where e.siswa_id = v_id
+    ), '[]'::jsonb),
+    'rapor_folders', coalesce((
+      select jsonb_agg(to_jsonb(f) order by f.akhir_penilaian desc)
+      from public.rapor_folders f
+      where f.diterbitkan and exists (
+        select 1 from public.rapor_entries e where e.folder_id = f.id and e.siswa_id = v_id
+      )
+    ), '[]'::jsonb),
+    'rapor_templates', coalesce((
+      select jsonb_agg(to_jsonb(t))
+      from public.rapor_templates t
+      where exists (
+        select 1 from public.rapor_folders f
+        join public.rapor_entries e on e.folder_id = f.id and e.siswa_id = v_id
+        where f.diterbitkan and f.template_id = t.id
+      )
     ), '[]'::jsonb),
     'club_profile', (select to_jsonb(cp) from public.club_profile cp where cp.id = 1)
   );

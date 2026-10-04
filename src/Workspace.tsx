@@ -18,7 +18,10 @@ import {
   PaymentMethod,
   ClubProfile, 
   UserRole,
-  StudentStatus 
+  StudentStatus,
+  RaporTemplate,
+  RaporFolder,
+  RaporEntry,
 } from './types/sportkit';
 import {
   getStudents,
@@ -47,6 +50,12 @@ import {
   portalSubmitPayment,
   setSyncErrorHandler,
   PortalCredentials,
+  getRaporTemplates,
+  saveRaporTemplates,
+  getRaporFolders,
+  saveRaporFolders,
+  getRaporEntries,
+  saveRaporEntries,
 } from './services/storage';
 import { StaffUser } from './services/auth';
 import { generateKodeAkses } from './utils/kodeAkses';
@@ -71,6 +80,7 @@ import { Header } from './components/Header';
 import { Sidebar, ActiveNav } from './components/Sidebar';
 import { PaymentModal } from './components/PaymentModal';
 import { ReceiptModal } from './components/ReceiptModal';
+import { RaporPrintModal, RaporDocData } from './components/RaporPrintModal';
 
 import { DashboardView } from './views/DashboardView';
 import { ProfilSiswaView } from './views/ProfilSiswaView';
@@ -87,6 +97,7 @@ import { KelasManagerView } from './views/KelasManagerView';
 import { VerifikasiPembayaranView } from './views/VerifikasiPembayaranView';
 import { StudentPortalView } from './views/StudentPortalView';
 import { PelatihView } from './views/PelatihView';
+import { RaporView } from './views/RaporView';
 
 // Map URL paths to ActiveNav keys
 const PATH_TO_NAV: Record<string, ActiveNav> = {
@@ -107,6 +118,7 @@ const PATH_TO_NAV: Record<string, ActiveNav> = {
   '/profil-siswa': 'profil-siswa',
   '/sesi-absensi': 'sesi-absensi',
   '/laporan-absensi': 'laporan-absensi',
+  '/rapor': 'rapor',
   '/pengaturan': 'pengaturan',
 };
 
@@ -114,7 +126,7 @@ const PATH_TO_NAV: Record<string, ActiveNav> = {
 // guard ini mencegah akses langsung lewat URL).
 const ROLE_ALLOWED_NAV: Record<UserRole, ActiveNav[] | 'all'> = {
   admin: 'all',
-  coach: ['sesi-absensi', 'laporan-absensi'],
+  coach: ['sesi-absensi', 'laporan-absensi', 'rapor'],
   student: ['student-portal'],
   public: ['pendaftaran-baru'],
 };
@@ -143,6 +155,7 @@ const NAV_TO_PATH: Record<ActiveNav, string> = {
   'profil-siswa': '/profil-siswa',
   'sesi-absensi': '/sesi-absensi',
   'laporan-absensi': '/laporan-absensi',
+  'rapor': '/rapor',
   'student-portal': '/student-portal',
   'pengaturan': '/pengaturan',
 };
@@ -184,6 +197,11 @@ export default function Workspace({ mode, staff, portal, onLogout }: WorkspacePr
   const [transactions, setTransactions] = useState<PaymentTransaction[]>([]);
   const [submissions, setSubmissions] = useState<PaymentSubmission[]>([]);
   const [profile, setProfile] = useState<ClubProfile>(EMPTY_PROFILE);
+  const [raporTemplates, setRaporTemplates] = useState<RaporTemplate[]>([]);
+  const [raporFolders, setRaporFolders] = useState<RaporFolder[]>([]);
+  const [raporEntries, setRaporEntries] = useState<RaporEntry[]>([]);
+  const [raporUnavailable, setRaporUnavailable] = useState<boolean>(false);
+  const [raporDoc, setRaporDoc] = useState<RaporDocData | null>(null);
   const hasLoadedRef = useRef(false);
   const [dataStatus, setDataStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [loadError, setLoadError] = useState<string>('');
@@ -301,6 +319,9 @@ export default function Workspace({ mode, staff, portal, onLogout }: WorkspacePr
         setAttendanceSessions(bundle.attendanceSessions);
         setTransactions(bundle.transactions);
         setSubmissions(bundle.submissions);
+        setRaporTemplates(bundle.raporTemplates);
+        setRaporFolders(bundle.raporFolders);
+        setRaporEntries(bundle.raporEntries);
         setProfile(bundle.profile);
         setSelectedStudentId(bundle.student.id);
       } else {
@@ -333,6 +354,17 @@ export default function Workspace({ mode, staff, portal, onLogout }: WorkspacePr
               getPaymentSubmissions(),
             ])
           : [[], [], [], [], []];
+
+        // Rapor dimuat terpisah: bila tabelnya belum dibuat (schema.sql lama), aplikasi tetap jalan.
+        try {
+          const [tpls, flds, ents] = await Promise.all([getRaporTemplates(), getRaporFolders(), getRaporEntries()]);
+          setRaporTemplates(tpls);
+          setRaporFolders(flds);
+          setRaporEntries(ents);
+          setRaporUnavailable(false);
+        } catch {
+          setRaporUnavailable(true);
+        }
 
         setStudents(stds);
         setCoaches(coachs);
@@ -1167,6 +1199,65 @@ export default function Workspace({ mode, staff, portal, onLogout }: WorkspacePr
     setReceiptModalTx(newTx);
   };
 
+  // ─── Rapor ─────────────────────────────────────────────────────────────────
+  const handleSaveRaporTemplate = (tpl: RaporTemplate) => {
+    const exists = raporTemplates.some((t) => t.id === tpl.id);
+    const updated = exists ? raporTemplates.map((t) => (t.id === tpl.id ? tpl : t)) : [...raporTemplates, tpl];
+    setRaporTemplates(updated);
+    saveRaporTemplates(updated);
+    toast.success('Template rapor disimpan', tpl.nama);
+  };
+
+  const handleDeleteRaporTemplate = async (templateId: string) => {
+    const tpl = raporTemplates.find((t) => t.id === templateId);
+    if (!tpl) return;
+    const usedBy = raporFolders.filter((f) => f.templateId === templateId).length;
+    if (usedBy > 0) {
+      toast.error('Template sedang dipakai', `Hapus atau ganti template di ${usedBy} folder rapor terlebih dahulu.`);
+      return;
+    }
+    const ok = await confirm('Hapus Template?', `Template "${tpl.nama}" akan dihapus permanen.`);
+    if (!ok) return;
+    const updated = raporTemplates.filter((t) => t.id !== templateId);
+    setRaporTemplates(updated);
+    saveRaporTemplates(updated);
+  };
+
+  const handleSaveRaporFolder = (folder: RaporFolder) => {
+    const exists = raporFolders.some((f) => f.id === folder.id);
+    const updated = exists ? raporFolders.map((f) => (f.id === folder.id ? folder : f)) : [folder, ...raporFolders];
+    setRaporFolders(updated);
+    saveRaporFolders(updated);
+  };
+
+  const handleDeleteRaporFolder = async (folderId: string) => {
+    const folder = raporFolders.find((f) => f.id === folderId);
+    if (!folder) return;
+    const filled = raporEntries.filter((e) => e.folderId === folderId).length;
+    const ok = await confirm(
+      'Hapus Folder Rapor?',
+      filled > 0
+        ? `"${folder.nama}" beserta ${filled} rapor siswa yang sudah diisi akan dihapus permanen.`
+        : `"${folder.nama}" akan dihapus.`
+    );
+    if (!ok) return;
+    const updatedFolders = raporFolders.filter((f) => f.id !== folderId);
+    setRaporFolders(updatedFolders);
+    saveRaporFolders(updatedFolders);
+    if (filled > 0) {
+      const updatedEntries = raporEntries.filter((e) => e.folderId !== folderId);
+      setRaporEntries(updatedEntries);
+      saveRaporEntries(updatedEntries);
+    }
+  };
+
+  const handleSaveRaporEntry = (entry: RaporEntry) => {
+    const exists = raporEntries.some((e) => e.id === entry.id);
+    const updated = exists ? raporEntries.map((e) => (e.id === entry.id ? entry : e)) : [...raporEntries, entry];
+    setRaporEntries(updated);
+    saveRaporEntries(updated);
+  };
+
   // Count pending calon siswa
   const calonCount = students.filter((s) => s.status === 'Calon').length;
 
@@ -1275,6 +1366,10 @@ export default function Workspace({ mode, staff, portal, onLogout }: WorkspacePr
                 onSelectStudent={(id) => setSelectedStudentId(id)}
                 onSubmitPaymentProof={handleSubmitPaymentProof}
                 onViewReceipt={handleViewReceipt}
+                raporTemplates={raporTemplates}
+                raporFolders={raporFolders}
+                raporEntries={raporEntries}
+                onOpenRapor={setRaporDoc}
               />
             ) : (
               <div className="bg-white rounded-3xl p-12 text-center border border-slate-200">
@@ -1360,6 +1455,10 @@ export default function Workspace({ mode, staff, portal, onLogout }: WorkspacePr
                   onVerifySubmission={handleVerifySubmission}
                   onRejectSubmission={handleRejectSubmission}
                   onViewReceipt={handleViewReceipt}
+                  raporTemplates={raporTemplates}
+                  raporFolders={raporFolders}
+                  raporEntries={raporEntries}
+                  onOpenRapor={setRaporDoc}
                   onAdminRecordPaymentWithProof={handleAdminRecordPaymentWithProof}
                 />
               )}
@@ -1433,6 +1532,26 @@ export default function Workspace({ mode, staff, portal, onLogout }: WorkspacePr
                   sessions={attendanceSessions}
                   students={students}
                   classes={classes}
+                />
+              )}
+
+              {currentNav === 'rapor' && (
+                <RaporView
+                  templates={raporTemplates}
+                  folders={raporFolders}
+                  entries={raporEntries}
+                  students={students}
+                  classes={classes}
+                  profile={profile}
+                  currentRole={currentRole}
+                  actorName={actorName}
+                  unavailable={raporUnavailable}
+                  onSaveTemplate={handleSaveRaporTemplate}
+                  onDeleteTemplate={handleDeleteRaporTemplate}
+                  onSaveFolder={handleSaveRaporFolder}
+                  onDeleteFolder={handleDeleteRaporFolder}
+                  onSaveEntry={handleSaveRaporEntry}
+                  onOpenRapor={setRaporDoc}
                 />
               )}
 
@@ -1541,6 +1660,9 @@ export default function Workspace({ mode, staff, portal, onLogout }: WorkspacePr
         isOpen={!!receiptModalTx}
         onClose={() => setReceiptModalTx(null)}
       />
+
+      {/* Rapor siswa (Cetak / simpan PDF) */}
+      <RaporPrintModal data={raporDoc} profile={profile} onClose={() => setRaporDoc(null)} />
     </div>
   );
 }

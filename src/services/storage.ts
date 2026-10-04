@@ -18,6 +18,9 @@ import {
   PaymentTransaction,
   ClubProfile,
   PaymentSubmission,
+  RaporTemplate,
+  RaporFolder,
+  RaporEntry,
 } from '../types/sportkit';
 import { supabase, SUPABASE_URL } from './supabase';
 import { dataUrlToBlob } from '../utils/image';
@@ -109,6 +112,21 @@ const T = {
       'catatanAdmin', 'kuitansiId', 'transactionId',
     ],
     order: 'desc',
+  },
+  raporTemplates: {
+    table: 'rapor_templates',
+    cols: ['id', 'nama', 'header', 'items', 'footer'],
+    order: 'asc',
+  },
+  raporFolders: {
+    table: 'rapor_folders',
+    cols: ['id', 'nama', 'awalPenilaian', 'akhirPenilaian', 'kelasId', 'templateId', 'diterbitkan'],
+    order: 'desc',
+  },
+  raporEntries: {
+    table: 'rapor_entries',
+    cols: ['id', 'folderId', 'siswaId', 'jawaban', 'diisiOleh', 'tanggalIsi'],
+    order: 'asc',
   },
 } satisfies Record<string, TableDef>;
 
@@ -324,6 +342,15 @@ export const saveEventParticipants = (list: EventParticipant[]) => save(T.eventP
 export const getAttendanceSessions = () => load<AttendanceSession>(T.attendance);
 export const saveAttendanceSessions = (list: AttendanceSession[]) => save(T.attendance, list);
 
+export const getRaporTemplates = () => load<RaporTemplate>(T.raporTemplates);
+export const saveRaporTemplates = (list: RaporTemplate[]) => save(T.raporTemplates, list);
+
+export const getRaporFolders = () => load<RaporFolder>(T.raporFolders);
+export const saveRaporFolders = (list: RaporFolder[]) => save(T.raporFolders, list);
+
+export const getRaporEntries = () => load<RaporEntry>(T.raporEntries);
+export const saveRaporEntries = (list: RaporEntry[]) => save(T.raporEntries, list);
+
 export async function getTransactions(): Promise<PaymentTransaction[]> {
   const items = await load<PaymentTransaction>(T.transactions);
   rememberReceipts(items.map((t) => t.nomorKuitansi));
@@ -417,6 +444,9 @@ export interface PortalBundle {
   attendanceSessions: AttendanceSession[];
   transactions: PaymentTransaction[];
   submissions: PaymentSubmission[];
+  raporTemplates: RaporTemplate[];
+  raporFolders: RaporFolder[];
+  raporEntries: RaporEntry[];
   profile: ClubProfile;
 }
 
@@ -443,6 +473,10 @@ export async function portalLogin({ hp, kode }: PortalCredentials): Promise<Port
       const s = fromRow<PaymentSubmission>(T.submissions, r);
       return { ...s, buktiGambarUrl: localProofPreviews.get(s.buktiGambarUrl) ?? '' };
     }),
+    // Kunci rapor_* belum ada bila schema.sql di server belum diperbarui.
+    raporTemplates: ((b.rapor_templates ?? []) as Obj[]).map((r) => fromRow<RaporTemplate>(T.raporTemplates, r)),
+    raporFolders: ((b.rapor_folders ?? []) as Obj[]).map((r) => fromRow<RaporFolder>(T.raporFolders, r)),
+    raporEntries: ((b.rapor_entries ?? []) as Obj[]).map((r) => fromRow<RaporEntry>(T.raporEntries, r)),
     profile: fromRow<ClubProfile>({ table: 'club_profile', cols: PROFILE_COLS, order: 'asc' }, b.club_profile ?? {}),
   };
 }
