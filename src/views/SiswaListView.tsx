@@ -182,7 +182,6 @@ export const SiswaListView: React.FC<SiswaListViewProps> = ({
                           <option value="Aktif">Aktif</option>
                           <option value="Cuti">Cuti</option>
                           <option value="Nonaktif">Nonaktif</option>
-                          <option value="Calon">Calon</option>
                         </select>
                       </td>
                       <td className="py-3 px-4 text-right">

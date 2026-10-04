@@ -421,9 +421,17 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 relative z-10">
             <div className="flex items-start sm:items-center gap-4">
               {/* Athlete Avatar Badge */}
-              <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-emerald-600 via-teal-600 to-slate-900 border-2 border-emerald-400/40 flex items-center justify-center font-display font-black text-2xl text-white shadow-lg shrink-0">
-                {currentStudent.nama.slice(0, 2).toUpperCase()}
-              </div>
+              {currentStudent.foto ? (
+                <img
+                  src={currentStudent.foto}
+                  alt={`Foto ${currentStudent.nama}`}
+                  className="w-16 h-16 rounded-2xl object-cover border-2 border-emerald-400/40 shadow-lg shrink-0 bg-white"
+                />
+              ) : (
+                <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-emerald-600 via-teal-600 to-slate-900 border-2 border-emerald-400/40 flex items-center justify-center font-display font-black text-2xl text-white shadow-lg shrink-0">
+                  {currentStudent.nama.slice(0, 2).toUpperCase()}
+                </div>
+              )}
 
               <div>
                 <div className="flex flex-wrap items-center gap-2">
@@ -476,10 +484,11 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
                   className="w-full bg-slate-900 border border-slate-700 text-white rounded-xl px-3.5 py-2 text-xs font-semibold appearance-none focus:outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer"
                 >
                   {students
-                    .filter((s) => s.status === 'Aktif')
+                    .filter((s) => s.status === 'Aktif' || s.id === currentStudent.id)
                     .map((s) => (
                       <option key={s.id} value={s.id} className="bg-slate-900 text-white">
-                        {s.nama} ({s.kelasId.toUpperCase()})
+                        {s.nama} ({classes.find((c) => c.id === s.kelasId)?.nama || '-'})
+                        {s.status !== 'Aktif' ? ` · ${s.status}` : ''}
                       </option>
                     ))}
                 </select>
@@ -1437,6 +1446,56 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
                     required
                     value={editForm.nama}
                     onChange={(e) => setEditForm({ ...editForm, nama: e.target.value })}
+                    className="w-full text-xs rounded-xl border border-slate-300 px-3 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Kelas</label>
+                  <select
+                    value={editForm.kelasId}
+                    onChange={(e) => setEditForm({ ...editForm, kelasId: e.target.value })}
+                    className="w-full text-xs rounded-xl border border-slate-300 px-3 py-2 text-slate-900 bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer"
+                  >
+                    {!classes.some((c) => c.id === editForm.kelasId) && <option value={editForm.kelasId}>— Kelas terhapus —</option>}
+                    {classes.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.nama}
+                      </option>
+                    ))}
+                  </select>
+                  {editForm.kelasId !== currentStudent.kelasId && (
+                    <p className="text-[10px] text-amber-600 mt-1">
+                      Pindah kelas: tarif iuran mengikuti kelas baru untuk tagihan berikutnya.
+                    </p>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Jenis Kelamin</label>
+                  <select
+                    value={editForm.jenisKelamin}
+                    onChange={(e) => setEditForm({ ...editForm, jenisKelamin: e.target.value as Student['jenisKelamin'] })}
+                    className="w-full text-xs rounded-xl border border-slate-300 px-3 py-2 text-slate-900 bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer"
+                  >
+                    <option value="Laki-laki">Laki-laki</option>
+                    <option value="Perempuan">Perempuan</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Tempat Lahir</label>
+                  <input
+                    type="text"
+                    value={editForm.tempatLahir}
+                    onChange={(e) => setEditForm({ ...editForm, tempatLahir: e.target.value })}
+                    className="w-full text-xs rounded-xl border border-slate-300 px-3 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Tanggal Lahir</label>
+                  <input
+                    type="date"
+                    value={editForm.tanggalLahir}
+                    max={getTodayISO()}
+                    onChange={(e) => setEditForm({ ...editForm, tanggalLahir: e.target.value })}
                     className="w-full text-xs rounded-xl border border-slate-300 px-3 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
                   />
                 </div>

@@ -29,7 +29,7 @@ export const Header: React.FC<HeaderProps> = ({
   onNavigateVerifikasi,
 }) => {
   return (
-    <header className="bg-[#090e17] border-b border-slate-800/80 text-white px-4 md:px-6 py-3 flex items-center justify-between sticky top-0 z-30 shadow-sm backdrop-blur-md">
+    <header className="print:hidden bg-[#090e17] border-b border-slate-800/80 text-white px-4 md:px-6 py-3 flex items-center justify-between sticky top-0 z-30 shadow-sm backdrop-blur-md">
       {/* Zone 1: Brand & Toggle */}
       <div className="flex items-center gap-3">
         {(currentRole === 'admin' || currentRole === 'coach') && (

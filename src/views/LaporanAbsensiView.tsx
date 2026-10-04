@@ -95,7 +95,7 @@ export const LaporanAbsensiView: React.FC<LaporanAbsensiViewProps> = ({
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 print:hidden">
             <button
               onClick={handleExportCSV}
               className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold shadow-xs transition-colors cursor-pointer"
@@ -115,8 +115,12 @@ export const LaporanAbsensiView: React.FC<LaporanAbsensiViewProps> = ({
           </div>
         </div>
 
+        <p className="hidden print:block text-xs font-semibold text-slate-700">
+          Kelas {currentClass?.nama || '-'} · {MONTH_NAMES[selectedMonth - 1]} {selectedYear}
+        </p>
+
         {/* Filter Controls */}
-        <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 pt-3 border-t border-slate-100">
+        <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 pt-3 border-t border-slate-100 print:hidden">
           <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1">Kelas</label>
             <div className="relative">

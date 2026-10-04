@@ -74,6 +74,7 @@ import {
   FEE_STATUS_LABEL,
   remainingMonthlyDue,
   describePaymentOutcome,
+  statusFromPaid,
 } from './utils/payments';
 
 import { Header } from './components/Header';
@@ -694,6 +695,50 @@ export default function Workspace({ mode, staff, portal, onLogout }: WorkspacePr
     saveEvents(updatedEvents);
   };
 
+  const handleUpdateEvent = (updatedEvent: ClubEvent) => {
+    const old = events.find((e) => e.id === updatedEvent.id);
+    if (!old) return;
+    let updatedEvents = events.map((e) => (e.id === updatedEvent.id ? updatedEvent : e));
+    if (old.nominal !== updatedEvent.nominal) {
+      // Tagihan peserta mengikuti biaya baru; pembayaran yang sudah masuk tetap.
+      const updatedParts = eventParticipants.map((p) =>
+        p.eventId === updatedEvent.id
+          ? { ...p, nominal: updatedEvent.nominal, status: statusFromPaid(updatedEvent.nominal, p.terbayar || 0) }
+          : p
+      );
+      setEventParticipants(updatedParts);
+      saveEventParticipants(updatedParts);
+      updatedEvents = recountEvents(updatedEvents, updatedParts, [updatedEvent.id]);
+    }
+    setEvents(updatedEvents);
+    saveEvents(updatedEvents);
+    toast.success('Event diperbarui', updatedEvent.nama);
+  };
+
+  const handleDeleteEvent = async (eventId: string) => {
+    const event = events.find((e) => e.id === eventId);
+    if (!event) return;
+    const parts = eventParticipants.filter((p) => p.eventId === eventId);
+    if (parts.some((p) => (p.terbayar || 0) > 0)) {
+      toast.error('Tidak bisa dihapus', 'Sudah ada peserta yang membayar iuran event ini. Arsip pembayaran harus tetap tersimpan.');
+      return;
+    }
+    const ok = await confirm(
+      'Hapus Event?',
+      parts.length > 0
+        ? `"${event.nama}" beserta ${parts.length} peserta (belum bayar) akan dihapus.`
+        : `"${event.nama}" akan dihapus.`
+    );
+    if (!ok) return;
+    const updatedParts = eventParticipants.filter((p) => p.eventId !== eventId);
+    setEventParticipants(updatedParts);
+    saveEventParticipants(updatedParts);
+    const updatedEvents = events.filter((e) => e.id !== eventId);
+    setEvents(updatedEvents);
+    saveEvents(updatedEvents);
+    if (selectedEventId === eventId) setSelectedEventId(updatedEvents[0]?.id || '');
+  };
+
   const handleDeleteSession = (sessionId: string) => {
     const updated = attendanceSessions.filter((s) => s.id !== sessionId);
     setAttendanceSessions(updated);
@@ -702,7 +747,11 @@ export default function Workspace({ mode, staff, portal, onLogout }: WorkspacePr
 
   // Update student biodata
   const handleUpdateStudent = (updatedStudent: Student) => {
-    const updated = students.map((s) => (s.id === updatedStudent.id ? updatedStudent : s));
+    const old = students.find((s) => s.id === updatedStudent.id);
+    const newClass = classes.find((c) => c.id === updatedStudent.kelasId);
+    // Pindah kelas → tarif mengikuti kelas baru (record iuran yang sudah ada tidak diubah).
+    const next = old && newClass && old.kelasId !== updatedStudent.kelasId ? withClassFees(updatedStudent, newClass) : updatedStudent;
+    const updated = students.map((s) => (s.id === next.id ? next : s));
     setStudents(updated);
     saveStudents(updated);
   };
@@ -795,6 +844,18 @@ export default function Workspace({ mode, staff, portal, onLogout }: WorkspacePr
       const updatedSubs = submissions.filter((s) => !(removedIds.has(s.siswaId) && s.status === 'pending'));
       setSubmissions(updatedSubs);
       savePaymentSubmissions(updatedSubs);
+    }
+
+    // Folder rapor ikut pindah kelas; isian rapor siswa yang terhapus ikut dibersihkan.
+    if (reassignClassId && raporFolders.some((f) => f.kelasId === classId)) {
+      const updatedFolders = raporFolders.map((f) => (f.kelasId === classId ? { ...f, kelasId: reassignClassId } : f));
+      setRaporFolders(updatedFolders);
+      saveRaporFolders(updatedFolders);
+    }
+    if (removedIds.size > 0 && raporEntries.some((e) => removedIds.has(e.siswaId))) {
+      const updatedEntries = raporEntries.filter((e) => !removedIds.has(e.siswaId));
+      setRaporEntries(updatedEntries);
+      saveRaporEntries(updatedEntries);
     }
 
     const updatedClasses = classes.filter((c) => c.id !== classId);
@@ -1324,7 +1385,7 @@ export default function Workspace({ mode, staff, portal, onLogout }: WorkspacePr
         onNavigateVerifikasi={() => setCurrentNav('verifikasi-pembayaran')}
       />
 
-      <div className="flex-1 flex overflow-hidden">
+      <div className="flex-1 flex overflow-hidden print:overflow-visible">
         {/* Left Sidebar Navigation (hanya untuk pengurus) */}
         {mode === 'staff' && (
           <Sidebar
@@ -1341,7 +1402,7 @@ export default function Workspace({ mode, staff, portal, onLogout }: WorkspacePr
 
         {/* Main Workspace Body */}
         <main
-          className={`flex-1 overflow-y-auto p-4 md:p-6 lg:p-8 transition-all ${
+          className={`flex-1 overflow-y-auto p-4 md:p-6 lg:p-8 transition-all print:overflow-visible print:p-0 print:ml-0! ${
             mode === 'staff' ? 'lg:ml-64' : mode === 'student' ? 'max-w-6xl mx-auto w-full' : 'max-w-5xl mx-auto w-full'
           }`}
         >
@@ -1490,6 +1551,8 @@ export default function Workspace({ mode, staff, portal, onLogout }: WorkspacePr
                     setEvents(up);
                     saveEvents(up);
                   }}
+                  onUpdateEvent={handleUpdateEvent}
+                  onDeleteEvent={handleDeleteEvent}
                 />
               )}
 

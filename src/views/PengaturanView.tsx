@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { ClubProfile, ClassGroup } from '../types/sportkit';
-import { Building, Settings, Save, CheckCircle2 } from 'lucide-react';
+import { Building, Settings, Save, CheckCircle2, Link2, Copy, Share2 } from 'lucide-react';
 import { ImageUploadField } from '../components/ImageUploadField';
+import { useToast } from '../components/Toast';
 
 interface PengaturanViewProps {
   profile: ClubProfile;
@@ -16,7 +17,28 @@ export const PengaturanView: React.FC<PengaturanViewProps> = ({
   onUpdateProfile,
   onUpdateClasses,
 }) => {
+  const { toast } = useToast();
   const [profileForm, setProfileForm] = useState<ClubProfile>(profile);
+
+  const shareLinks = [
+    {
+      label: 'Pendaftaran Siswa Baru (publik)',
+      hint: 'Pasang di bio Instagram / kirim ke calon siswa. Pendaftar masuk ke menu Calon Siswa.',
+      url: `${window.location.origin}/daftar`,
+    },
+    {
+      label: 'Portal Siswa / Wali',
+      hint: 'Wali login dengan No. HP + kode akses (lihat Profil Siswa → Biodata).',
+      url: `${window.location.origin}/portal`,
+    },
+  ];
+
+  const copyLink = (url: string) => {
+    navigator.clipboard
+      ?.writeText(url)
+      .then(() => toast.success('Tautan disalin', url))
+      .catch(() => toast.error('Gagal menyalin', url));
+  };
   const [savedSuccess, setSavedSuccess] = useState<boolean>(false);
 
   const handleSaveProfile = (e: React.FormEvent) => {
@@ -51,6 +73,41 @@ export const PengaturanView: React.FC<PengaturanViewProps> = ({
           <span>Pengaturan profil klub berhasil disimpan ke sistem!</span>
         </div>
       )}
+
+      {/* Tautan untuk dibagikan */}
+      <div className="sports-card rounded-2xl p-6 sm:p-8 space-y-4">
+        <div className="pb-3 border-b border-slate-100 flex items-center gap-2">
+          <Link2 className="w-4 h-4 text-emerald-600" />
+          <h2 className="text-sm font-display font-bold text-slate-900 uppercase tracking-wider">Tautan untuk Dibagikan</h2>
+        </div>
+        {shareLinks.map((l) => (
+          <div key={l.url} className="flex flex-col sm:flex-row sm:items-center gap-3 p-3 rounded-xl bg-slate-50 border border-slate-200">
+            <div className="min-w-0 flex-1">
+              <p className="text-xs font-bold text-slate-800">{l.label}</p>
+              <p className="text-[11px] font-mono text-emerald-700 truncate">{l.url}</p>
+              <p className="text-[10px] text-slate-500 mt-0.5">{l.hint}</p>
+            </div>
+            <div className="flex gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => copyLink(l.url)}
+                className="px-3 py-1.5 rounded-lg bg-white border border-slate-300 hover:bg-slate-100 text-slate-700 text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
+              >
+                <Copy className="w-3.5 h-3.5" /> Salin
+              </button>
+              <a
+                href={`https://wa.me/?text=${encodeURIComponent(`${l.label} ${profile.namaKlub}:
+${l.url}`)}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold flex items-center gap-1.5"
+              >
+                <Share2 className="w-3.5 h-3.5" /> WA
+              </a>
+            </div>
+          </div>
+        ))}
+      </div>
 
       {/* Club Profile Form */}
       <form onSubmit={handleSaveProfile} className="sports-card rounded-2xl p-6 sm:p-8 space-y-6">

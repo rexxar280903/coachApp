@@ -197,7 +197,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   <option value="">-- Pilih Siswa untuk Buka Profil --</option>
                   {activeStudents.map((std) => (
                     <option key={std.id} value={std.id}>
-                      {std.nama} — Kelas {std.kelasId.toUpperCase()}
+                      {std.nama} — Kelas {classes.find((c) => c.id === std.kelasId)?.nama || '-'}
                     </option>
                   ))}
                 </select>

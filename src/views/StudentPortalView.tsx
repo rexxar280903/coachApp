@@ -225,7 +225,7 @@ export const StudentPortalView: React.FC<StudentPortalViewProps> = ({
               .filter((s) => s.status !== 'Calon')
               .map((s) => (
                 <option key={s.id} value={s.id}>
-                  {s.nama} ({s.kelasId.toUpperCase()})
+                  {s.nama} ({classes.find((c) => c.id === s.kelasId)?.nama || '-'})
                 </option>
               ))}
           </select>
@@ -241,9 +241,17 @@ export const StudentPortalView: React.FC<StudentPortalViewProps> = ({
         <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6 pt-2">
           {/* Left: Avatar & Bio */}
           <div className="flex items-start gap-4">
-            <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-slate-900 via-slate-800 to-emerald-950 text-white flex items-center justify-center font-display font-black text-xl border-2 border-emerald-500/40 shadow-md shrink-0">
-              {currentStudent.nama.split(' ').map((n) => n[0]).slice(0, 2).join('')}
-            </div>
+            {currentStudent.foto ? (
+              <img
+                src={currentStudent.foto}
+                alt={`Foto ${currentStudent.nama}`}
+                className="w-16 h-16 rounded-2xl object-cover border-2 border-emerald-500/40 shadow-md shrink-0"
+              />
+            ) : (
+              <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-slate-900 via-slate-800 to-emerald-950 text-white flex items-center justify-center font-display font-black text-xl border-2 border-emerald-500/40 shadow-md shrink-0">
+                {currentStudent.nama.split(' ').filter(Boolean).map((n) => n[0]).slice(0, 2).join('')}
+              </div>
+            )}
 
             <div>
               <div className="flex flex-wrap items-center gap-2">

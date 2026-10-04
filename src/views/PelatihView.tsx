@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { getTodayISO } from '../utils/constants';
 import { Coach, CoachStatus, ClassGroup, Student } from '../types/sportkit';
 import { getCoachClasses, isValidPhone, normalizeName, normalizePhone } from '../utils/coaches';
+import { ImageUploadField } from '../components/ImageUploadField';
 import {
   Search,
   Users,
@@ -71,6 +72,7 @@ export const PelatihView: React.FC<PelatihViewProps> = ({
       status: coach.status,
       catatan: coach.catatan || '',
       tanggalBergabung: coach.tanggalBergabung,
+      foto: coach.foto,
     });
     setErrors({});
     setShowModal(true);
@@ -219,10 +221,14 @@ export const PelatihView: React.FC<PelatihViewProps> = ({
                 {/* Name & Status */}
                 <div className="flex items-start justify-between mb-3">
                   <div className="flex items-center gap-3">
-                    {/* Avatar Initials */}
-                    <div className={`w-11 h-11 rounded-xl flex items-center justify-center text-white font-bold text-sm shrink-0 ${isActive ? 'bg-gradient-to-br from-sky-500 to-emerald-500' : 'bg-slate-400'}`}>
-                      {coach.nama.split(' ').slice(-1)[0]?.charAt(0) || '?'}
-                    </div>
+                    {/* Avatar: foto atau inisial */}
+                    {coach.foto ? (
+                      <img src={coach.foto} alt={`Foto ${coach.nama}`} className="w-11 h-11 rounded-xl object-cover shrink-0 border border-slate-200" />
+                    ) : (
+                      <div className={`w-11 h-11 rounded-xl flex items-center justify-center text-white font-bold text-sm shrink-0 ${isActive ? 'bg-gradient-to-br from-sky-500 to-emerald-500' : 'bg-slate-400'}`}>
+                        {coach.nama.split(' ').slice(-1)[0]?.charAt(0) || '?'}
+                      </div>
+                    )}
                     <div>
                       <p className="text-sm font-bold text-slate-900 leading-tight">{coach.nama}</p>
                       <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full mt-0.5 ${isActive ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-slate-100 text-slate-500 border border-slate-200'}`}>
@@ -320,6 +326,13 @@ export const PelatihView: React.FC<PelatihViewProps> = ({
               </div>
 
               <form onSubmit={handleSubmit} className="space-y-3.5">
+                <ImageUploadField
+                  label="Foto Pelatih"
+                  value={form.foto}
+                  onChange={(foto) => setForm({ ...form, foto })}
+                  hint="Opsional. Otomatis diperkecil sebelum diunggah."
+                  placeholder={<span className="text-lg font-black text-slate-500">{form.nama.charAt(0) || '?'}</span>}
+                />
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                   <div className="sm:col-span-2">
                     <label className="block text-xs font-semibold text-slate-700 mb-1">Nama Lengkap Pelatih *</label>

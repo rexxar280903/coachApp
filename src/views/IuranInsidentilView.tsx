@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { getTodayISO, getCurrentYear } from '../utils/constants';
 import { Student, ClassGroup, ClubEvent, EventParticipant } from '../types/sportkit';
 import { formatRupiah } from '../utils/numberToWordsId';
-import { Plus, ChevronDown, CheckCircle2, Clock, XCircle, Award, Calendar, MapPin, Sparkles, UserPlus, Trash2, Search } from 'lucide-react';
+import { Plus, ChevronDown, CheckCircle2, Clock, XCircle, Award, Calendar, MapPin, Sparkles, UserPlus, Trash2, Search, Edit3 } from 'lucide-react';
 import { useToast } from '../components/Toast';
 
 interface IuranInsidentilViewProps {
@@ -13,6 +13,8 @@ interface IuranInsidentilViewProps {
   initialEventId?: string;
   onOpenEventPaymentModal: (event: ClubEvent, participant: EventParticipant, student: Student, classGroup: ClassGroup) => void;
   onAddNewEvent: (newEvent: ClubEvent) => void;
+  onUpdateEvent: (event: ClubEvent) => void;
+  onDeleteEvent: (eventId: string) => void;
   onAddParticipants: (eventId: string, siswaIds: string[]) => void;
   onRemoveParticipant: (participantId: string) => void;
 }
@@ -25,6 +27,8 @@ export const IuranInsidentilView: React.FC<IuranInsidentilViewProps> = ({
   initialEventId,
   onOpenEventPaymentModal,
   onAddNewEvent,
+  onUpdateEvent,
+  onDeleteEvent,
   onAddParticipants,
   onRemoveParticipant,
 }) => {
@@ -35,10 +39,11 @@ export const IuranInsidentilView: React.FC<IuranInsidentilViewProps> = ({
   const [pickedIds, setPickedIds] = useState<string[]>([]);
   const [selectedEventId, setSelectedEventId] = useState<string>(initialEventId || events[0]?.id || '');
   const [showAddEventModal, setShowAddEventModal] = useState<boolean>(false);
+  const [editingEventId, setEditingEventId] = useState<string | null>(null);
   const [newEventName, setNewEventName] = useState<string>('');
   const [newEventFee, setNewEventFee] = useState<number>(300000);
   const [newEventDate, setNewEventDate] = useState<string>('');
-  const [newEventLocation, setNewEventLocation] = useState<string>('GOR Kertajaya Surabaya');
+  const [newEventLocation, setNewEventLocation] = useState<string>('');
 
   const currentEvent = events.find((e) => e.id === selectedEventId) || events[0];
 
@@ -72,17 +77,54 @@ export const IuranInsidentilView: React.FC<IuranInsidentilViewProps> = ({
     setShowAddParticipantModal(false);
   };
 
+  const openCreateEvent = () => {
+    setEditingEventId(null);
+    setNewEventName('');
+    setNewEventFee(300000);
+    setNewEventDate('');
+    setNewEventLocation('');
+    setShowAddEventModal(true);
+  };
+
+  const openEditEvent = () => {
+    if (!currentEvent) return;
+    setEditingEventId(currentEvent.id);
+    setNewEventName(currentEvent.nama);
+    setNewEventFee(currentEvent.nominal);
+    setNewEventDate(currentEvent.tanggal);
+    setNewEventLocation(currentEvent.lokasi);
+    setShowAddEventModal(true);
+  };
+
   const handleCreateEvent = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newEventName) return;
+    if (!newEventName.trim()) return;
+    if (!(Number(newEventFee) > 0)) {
+      toast.error('Biaya tidak valid', 'Biaya keikutsertaan harus lebih dari 0.');
+      return;
+    }
+
+    const editing = editingEventId ? events.find((ev) => ev.id === editingEventId) : undefined;
+    if (editing) {
+      onUpdateEvent({
+        ...editing,
+        nama: newEventName.trim(),
+        nominal: Number(newEventFee),
+        tanggal: newEventDate || editing.tanggal,
+        lokasi: newEventLocation.trim(),
+      });
+      setShowAddEventModal(false);
+      setEditingEventId(null);
+      return;
+    }
 
     const newEvt: ClubEvent = {
       id: 'evt-' + Date.now(),
-      nama: newEventName,
+      nama: newEventName.trim(),
       deskripsi: 'Kegiatan insidentil dan kejuaraan',
       nominal: Number(newEventFee),
       tanggal: newEventDate || getTodayISO(),
-      lokasi: newEventLocation,
+      lokasi: newEventLocation.trim(),
       totalPeserta: 0,
       pesertaLunas: 0,
     };
@@ -164,8 +206,27 @@ export const IuranInsidentilView: React.FC<IuranInsidentilViewProps> = ({
               <ChevronDown className="w-4 h-4 text-slate-400 absolute right-3 top-2.5 pointer-events-none" />
             </div>
 
+            {currentEvent && (
+              <>
+                <button
+                  onClick={openEditEvent}
+                  className="p-2 rounded-xl border border-slate-200 text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 transition-colors cursor-pointer"
+                  title="Edit event"
+                >
+                  <Edit3 className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => onDeleteEvent(currentEvent.id)}
+                  className="p-2 rounded-xl border border-slate-200 text-slate-500 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                  title="Hapus event"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </>
+            )}
+
             <button
-              onClick={() => setShowAddEventModal(true)}
+              onClick={openCreateEvent}
               className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs flex items-center gap-1.5 shadow-sm transition-colors cursor-pointer"
             >
               <Plus className="w-4 h-4" />
@@ -414,7 +475,7 @@ export const IuranInsidentilView: React.FC<IuranInsidentilViewProps> = ({
         <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200">
             <h3 className="text-base font-display font-bold text-slate-900 mb-4 pb-2 border-b border-slate-100">
-              Buat Event & Iuran Insidentil Baru
+              {editingEventId ? 'Edit Event & Iuran Insidentil' : 'Buat Event & Iuran Insidentil Baru'}
             </h3>
             <form onSubmit={handleCreateEvent} className="space-y-4">
               <div>
@@ -442,6 +503,11 @@ export const IuranInsidentilView: React.FC<IuranInsidentilViewProps> = ({
                   onChange={(e) => setNewEventFee(Number(e.target.value))}
                   className="w-full text-xs rounded-xl border border-slate-300 px-3 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
                 />
+                {editingEventId && (
+                  <p className="text-[10px] text-slate-400 mt-1">
+                    Mengubah biaya ikut memperbarui tagihan peserta; pembayaran yang sudah masuk tetap tercatat.
+                  </p>
+                )}
               </div>
 
               <div>
@@ -464,6 +530,7 @@ export const IuranInsidentilView: React.FC<IuranInsidentilViewProps> = ({
                   type="text"
                   value={newEventLocation}
                   onChange={(e) => setNewEventLocation(e.target.value)}
+                  placeholder="Contoh: Kolam Renang Tirta Kencana"
                   className="w-full text-xs rounded-xl border border-slate-300 px-3 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
                 />
               </div>
