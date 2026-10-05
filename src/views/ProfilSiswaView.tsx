@@ -17,6 +17,8 @@ import {
   RaporTemplate,
   RaporFolder,
   RaporEntry,
+  Gender,
+  StudentStatus,
 } from '../types/sportkit';
 import { RaporSiswaList } from '../components/RaporSiswaList';
 import { RaporDocData } from '../components/RaporPrintModal';
@@ -58,7 +60,9 @@ import {
   Upload,
   PlusCircle,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  Trash2,
+  AlertTriangle,
 } from 'lucide-react';
 
 interface ProfilSiswaViewProps {
@@ -75,6 +79,7 @@ interface ProfilSiswaViewProps {
   onOpenPaymentModal: (due: MonthlyDueRecord, student: Student, classGroup: ClassGroup) => void;
   onOpenEventPaymentModal: (event: ClubEvent, participant: EventParticipant, student: Student, classGroup: ClassGroup) => void;
   onUpdateStudent: (student: Student) => void;
+  onDeleteStudent?: (studentId: string) => void;
   onVerifySubmission?: (submissionId: string, catatanAdmin: string) => void;
   onRejectSubmission?: (submissionId: string, alasan: string) => void;
   onViewReceipt?: (tx: PaymentTransaction) => void;
@@ -123,6 +128,7 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
   onOpenPaymentModal,
   onOpenEventPaymentModal,
   onUpdateStudent,
+  onDeleteStudent,
   onVerifySubmission,
   onRejectSubmission,
   onViewReceipt,
@@ -136,6 +142,7 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
   const [activeTab, setActiveTab] = useState<TabKey>('iuran');
   const [selectedYear, setSelectedYear] = useState<number>(getCurrentYear());
   const [isEditingBiodata, setIsEditingBiodata] = useState<boolean>(false);
+  const [showDeleteModal, setShowDeleteModal] = useState<boolean>(false);
   const [filterProofStatus, setFilterProofStatus] = useState<'all' | 'pending' | 'verified' | 'rejected'>('all');
   const [proofYearFilter, setProofYearFilter] = useState<number | 'all'>('all');
 
@@ -397,10 +404,16 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
       return;
     }
 
+    const gender: Gender = editForm.jenisKelamin === 'Perempuan' ? 'Perempuan' : 'Laki-laki';
+
     onUpdateStudent({
       ...editForm,
       nama,
-      noHp: phones.find((p) => filled(p.value))!.value.trim(),
+      jenisKelamin: gender,
+      status: editForm.status || currentStudent.status,
+      tanggalBergabung: editForm.tanggalBergabung || currentStudent.tanggalBergabung,
+      catatan: editForm.catatan !== undefined ? editForm.catatan.trim() : currentStudent.catatan,
+      noHp: editForm.noHp?.trim() || phones.find((p) => filled(p.value))!.value.trim(),
       email: filled(editForm.email) ? editForm.email!.trim() : undefined,
     });
     setIsEditingBiodata(false);
@@ -1402,7 +1415,7 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
       {/* TAB 4: BIODATA */}
       {activeTab === 'biodata' && (
         <div className="sports-card rounded-2xl p-6">
-          <div className="flex items-center justify-between pb-4 border-b border-slate-100">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-slate-100 gap-3">
             <div>
               <h2 className="text-base font-display font-bold text-slate-900">
                 Biodata & Informasi Kontak
@@ -1411,22 +1424,43 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
                 Informasi atlet dan kontak darurat orang tua/wali
               </p>
             </div>
-            {!isEditingBiodata ? (
-              <button
-                onClick={() => setIsEditingBiodata(true)}
-                className="px-3.5 py-1.5 rounded-lg border border-slate-300 hover:bg-slate-50 text-slate-700 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
-              >
-                <Edit3 className="w-3.5 h-3.5" />
-                <span>Edit Biodata</span>
-              </button>
-            ) : (
-              <button
-                onClick={() => setIsEditingBiodata(false)}
-                className="text-xs font-semibold text-slate-500 hover:text-slate-800 cursor-pointer"
-              >
-                Batal
-              </button>
-            )}
+            <div className="flex items-center gap-2">
+              {!isEditingBiodata ? (
+                <>
+                  {onDeleteStudent && (
+                    <button
+                      type="button"
+                      onClick={() => setShowDeleteModal(true)}
+                      className="px-3.5 py-1.5 rounded-lg border border-rose-200 hover:bg-rose-50 text-rose-600 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+                      title="Hapus data siswa ini"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>Hapus Siswa</span>
+                    </button>
+                  )}
+                  <button
+                    onClick={() => {
+                      setEditForm({
+                        ...currentStudent,
+                        orangTua: { ...currentStudent.orangTua },
+                      });
+                      setIsEditingBiodata(true);
+                    }}
+                    className="px-3.5 py-1.5 rounded-lg border border-slate-300 hover:bg-slate-50 text-slate-700 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+                  >
+                    <Edit3 className="w-3.5 h-3.5" />
+                    <span>Edit Biodata</span>
+                  </button>
+                </>
+              ) : (
+                <button
+                  onClick={() => setIsEditingBiodata(false)}
+                  className="text-xs font-semibold text-slate-500 hover:text-slate-800 cursor-pointer"
+                >
+                  Batal
+                </button>
+              )}
+            </div>
           </div>
 
           {isEditingBiodata && editForm ? (
@@ -1469,17 +1503,51 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
                     </p>
                   )}
                 </div>
+
+                {/* Jenis Kelamin: Pilihan Tombol & Dropdown Sinkron */}
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1">Jenis Kelamin</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setEditForm({ ...editForm, jenisKelamin: 'Laki-laki' })}
+                      className={`py-2 px-3 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer ${
+                        (editForm.jenisKelamin?.toLowerCase() || '').startsWith('l') || editForm.jenisKelamin === 'Laki-laki'
+                          ? 'bg-blue-50 border-blue-500 text-blue-700 shadow-xs ring-1 ring-blue-400'
+                          : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                      }`}
+                    >
+                      <span>👦 Laki-laki</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEditForm({ ...editForm, jenisKelamin: 'Perempuan' })}
+                      className={`py-2 px-3 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer ${
+                        (editForm.jenisKelamin?.toLowerCase() || '').startsWith('p') || editForm.jenisKelamin === 'Perempuan'
+                          ? 'bg-rose-50 border-rose-500 text-rose-700 shadow-xs ring-1 ring-rose-400'
+                          : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                      }`}
+                    >
+                      <span>👧 Perempuan</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Status Keanggotaan */}
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Status Keanggotaan</label>
                   <select
-                    value={editForm.jenisKelamin}
-                    onChange={(e) => setEditForm({ ...editForm, jenisKelamin: e.target.value as Student['jenisKelamin'] })}
-                    className="w-full text-xs rounded-xl border border-slate-300 px-3 py-2 text-slate-900 bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer"
+                    value={editForm.status || 'Aktif'}
+                    onChange={(e) => setEditForm({ ...editForm, status: e.target.value as StudentStatus })}
+                    className="w-full text-xs font-semibold rounded-xl border border-slate-300 px-3 py-2 text-slate-900 bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer"
                   >
-                    <option value="Laki-laki">Laki-laki</option>
-                    <option value="Perempuan">Perempuan</option>
+                    <option value="Aktif">Aktif</option>
+                    <option value="Cuti">Cuti</option>
+                    <option value="Nonaktif">Nonaktif</option>
+                    <option value="Calon">Calon</option>
                   </select>
                 </div>
+
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1">Tempat Lahir</label>
                   <input
@@ -1496,6 +1564,15 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
                     value={editForm.tanggalLahir}
                     max={getTodayISO()}
                     onChange={(e) => setEditForm({ ...editForm, tanggalLahir: e.target.value })}
+                    className="w-full text-xs rounded-xl border border-slate-300 px-3 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Tanggal Bergabung</label>
+                  <input
+                    type="date"
+                    value={editForm.tanggalBergabung || ''}
+                    onChange={(e) => setEditForm({ ...editForm, tanggalBergabung: e.target.value })}
                     className="w-full text-xs rounded-xl border border-slate-300 px-3 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
                   />
                 </div>
@@ -1582,6 +1659,18 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
                     className="w-full text-xs rounded-xl border border-slate-300 px-3 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
                   />
                 </div>
+
+                {/* Catatan Siswa */}
+                <div className="md:col-span-2">
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Catatan Tambahan (Opsional)</label>
+                  <textarea
+                    rows={2}
+                    placeholder="Catatan riwayat medis, alergi, atau kemampuan renang siswa..."
+                    value={editForm.catatan || ''}
+                    onChange={(e) => setEditForm({ ...editForm, catatan: e.target.value })}
+                    className="w-full text-xs rounded-xl border border-slate-300 px-3 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
               </div>
 
               <div className="flex justify-end pt-3">
@@ -1616,6 +1705,19 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
                 </span>
               </div>
               <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/80">
+                <span className="text-slate-400 font-semibold block text-[11px]">Status Keanggotaan</span>
+                <span className="font-bold text-slate-900 text-sm flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                  {currentStudent.status}
+                </span>
+              </div>
+              <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/80">
+                <span className="text-slate-400 font-semibold block text-[11px]">Tanggal Bergabung</span>
+                <span className="font-bold text-slate-900 text-sm font-mono">
+                  {currentStudent.tanggalBergabung || '-'}
+                </span>
+              </div>
+              <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/80">
                 <span className="text-slate-400 font-semibold block text-[11px]">No. WhatsApp Siswa</span>
                 <span className="font-bold text-slate-900 text-sm font-mono">{currentStudent.noHp}</span>
               </div>
@@ -1639,6 +1741,16 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
                 <span className="text-slate-400 font-semibold block text-[11px]">Nama Ibu/Wali</span>
                 <span className="font-bold text-slate-900 text-sm">{currentStudent.orangTua.namaIbu}</span>
               </div>
+              <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/80">
+                <span className="text-slate-400 font-semibold block text-[11px]">No. WhatsApp Ibu</span>
+                <span className="font-bold text-slate-900 text-sm font-mono">{currentStudent.orangTua.noHpIbu || '-'}</span>
+              </div>
+              {currentStudent.catatan && (
+                <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/80 sm:col-span-2 lg:col-span-3">
+                  <span className="text-slate-400 font-semibold block text-[11px]">Catatan Tambahan</span>
+                  <span className="text-slate-700 text-xs mt-0.5 block leading-relaxed">{currentStudent.catatan}</span>
+                </div>
+              )}
             </div>
 
             {/* Akses Portal Siswa */}
@@ -2235,6 +2347,60 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Konfirmasi Hapus Siswa */}
+      {showDeleteModal && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="sports-card rounded-2xl max-w-md w-full p-6 space-y-4 bg-white shadow-xl animate-scaleIn">
+            <div className="flex items-center gap-3 text-rose-600">
+              <div className="w-10 h-10 rounded-full bg-rose-50 flex items-center justify-center shrink-0">
+                <AlertTriangle className="w-5 h-5 text-rose-600" />
+              </div>
+              <div>
+                <h3 className="text-base font-display font-bold text-slate-900">
+                  Hapus Data Siswa?
+                </h3>
+                <p className="text-xs text-slate-500">Tindakan ini tidak dapat dibatalkan</p>
+              </div>
+            </div>
+
+            <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-1 text-xs">
+              <p className="font-bold text-slate-900 text-sm">{currentStudent.nama}</p>
+              <p className="text-slate-600">
+                Kelas: <span className="font-semibold">{currentClass?.nama || currentStudent.kelasId}</span> · Status: <span className="font-semibold">{currentStudent.status}</span>
+              </p>
+              <p className="text-slate-500 font-mono text-[11px]">ID: {currentStudent.id} · Kontak: {currentStudent.noHp}</p>
+            </div>
+
+            <p className="text-xs text-slate-600 leading-relaxed">
+              Data siswa <strong>{currentStudent.nama}</strong> beserta riwayat iuran bulanan, absensi, rapor, dan pendaftaran event akan dihapus permanen dari sistem.
+            </p>
+
+            <div className="flex items-center justify-end gap-2.5 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowDeleteModal(false)}
+                className="px-4 py-2 rounded-xl border border-slate-200 hover:bg-slate-100 text-slate-700 text-xs font-semibold cursor-pointer transition-colors"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (onDeleteStudent) {
+                    onDeleteStudent(currentStudent.id);
+                  }
+                  setShowDeleteModal(false);
+                }}
+                className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold shadow-sm cursor-pointer transition-colors flex items-center gap-1.5"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Ya, Hapus Siswa</span>
+              </button>
+            </div>
           </div>
         </div>
       )}

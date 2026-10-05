@@ -749,11 +749,87 @@ export default function Workspace({ mode, staff, portal, onLogout }: WorkspacePr
   const handleUpdateStudent = (updatedStudent: Student) => {
     const old = students.find((s) => s.id === updatedStudent.id);
     const newClass = classes.find((c) => c.id === updatedStudent.kelasId);
+
+    // Jika status siswa berubah (misal dari form edit biodata menjadi Cuti/Nonaktif)
+    if (old && old.status !== updatedStudent.status) {
+      const today = getTodayISO();
+      updatedStudent.tanggalStatus = today;
+      const updatedDues = freezeInactiveMonths(monthlyDues, updatedStudent);
+      if (updatedDues !== monthlyDues) {
+        setMonthlyDues(updatedDues);
+        saveMonthlyDues(updatedDues);
+      }
+    }
+
     // Pindah kelas → tarif mengikuti kelas baru (record iuran yang sudah ada tidak diubah).
     const next = old && newClass && old.kelasId !== updatedStudent.kelasId ? withClassFees(updatedStudent, newClass) : updatedStudent;
     const updated = students.map((s) => (s.id === next.id ? next : s));
     setStudents(updated);
     saveStudents(updated);
+  };
+
+  // Delete single student (permanen untuk siswa terdaftar / aktif / cuti / nonaktif)
+  const handleDeleteStudent = (studentId: string) => {
+    const std = students.find((s) => s.id === studentId);
+
+    // 1. Hapus siswa dari state dan storage
+    const updatedStudents = students.filter((s) => s.id !== studentId);
+    setStudents(updatedStudents);
+    saveStudents(updatedStudents);
+
+    // 2. Hapus iuran bulanan siswa
+    const updatedDues = monthlyDues.filter((d) => d.siswaId !== studentId);
+    setMonthlyDues(updatedDues);
+    saveMonthlyDues(updatedDues);
+
+    // 3. Hapus peserta event & perbarui rekap event
+    const updatedParts = eventParticipants.filter((p) => p.siswaId !== studentId);
+    setEventParticipants(updatedParts);
+    saveEventParticipants(updatedParts);
+    const touchedEvents = Array.from(
+      new Set(eventParticipants.filter((p) => p.siswaId === studentId).map((p) => p.eventId))
+    );
+    if (touchedEvents.length > 0) {
+      const updatedEvents = recountEvents(events, updatedParts, touchedEvents);
+      setEvents(updatedEvents);
+      saveEvents(updatedEvents);
+    }
+
+    // 4. Hapus pengajuan pembayaran yang pending milik siswa
+    const updatedSubs = submissions.filter((s) => !(s.siswaId === studentId && s.status === 'pending'));
+    setSubmissions(updatedSubs);
+    savePaymentSubmissions(updatedSubs);
+
+    // 5. Bersihkan data rapor milik siswa
+    if (raporEntries.some((e) => e.siswaId === studentId)) {
+      const updatedEntries = raporEntries.filter((e) => e.siswaId !== studentId);
+      setRaporEntries(updatedEntries);
+      saveRaporEntries(updatedEntries);
+    }
+
+    // 6. Bersihkan siswa dari sesi absensi
+    const hasAttendance = attendanceSessions.some((a) => a.kehadiran && studentId in a.kehadiran);
+    if (hasAttendance) {
+      const updatedSessions = attendanceSessions.map((a) => {
+        if (a.kehadiran && studentId in a.kehadiran) {
+          const nextKehadiran = { ...a.kehadiran };
+          delete nextKehadiran[studentId];
+          return { ...a, kehadiran: nextKehadiran };
+        }
+        return a;
+      });
+      setAttendanceSessions(updatedSessions);
+      saveAttendanceSessions(updatedSessions);
+    }
+
+    // 7. Jika siswa yang dihapus sedang dipilih di Profil Siswa, alihkan ke siswa lain
+    if (selectedStudentId === studentId) {
+      const remaining = updatedStudents.filter((s) => s.status === 'Aktif');
+      const nextId = remaining.length > 0 ? remaining[0].id : (updatedStudents[0]?.id || '');
+      setSelectedStudentId(nextId);
+    }
+
+    toast.success('Siswa Dihapus', `${std?.nama || 'Data siswa'} telah berhasil dihapus dari sistem.`);
   };
 
   // Tarif siswa mengikuti kelasnya. Biaya pendaftaran hanya relevan bagi calon siswa.
@@ -1513,6 +1589,7 @@ export default function Workspace({ mode, staff, portal, onLogout }: WorkspacePr
                   onOpenPaymentModal={handleOpenMonthlyPaymentModal}
                   onOpenEventPaymentModal={handleOpenEventPaymentModal}
                   onUpdateStudent={handleUpdateStudent}
+                  onDeleteStudent={handleDeleteStudent}
                   onVerifySubmission={handleVerifySubmission}
                   onRejectSubmission={handleRejectSubmission}
                   onViewReceipt={handleViewReceipt}
@@ -1626,6 +1703,7 @@ export default function Workspace({ mode, staff, portal, onLogout }: WorkspacePr
                   onSelectStudent={handleSelectStudent}
                   onNavigateNewRegistration={() => setCurrentNav('pendaftaran-baru')}
                   onUpdateStatus={handleUpdateStudentStatus}
+                  onDeleteStudent={handleDeleteStudent}
                 />
               )}
 
@@ -1637,6 +1715,7 @@ export default function Workspace({ mode, staff, portal, onLogout }: WorkspacePr
                   onSelectStudent={handleSelectStudent}
                   onNavigateNewRegistration={() => setCurrentNav('pendaftaran-baru')}
                   onUpdateStatus={handleUpdateStudentStatus}
+                  onDeleteStudent={handleDeleteStudent}
                 />
               )}
 
@@ -1648,6 +1727,7 @@ export default function Workspace({ mode, staff, portal, onLogout }: WorkspacePr
                   onSelectStudent={handleSelectStudent}
                   onNavigateNewRegistration={() => setCurrentNav('pendaftaran-baru')}
                   onUpdateStatus={handleUpdateStudentStatus}
+                  onDeleteStudent={handleDeleteStudent}
                 />
               )}
 
