@@ -18,7 +18,10 @@ import {
   PaymentMethod,
   ClubProfile, 
   UserRole,
-  StudentStatus 
+  StudentStatus,
+  RaporTemplate,
+  RaporFolder,
+  RaporEntry,
 } from './types/sportkit';
 import {
   getStudents,
@@ -47,6 +50,14 @@ import {
   portalSubmitPayment,
   setSyncErrorHandler,
   PortalCredentials,
+  getRaporTemplates,
+  saveRaporTemplates,
+  getRaporFolders,
+  saveRaporFolders,
+  getRaporEntries,
+  saveRaporEntries,
+  waitForPendingSaves,
+  refreshReceiptNumbers,
 } from './services/storage';
 import { StaffUser } from './services/auth';
 import { generateKodeAkses } from './utils/kodeAkses';
@@ -65,12 +76,14 @@ import {
   FEE_STATUS_LABEL,
   remainingMonthlyDue,
   describePaymentOutcome,
+  statusFromPaid,
 } from './utils/payments';
 
 import { Header } from './components/Header';
 import { Sidebar, ActiveNav } from './components/Sidebar';
 import { PaymentModal } from './components/PaymentModal';
 import { ReceiptModal } from './components/ReceiptModal';
+import { RaporPrintModal, RaporDocData } from './components/RaporPrintModal';
 
 import { DashboardView } from './views/DashboardView';
 import { ProfilSiswaView } from './views/ProfilSiswaView';
@@ -87,6 +100,7 @@ import { KelasManagerView } from './views/KelasManagerView';
 import { VerifikasiPembayaranView } from './views/VerifikasiPembayaranView';
 import { StudentPortalView } from './views/StudentPortalView';
 import { PelatihView } from './views/PelatihView';
+import { RaporView } from './views/RaporView';
 
 // Map URL paths to ActiveNav keys
 const PATH_TO_NAV: Record<string, ActiveNav> = {
@@ -107,6 +121,7 @@ const PATH_TO_NAV: Record<string, ActiveNav> = {
   '/profil-siswa': 'profil-siswa',
   '/sesi-absensi': 'sesi-absensi',
   '/laporan-absensi': 'laporan-absensi',
+  '/rapor': 'rapor',
   '/pengaturan': 'pengaturan',
 };
 
@@ -114,7 +129,7 @@ const PATH_TO_NAV: Record<string, ActiveNav> = {
 // guard ini mencegah akses langsung lewat URL).
 const ROLE_ALLOWED_NAV: Record<UserRole, ActiveNav[] | 'all'> = {
   admin: 'all',
-  coach: ['sesi-absensi', 'laporan-absensi'],
+  coach: ['sesi-absensi', 'laporan-absensi', 'rapor'],
   student: ['student-portal'],
   public: ['pendaftaran-baru'],
 };
@@ -143,6 +158,7 @@ const NAV_TO_PATH: Record<ActiveNav, string> = {
   'profil-siswa': '/profil-siswa',
   'sesi-absensi': '/sesi-absensi',
   'laporan-absensi': '/laporan-absensi',
+  'rapor': '/rapor',
   'student-portal': '/student-portal',
   'pengaturan': '/pengaturan',
 };
@@ -184,6 +200,11 @@ export default function Workspace({ mode, staff, portal, onLogout }: WorkspacePr
   const [transactions, setTransactions] = useState<PaymentTransaction[]>([]);
   const [submissions, setSubmissions] = useState<PaymentSubmission[]>([]);
   const [profile, setProfile] = useState<ClubProfile>(EMPTY_PROFILE);
+  const [raporTemplates, setRaporTemplates] = useState<RaporTemplate[]>([]);
+  const [raporFolders, setRaporFolders] = useState<RaporFolder[]>([]);
+  const [raporEntries, setRaporEntries] = useState<RaporEntry[]>([]);
+  const [raporUnavailable, setRaporUnavailable] = useState<boolean>(false);
+  const [raporDoc, setRaporDoc] = useState<RaporDocData | null>(null);
   const hasLoadedRef = useRef(false);
   const [dataStatus, setDataStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [loadError, setLoadError] = useState<string>('');
@@ -283,6 +304,17 @@ export default function Workspace({ mode, staff, portal, onLogout }: WorkspacePr
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, staff?.id, portal?.hp, portal?.kode]);
 
+  // Admin bisa bekerja dari beberapa perangkat: saat tab kembali aktif, ambil nomor kuitansi
+  // terbaru dari server agar nomor berikutnya tidak bentrok.
+  useEffect(() => {
+    if (mode !== 'staff' || staff?.role !== 'admin') return;
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') refreshReceiptNumbers();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, [mode, staff?.role]);
+
   const loadAllData = async () => {
     try {
       if (mode === 'public') {
@@ -301,10 +333,15 @@ export default function Workspace({ mode, staff, portal, onLogout }: WorkspacePr
         setAttendanceSessions(bundle.attendanceSessions);
         setTransactions(bundle.transactions);
         setSubmissions(bundle.submissions);
+        setRaporTemplates(bundle.raporTemplates);
+        setRaporFolders(bundle.raporFolders);
+        setRaporEntries(bundle.raporEntries);
         setProfile(bundle.profile);
         setSelectedStudentId(bundle.student.id);
       } else {
         const isAdmin = staff?.role === 'admin';
+        // Selesaikan penulisan yang masih antre dulu agar data yang dimuat sudah memuatnya.
+        await waitForPendingSaves();
         // Pelatih hanya diizinkan membaca data dasar (lihat RLS); tabel keuangan tidak dimuat.
         const [stds, coachs, loadedClasses, loadedSessions, prof] = await Promise.all([
           getStudents(),
@@ -333,6 +370,17 @@ export default function Workspace({ mode, staff, portal, onLogout }: WorkspacePr
               getPaymentSubmissions(),
             ])
           : [[], [], [], [], []];
+
+        // Rapor dimuat terpisah: bila tabelnya belum dibuat (schema.sql lama), aplikasi tetap jalan.
+        try {
+          const [tpls, flds, ents] = await Promise.all([getRaporTemplates(), getRaporFolders(), getRaporEntries()]);
+          setRaporTemplates(tpls);
+          setRaporFolders(flds);
+          setRaporEntries(ents);
+          setRaporUnavailable(false);
+        } catch {
+          setRaporUnavailable(true);
+        }
 
         setStudents(stds);
         setCoaches(coachs);
@@ -428,6 +476,9 @@ export default function Workspace({ mode, staff, portal, onLogout }: WorkspacePr
 
   // Open Payment for Calon Siswa (Registration payment)
   const handleOpenApplicantPaymentModal = (student: Student, classGroup: ClassGroup) => {
+    const feeDaftar = Number(classGroup?.biayaPendaftaran ?? student.biayaPendaftaran ?? 0);
+    const feeIuran = Number(classGroup?.iuranBulanan ?? student.iuranBulanan ?? 0);
+    const total = feeDaftar + feeIuran;
     setPaymentModalState({
       isOpen: true,
       title: 'Pembayaran Pendaftaran Siswa Baru',
@@ -436,9 +487,9 @@ export default function Workspace({ mode, staff, portal, onLogout }: WorkspacePr
       kelasId: classGroup.id,
       kelasNama: classGroup.nama,
       noHp: student.noHp,
-      nominalAwal: student.totalBiayaPendaftaran,
-      biayaPendaftaran: student.biayaPendaftaran,
-      iuranBulanan: student.iuranBulanan,
+      nominalAwal: total > 0 ? total : student.totalBiayaPendaftaran,
+      biayaPendaftaran: feeDaftar,
+      iuranBulanan: feeIuran,
       tipe: 'Pendaftaran Siswa Baru',
       keterangan: 'Pendaftaran Siswa Baru & Iuran Perdana',
       isApplicantApproval: true,
@@ -467,6 +518,30 @@ export default function Workspace({ mode, staff, portal, onLogout }: WorkspacePr
     setTransactions(updatedTxs);
     saveTransactions(updatedTxs);
 
+    // Arsip bukti pembayaran (langsung terverifikasi karena diinput admin), untuk semua jenis
+    // pembayaran agar foto bukti yang diunggah di modal tidak hilang.
+    const archiveSub = (extra: Pick<PaymentSubmission, 'tipe'> & Partial<PaymentSubmission>): PaymentSubmission => ({
+      id: `sub-${Date.now()}`,
+      siswaId: tx.siswaId,
+      siswaNama: tx.siswaNama,
+      kelasId: modal.kelasId || student?.kelasId || '',
+      kelasNama: tx.kelasNama,
+      nominal: tx.nominal,
+      metodePembayaran: tx.metodePembayaran,
+      tanggalTransfer: tanggalBayar,
+      buktiGambarUrl: proofData?.buktiGambarUrl || '',
+      pesanSiswa: proofData?.pesanPembayaran || tx.keterangan,
+      status: 'verified',
+      tanggalKirim: `${today} ${time}`,
+      tanggalVerifikasi: today,
+      diverifikasiOleh: actorName,
+      catatanAdmin: proofData?.catatanAdmin || 'Diinput & diverifikasi langsung oleh Admin.',
+      kuitansiId: tx.nomorKuitansi,
+      transactionId: tx.id,
+      ...extra,
+    });
+    let newSub: PaymentSubmission | null = null;
+
     // 2. Iuran Rutin → tagihan bulanan (pembayaran kumulatif / cicilan)
     if (tx.tipe === 'Iuran Rutin' || tx.tipe === 'Angsuran') {
       const bulan = proofData?.bulan ?? modal.bulan;
@@ -492,38 +567,18 @@ export default function Workspace({ mode, staff, portal, onLogout }: WorkspacePr
         setMonthlyDues(updatedDues);
         saveMonthlyDues(updatedDues);
 
-        // Arsip bukti pembayaran (langsung terverifikasi karena diinput admin)
-        const newSub: PaymentSubmission = {
-          id: `sub-${Date.now()}`,
-          siswaId: tx.siswaId,
-          siswaNama: tx.siswaNama,
-          kelasId: studentClass?.id || modal.kelasId || student?.kelasId || '',
-          kelasNama: tx.kelasNama,
-          tipe: 'Iuran Rutin',
-          bulan,
-          tahun,
-          nominal: tx.nominal,
-          metodePembayaran: tx.metodePembayaran,
-          tanggalTransfer: tanggalBayar,
-          buktiGambarUrl: proofData?.buktiGambarUrl || '',
-          pesanSiswa: proofData?.pesanPembayaran || tx.keterangan,
-          status: 'verified',
-          tanggalKirim: `${today} ${time}`,
-          tanggalVerifikasi: today,
-          diverifikasiOleh: actorName,
-          catatanAdmin: proofData?.catatanAdmin || 'Diinput & diverifikasi langsung oleh Admin.',
-          kuitansiId: tx.nomorKuitansi,
-          transactionId: tx.id,
-        };
-        const updatedSubs = [newSub, ...submissions];
-        setSubmissions(updatedSubs);
-        savePaymentSubmissions(updatedSubs);
+        newSub = archiveSub({ tipe: 'Iuran Rutin', bulan, tahun });
       }
     }
 
     // 3. Iuran Insidentil → peserta event
     if (tx.tipe === 'Iuran Insidentil' && modal.targetParticipantId) {
       const part = eventParticipants.find((p) => p.id === modal.targetParticipantId);
+      newSub = archiveSub({
+        tipe: 'Iuran Insidentil',
+        eventId: part?.eventId,
+        eventNama: events.find((e) => e.id === part?.eventId)?.nama,
+      });
       const updatedParts = applyEventPayment(
         eventParticipants,
         modal.targetParticipantId,
@@ -543,6 +598,7 @@ export default function Workspace({ mode, staff, portal, onLogout }: WorkspacePr
 
     // 4. Pendaftaran calon siswa → aktifkan siswa & catat iuran bulan pertama
     if (tx.tipe === 'Pendaftaran Siswa Baru' && modal.isApplicantApproval) {
+      newSub = archiveSub({ tipe: 'Pendaftaran' });
       // Tanggal bergabung = tanggal aktif (iuran mulai dihitung dari bulan ini)
       const updatedStudents = students.map((s) =>
         s.id === tx.siswaId
@@ -556,10 +612,12 @@ export default function Workspace({ mode, staff, portal, onLogout }: WorkspacePr
       const iuran = modal.iuranBulanan ?? student?.iuranBulanan ?? 0;
       const untukIuran = Math.min(Math.max(0, tx.nominal - biayaDaftar), iuran);
       if (iuran > 0 && untukIuran > 0) {
+        // Iuran perdana = bulan tanggal bergabung (tanggal pembayaran), bukan bulan saat dicatat.
+        const [tahunBayar, bulanBayar] = tanggalBayar.split('-').map(Number);
         const updatedDues = applyMonthlyPayment(monthlyDues, {
           siswaId: tx.siswaId,
-          bulan: getCurrentMonth(),
-          tahun: getCurrentYear(),
+          bulan: bulanBayar || getCurrentMonth(),
+          tahun: tahunBayar || getCurrentYear(),
           nominalTagihan: iuran,
           jumlah: untukIuran,
           tanggalBayar,
@@ -568,6 +626,12 @@ export default function Workspace({ mode, staff, portal, onLogout }: WorkspacePr
         setMonthlyDues(updatedDues);
         saveMonthlyDues(updatedDues);
       }
+    }
+
+    if (newSub) {
+      const updatedSubs = [newSub, ...submissions];
+      setSubmissions(updatedSubs);
+      savePaymentSubmissions(updatedSubs);
     }
   };
 
@@ -659,6 +723,50 @@ export default function Workspace({ mode, staff, portal, onLogout }: WorkspacePr
     saveEvents(updatedEvents);
   };
 
+  const handleUpdateEvent = (updatedEvent: ClubEvent) => {
+    const old = events.find((e) => e.id === updatedEvent.id);
+    if (!old) return;
+    let updatedEvents = events.map((e) => (e.id === updatedEvent.id ? updatedEvent : e));
+    if (old.nominal !== updatedEvent.nominal) {
+      // Tagihan peserta mengikuti biaya baru; pembayaran yang sudah masuk tetap.
+      const updatedParts = eventParticipants.map((p) =>
+        p.eventId === updatedEvent.id
+          ? { ...p, nominal: updatedEvent.nominal, status: statusFromPaid(updatedEvent.nominal, p.terbayar || 0) }
+          : p
+      );
+      setEventParticipants(updatedParts);
+      saveEventParticipants(updatedParts);
+      updatedEvents = recountEvents(updatedEvents, updatedParts, [updatedEvent.id]);
+    }
+    setEvents(updatedEvents);
+    saveEvents(updatedEvents);
+    toast.success('Event diperbarui', updatedEvent.nama);
+  };
+
+  const handleDeleteEvent = async (eventId: string) => {
+    const event = events.find((e) => e.id === eventId);
+    if (!event) return;
+    const parts = eventParticipants.filter((p) => p.eventId === eventId);
+    if (parts.some((p) => (p.terbayar || 0) > 0)) {
+      toast.error('Tidak bisa dihapus', 'Sudah ada peserta yang membayar iuran event ini. Arsip pembayaran harus tetap tersimpan.');
+      return;
+    }
+    const ok = await confirm(
+      'Hapus Event?',
+      parts.length > 0
+        ? `"${event.nama}" beserta ${parts.length} peserta (belum bayar) akan dihapus.`
+        : `"${event.nama}" akan dihapus.`
+    );
+    if (!ok) return;
+    const updatedParts = eventParticipants.filter((p) => p.eventId !== eventId);
+    setEventParticipants(updatedParts);
+    saveEventParticipants(updatedParts);
+    const updatedEvents = events.filter((e) => e.id !== eventId);
+    setEvents(updatedEvents);
+    saveEvents(updatedEvents);
+    if (selectedEventId === eventId) setSelectedEventId(updatedEvents[0]?.id || '');
+  };
+
   const handleDeleteSession = (sessionId: string) => {
     const updated = attendanceSessions.filter((s) => s.id !== sessionId);
     setAttendanceSessions(updated);
@@ -666,20 +774,105 @@ export default function Workspace({ mode, staff, portal, onLogout }: WorkspacePr
   };
 
   // Update student biodata
-  const handleUpdateStudent = (updatedStudent: Student) => {
-    const updated = students.map((s) => (s.id === updatedStudent.id ? updatedStudent : s));
+  const handleUpdateStudent = (input: Student) => {
+    const old = students.find((s) => s.id === input.id);
+    const newClass = classes.find((c) => c.id === input.kelasId);
+    let updatedStudent = input;
+
+    // Status berubah lewat form edit biodata: catat tanggalnya, dan bila siswa keluar dari
+    // Cuti/Nonaktif, kunci bulan-bulan selama status lama (sama seperti ubah status di daftar siswa).
+    if (old && old.status !== input.status) {
+      updatedStudent = { ...input, tanggalStatus: getTodayISO() };
+      const updatedDues = freezeInactiveMonths(monthlyDues, old);
+      if (updatedDues !== monthlyDues) {
+        setMonthlyDues(updatedDues);
+        saveMonthlyDues(updatedDues);
+      }
+    }
+
+    // Pindah kelas → tarif mengikuti kelas baru (record iuran yang sudah ada tidak diubah).
+    const next = old && newClass && old.kelasId !== updatedStudent.kelasId ? withClassFees(updatedStudent, newClass) : updatedStudent;
+    const updated = students.map((s) => (s.id === next.id ? next : s));
     setStudents(updated);
     saveStudents(updated);
   };
 
+  // Delete single student (permanen untuk siswa terdaftar / aktif / cuti / nonaktif)
+  const handleDeleteStudent = (studentId: string) => {
+    const std = students.find((s) => s.id === studentId);
+
+    // 1. Hapus siswa dari state dan storage
+    const updatedStudents = students.filter((s) => s.id !== studentId);
+    setStudents(updatedStudents);
+    saveStudents(updatedStudents);
+
+    // 2. Hapus iuran bulanan siswa
+    const updatedDues = monthlyDues.filter((d) => d.siswaId !== studentId);
+    setMonthlyDues(updatedDues);
+    saveMonthlyDues(updatedDues);
+
+    // 3. Hapus peserta event & perbarui rekap event
+    const updatedParts = eventParticipants.filter((p) => p.siswaId !== studentId);
+    setEventParticipants(updatedParts);
+    saveEventParticipants(updatedParts);
+    const touchedEvents = Array.from(
+      new Set(eventParticipants.filter((p) => p.siswaId === studentId).map((p) => p.eventId))
+    );
+    if (touchedEvents.length > 0) {
+      const updatedEvents = recountEvents(events, updatedParts, touchedEvents);
+      setEvents(updatedEvents);
+      saveEvents(updatedEvents);
+    }
+
+    // 4. Hapus pengajuan pembayaran yang pending milik siswa
+    const updatedSubs = submissions.filter((s) => !(s.siswaId === studentId && s.status === 'pending'));
+    setSubmissions(updatedSubs);
+    savePaymentSubmissions(updatedSubs);
+
+    // 5. Bersihkan data rapor milik siswa
+    if (raporEntries.some((e) => e.siswaId === studentId)) {
+      const updatedEntries = raporEntries.filter((e) => e.siswaId !== studentId);
+      setRaporEntries(updatedEntries);
+      saveRaporEntries(updatedEntries);
+    }
+
+    // 6. Bersihkan siswa dari sesi absensi
+    const hasAttendance = attendanceSessions.some((a) => a.kehadiran && studentId in a.kehadiran);
+    if (hasAttendance) {
+      const updatedSessions = attendanceSessions.map((a) => {
+        if (a.kehadiran && studentId in a.kehadiran) {
+          const nextKehadiran = { ...a.kehadiran };
+          delete nextKehadiran[studentId];
+          return { ...a, kehadiran: nextKehadiran };
+        }
+        return a;
+      });
+      setAttendanceSessions(updatedSessions);
+      saveAttendanceSessions(updatedSessions);
+    }
+
+    // 7. Jika siswa yang dihapus sedang dipilih di Profil Siswa, alihkan ke siswa lain
+    if (selectedStudentId === studentId) {
+      const remaining = updatedStudents.filter((s) => s.status === 'Aktif');
+      const nextId = remaining.length > 0 ? remaining[0].id : (updatedStudents[0]?.id || '');
+      setSelectedStudentId(nextId);
+    }
+
+    toast.success('Siswa Dihapus', `${std?.nama || 'Data siswa'} telah berhasil dihapus dari sistem.`);
+  };
+
   // Tarif siswa mengikuti kelasnya. Biaya pendaftaran hanya relevan bagi calon siswa.
-  const withClassFees = (s: Student, cls: ClassGroup): Student => ({
-    ...s,
-    iuranBulanan: cls.iuranBulanan,
-    ...(s.status === 'Calon'
-      ? { biayaPendaftaran: cls.biayaPendaftaran, totalBiayaPendaftaran: cls.biayaPendaftaran + cls.iuranBulanan }
-      : {}),
-  });
+  const withClassFees = (s: Student, cls: ClassGroup): Student => {
+    const feeDaftar = Number(cls.biayaPendaftaran ?? 0);
+    const feeIuran = Number(cls.iuranBulanan ?? 0);
+    return {
+      ...s,
+      iuranBulanan: feeIuran,
+      ...(s.status === 'Calon'
+        ? { biayaPendaftaran: feeDaftar, totalBiayaPendaftaran: feeDaftar + feeIuran }
+        : {}),
+    };
+  };
 
   // Class Management Handlers
   const handleAddClass = (newClass: ClassGroup) => {
@@ -758,6 +951,18 @@ export default function Workspace({ mode, staff, portal, onLogout }: WorkspacePr
       savePaymentSubmissions(updatedSubs);
     }
 
+    // Folder rapor ikut pindah kelas; isian rapor siswa yang terhapus ikut dibersihkan.
+    if (reassignClassId && raporFolders.some((f) => f.kelasId === classId)) {
+      const updatedFolders = raporFolders.map((f) => (f.kelasId === classId ? { ...f, kelasId: reassignClassId } : f));
+      setRaporFolders(updatedFolders);
+      saveRaporFolders(updatedFolders);
+    }
+    if (removedIds.size > 0 && raporEntries.some((e) => removedIds.has(e.siswaId))) {
+      const updatedEntries = raporEntries.filter((e) => !removedIds.has(e.siswaId));
+      setRaporEntries(updatedEntries);
+      saveRaporEntries(updatedEntries);
+    }
+
     const updatedClasses = classes.filter((c) => c.id !== classId);
     setClasses(updatedClasses);
     saveClasses(updatedClasses);
@@ -768,23 +973,15 @@ export default function Workspace({ mode, staff, portal, onLogout }: WorkspacePr
   };
 
   // Delete single applicant
-  const handleDeleteApplicant = (studentId: string) => {
-    const updatedStudents = students.filter((s) => s.id !== studentId);
-    setStudents(updatedStudents);
-    saveStudents(updatedStudents);
-
-    const updatedDues = monthlyDues.filter((d) => d.siswaId !== studentId);
-    setMonthlyDues(updatedDues);
-    saveMonthlyDues(updatedDues);
-
-    const updatedParticipants = eventParticipants.filter((p) => p.siswaId !== studentId);
-    setEventParticipants(updatedParticipants);
-    saveEventParticipants(updatedParticipants);
-  };
+  const handleDeleteApplicant = (studentId: string) => handleDeleteBulkApplicants([studentId]);
 
   // Delete multiple applicants (bulk)
   const handleDeleteBulkApplicants = (studentIds: string[]) => {
-    const idSet = new Set(studentIds);
+    // Hanya siswa yang masih berstatus Calon. Calon yang terlanjur diaktifkan (sudah membayar)
+    // tetapi masih tercentang di daftar tidak ikut terhapus.
+    const wanted = new Set(studentIds);
+    const idSet = new Set(students.filter((s) => wanted.has(s.id) && s.status === 'Calon').map((s) => s.id));
+    if (idSet.size === 0) return;
     const updatedStudents = students.filter((s) => !idSet.has(s.id));
     setStudents(updatedStudents);
     saveStudents(updatedStudents);
@@ -1160,6 +1357,65 @@ export default function Workspace({ mode, staff, portal, onLogout }: WorkspacePr
     setReceiptModalTx(newTx);
   };
 
+  // ─── Rapor ─────────────────────────────────────────────────────────────────
+  const handleSaveRaporTemplate = (tpl: RaporTemplate) => {
+    const exists = raporTemplates.some((t) => t.id === tpl.id);
+    const updated = exists ? raporTemplates.map((t) => (t.id === tpl.id ? tpl : t)) : [...raporTemplates, tpl];
+    setRaporTemplates(updated);
+    saveRaporTemplates(updated);
+    toast.success('Template rapor disimpan', tpl.nama);
+  };
+
+  const handleDeleteRaporTemplate = async (templateId: string) => {
+    const tpl = raporTemplates.find((t) => t.id === templateId);
+    if (!tpl) return;
+    const usedBy = raporFolders.filter((f) => f.templateId === templateId).length;
+    if (usedBy > 0) {
+      toast.error('Template sedang dipakai', `Hapus atau ganti template di ${usedBy} folder rapor terlebih dahulu.`);
+      return;
+    }
+    const ok = await confirm('Hapus Template?', `Template "${tpl.nama}" akan dihapus permanen.`);
+    if (!ok) return;
+    const updated = raporTemplates.filter((t) => t.id !== templateId);
+    setRaporTemplates(updated);
+    saveRaporTemplates(updated);
+  };
+
+  const handleSaveRaporFolder = (folder: RaporFolder) => {
+    const exists = raporFolders.some((f) => f.id === folder.id);
+    const updated = exists ? raporFolders.map((f) => (f.id === folder.id ? folder : f)) : [folder, ...raporFolders];
+    setRaporFolders(updated);
+    saveRaporFolders(updated);
+  };
+
+  const handleDeleteRaporFolder = async (folderId: string) => {
+    const folder = raporFolders.find((f) => f.id === folderId);
+    if (!folder) return;
+    const filled = raporEntries.filter((e) => e.folderId === folderId).length;
+    const ok = await confirm(
+      'Hapus Folder Rapor?',
+      filled > 0
+        ? `"${folder.nama}" beserta ${filled} rapor siswa yang sudah diisi akan dihapus permanen.`
+        : `"${folder.nama}" akan dihapus.`
+    );
+    if (!ok) return;
+    const updatedFolders = raporFolders.filter((f) => f.id !== folderId);
+    setRaporFolders(updatedFolders);
+    saveRaporFolders(updatedFolders);
+    if (filled > 0) {
+      const updatedEntries = raporEntries.filter((e) => e.folderId !== folderId);
+      setRaporEntries(updatedEntries);
+      saveRaporEntries(updatedEntries);
+    }
+  };
+
+  const handleSaveRaporEntry = (entry: RaporEntry) => {
+    const exists = raporEntries.some((e) => e.id === entry.id);
+    const updated = exists ? raporEntries.map((e) => (e.id === entry.id ? entry : e)) : [...raporEntries, entry];
+    setRaporEntries(updated);
+    saveRaporEntries(updated);
+  };
+
   // Count pending calon siswa
   const calonCount = students.filter((s) => s.status === 'Calon').length;
 
@@ -1175,6 +1431,16 @@ export default function Workspace({ mode, staff, portal, onLogout }: WorkspacePr
   // View Receipt Handler
   const handleViewReceipt = (tx: PaymentTransaction) => {
     setReceiptModalTx(tx);
+  };
+
+  // Status & sisa tagihan sebuah bulan, dipakai modal pembayaran saat admin memilih periode lain.
+  const getMonthlyPeriodInfo = (siswaId: string, bulan: number, tahun: number) => {
+    const std = students.find((s) => s.id === siswaId);
+    const due = findMonthlyDue(monthlyDues, siswaId, bulan, tahun);
+    const status = std ? effectiveDueStatus(std, due, bulan, tahun) : due?.status ?? 'belum_bayar';
+    const cls = classes.find((c) => c.id === std?.kelasId);
+    const sisa = remainingMonthlyDue(monthlyDues, siswaId, bulan, tahun, cls?.iuranBulanan || std?.iuranBulanan || 0);
+    return { status, sisa };
   };
 
   if (dataStatus !== 'ready') {
@@ -1226,7 +1492,7 @@ export default function Workspace({ mode, staff, portal, onLogout }: WorkspacePr
         onNavigateVerifikasi={() => setCurrentNav('verifikasi-pembayaran')}
       />
 
-      <div className="flex-1 flex overflow-hidden">
+      <div className="flex-1 flex overflow-hidden print:overflow-visible">
         {/* Left Sidebar Navigation (hanya untuk pengurus) */}
         {mode === 'staff' && (
           <Sidebar
@@ -1243,7 +1509,7 @@ export default function Workspace({ mode, staff, portal, onLogout }: WorkspacePr
 
         {/* Main Workspace Body */}
         <main
-          className={`flex-1 overflow-y-auto p-4 md:p-6 lg:p-8 transition-all ${
+          className={`flex-1 overflow-y-auto p-4 md:p-6 lg:p-8 transition-all print:overflow-visible print:p-0 print:ml-0! ${
             mode === 'staff' ? 'lg:ml-64' : mode === 'student' ? 'max-w-6xl mx-auto w-full' : 'max-w-5xl mx-auto w-full'
           }`}
         >
@@ -1268,6 +1534,10 @@ export default function Workspace({ mode, staff, portal, onLogout }: WorkspacePr
                 onSelectStudent={(id) => setSelectedStudentId(id)}
                 onSubmitPaymentProof={handleSubmitPaymentProof}
                 onViewReceipt={handleViewReceipt}
+                raporTemplates={raporTemplates}
+                raporFolders={raporFolders}
+                raporEntries={raporEntries}
+                onOpenRapor={setRaporDoc}
               />
             ) : (
               <div className="bg-white rounded-3xl p-12 text-center border border-slate-200">
@@ -1350,9 +1620,14 @@ export default function Workspace({ mode, staff, portal, onLogout }: WorkspacePr
                   onOpenPaymentModal={handleOpenMonthlyPaymentModal}
                   onOpenEventPaymentModal={handleOpenEventPaymentModal}
                   onUpdateStudent={handleUpdateStudent}
+                  onDeleteStudent={handleDeleteStudent}
                   onVerifySubmission={handleVerifySubmission}
                   onRejectSubmission={handleRejectSubmission}
                   onViewReceipt={handleViewReceipt}
+                  raporTemplates={raporTemplates}
+                  raporFolders={raporFolders}
+                  raporEntries={raporEntries}
+                  onOpenRapor={setRaporDoc}
                   onAdminRecordPaymentWithProof={handleAdminRecordPaymentWithProof}
                 />
               )}
@@ -1384,6 +1659,8 @@ export default function Workspace({ mode, staff, portal, onLogout }: WorkspacePr
                     setEvents(up);
                     saveEvents(up);
                   }}
+                  onUpdateEvent={handleUpdateEvent}
+                  onDeleteEvent={handleDeleteEvent}
                 />
               )}
 
@@ -1429,6 +1706,26 @@ export default function Workspace({ mode, staff, portal, onLogout }: WorkspacePr
                 />
               )}
 
+              {currentNav === 'rapor' && (
+                <RaporView
+                  templates={raporTemplates}
+                  folders={raporFolders}
+                  entries={raporEntries}
+                  students={students}
+                  classes={classes}
+                  profile={profile}
+                  currentRole={currentRole}
+                  actorName={actorName}
+                  unavailable={raporUnavailable}
+                  onSaveTemplate={handleSaveRaporTemplate}
+                  onDeleteTemplate={handleDeleteRaporTemplate}
+                  onSaveFolder={handleSaveRaporFolder}
+                  onDeleteFolder={handleDeleteRaporFolder}
+                  onSaveEntry={handleSaveRaporEntry}
+                  onOpenRapor={setRaporDoc}
+                />
+              )}
+
               {currentNav === 'siswa-aktif' && (
                 <SiswaListView
                   status="Aktif"
@@ -1437,6 +1734,7 @@ export default function Workspace({ mode, staff, portal, onLogout }: WorkspacePr
                   onSelectStudent={handleSelectStudent}
                   onNavigateNewRegistration={() => setCurrentNav('pendaftaran-baru')}
                   onUpdateStatus={handleUpdateStudentStatus}
+                  onDeleteStudent={handleDeleteStudent}
                 />
               )}
 
@@ -1448,6 +1746,7 @@ export default function Workspace({ mode, staff, portal, onLogout }: WorkspacePr
                   onSelectStudent={handleSelectStudent}
                   onNavigateNewRegistration={() => setCurrentNav('pendaftaran-baru')}
                   onUpdateStatus={handleUpdateStudentStatus}
+                  onDeleteStudent={handleDeleteStudent}
                 />
               )}
 
@@ -1459,6 +1758,7 @@ export default function Workspace({ mode, staff, portal, onLogout }: WorkspacePr
                   onSelectStudent={handleSelectStudent}
                   onNavigateNewRegistration={() => setCurrentNav('pendaftaran-baru')}
                   onUpdateStatus={handleUpdateStudentStatus}
+                  onDeleteStudent={handleDeleteStudent}
                 />
               )}
 
@@ -1492,7 +1792,7 @@ export default function Workspace({ mode, staff, portal, onLogout }: WorkspacePr
                   classes={classes}
                   onUpdateProfile={(p) => {
                     setProfile(p);
-                    saveClubProfile(p);
+                    return saveClubProfile(p);
                   }}
                   onUpdateClasses={(c) => {
                     setClasses(c);
@@ -1523,6 +1823,11 @@ export default function Workspace({ mode, staff, portal, onLogout }: WorkspacePr
         periodeInfo={paymentModalState.periodeInfo}
         bulan={paymentModalState.bulan}
         tahun={paymentModalState.tahun}
+        getPeriodInfo={
+          paymentModalState.tipe === 'Iuran Rutin'
+            ? (bulan, tahun) => getMonthlyPeriodInfo(paymentModalState.siswaId, bulan, tahun)
+            : undefined
+        }
         onSuccess={handlePaymentSuccess}
         onViewReceipt={(tx) => setReceiptModalTx(tx)}
       />
@@ -1534,6 +1839,9 @@ export default function Workspace({ mode, staff, portal, onLogout }: WorkspacePr
         isOpen={!!receiptModalTx}
         onClose={() => setReceiptModalTx(null)}
       />
+
+      {/* Rapor siswa (Cetak / simpan PDF) */}
+      <RaporPrintModal data={raporDoc} profile={profile} onClose={() => setRaporDoc(null)} />
     </div>
   );
 }

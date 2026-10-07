@@ -30,7 +30,7 @@ export const SesiAbsensiView: React.FC<SesiAbsensiViewProps> = ({
   const [searchQuery, setSearchQuery] = useState<string>('');
 
   const [tanggal, setTanggal] = useState<string>(getTodayISO());
-  const [selectedClassId, setSelectedClassId] = useState<string>(classes[0]?.id || 'ku-10');
+  const [selectedClassId, setSelectedClassId] = useState<string>(classes[0]?.id || '');
   const activeCoaches = coaches.filter((c) => c.status === 'Aktif');
   const [selectedCoachId, setSelectedCoachId] = useState<string>(activeCoaches[0]?.id || '');
   const [manualCoachNama, setManualCoachNama] = useState<string>('');
@@ -60,10 +60,11 @@ export const SesiAbsensiView: React.FC<SesiAbsensiViewProps> = ({
 
   // Saat mengedit, siswa yang tercatat di sesi tetap ditampilkan walau statusnya sudah berubah
   const editingSession = editingSessionId ? sessions.find((s) => s.id === editingSessionId) : undefined;
+  // (termasuk siswa yang sudah pindah kelas, agar catatan kehadirannya tidak hilang saat disimpan ulang).
+  const recordedInEdit = (s: Student) =>
+    !!editingSession && editingSession.kelasId === selectedClassId && editingSession.kehadiran[s.id] !== undefined;
   const classStudents = students.filter(
-    (s) =>
-      s.kelasId === selectedClassId &&
-      (s.status === 'Aktif' || (editingSession && editingSession.kehadiran[s.id] !== undefined))
+    (s) => recordedInEdit(s) || (s.kelasId === selectedClassId && s.status === 'Aktif')
   );
 
   const handleStartAdd = () => {
@@ -156,11 +157,14 @@ export const SesiAbsensiView: React.FC<SesiAbsensiViewProps> = ({
     setEditingSessionId(null);
   };
 
-  const filteredSessions = sessions.filter((s) => {
-    const cls = classes.find((c) => c.id === s.kelasId);
-    const text = `${s.tanggal} ${cls?.nama || ''} ${s.catatan}`.toLowerCase();
-    return text.includes(searchQuery.toLowerCase());
-  });
+  // Terbaru di atas berdasarkan tanggal latihan (bukan urutan input).
+  const filteredSessions = sessions
+    .filter((s) => {
+      const cls = classes.find((c) => c.id === s.kelasId);
+      const text = `${s.tanggal} ${cls?.nama || ''} ${s.catatan}`.toLowerCase();
+      return text.includes(searchQuery.trim().toLowerCase());
+    })
+    .sort((a, b) => b.tanggal.localeCompare(a.tanggal));
 
   return (
     <div className="space-y-6">
@@ -349,7 +353,11 @@ export const SesiAbsensiView: React.FC<SesiAbsensiViewProps> = ({
                     className="w-full text-xs rounded-xl border border-slate-300 px-3.5 py-2.5 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer bg-white"
                   >
                     <option value="">-- Pilih Pelatih --</option>
-                    {activeCoaches.map((c) => (
+                    {[
+                      ...activeCoaches,
+                      // Pelatih nonaktif yang tercatat di sesi yang sedang diedit tetap bisa dipilih
+                      ...coaches.filter((c) => c.id === selectedCoachId && c.status !== 'Aktif'),
+                    ].map((c) => (
                       <option key={c.id} value={c.id}>
                         {c.nama} — {c.spesialisasi}
                       </option>

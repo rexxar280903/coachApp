@@ -171,3 +171,58 @@ export interface PaymentSubmission {
   kuitansiId?: string;
   transactionId?: string;
 }
+
+// ─── Rapor (laporan perkembangan siswa) ──────────────────────────────────────
+
+/**
+ * Jenis item penilaian pada template rapor:
+ *  - judul    : judul bagian (mis. "Kemampuan"), tanpa isian
+ *  - isian    : jawaban singkat satu baris (mis. "Tinggi Badan (cm)")
+ *  - paragraf : jawaban panjang (mis. catatan pelatih)
+ *  - checkbox : boleh pilih lebih dari satu opsi
+ *  - pilihan  : pilih satu opsi (radio)
+ *  - dropdown : pilih satu opsi (daftar turun)
+ */
+export type RaporItemTipe = 'judul' | 'isian' | 'paragraf' | 'checkbox' | 'pilihan' | 'dropdown';
+
+export interface RaporItem {
+  id: string;
+  tipe: RaporItemTipe;
+  label: string;
+  /** Hanya untuk checkbox / pilihan / dropdown. */
+  opsi?: string[];
+  wajib?: boolean;
+}
+
+/** Blangko rapor yang bisa dipakai berulang untuk banyak folder/kelas. */
+export interface RaporTemplate {
+  id: string;
+  nama: string;     // e.g. "Blangko Rapor KU-10 & KU-12"
+  header: string;   // teks pembuka di atas tabel penilaian
+  items: RaporItem[];
+  footer: string;   // teks penutup di bawah rapor
+}
+
+/** Satu periode penilaian untuk satu kelas, memakai satu template. */
+export interface RaporFolder {
+  id: string;
+  nama: string;           // e.g. "Laporan Perkembangan KU-10, Semester 1, 2025"
+  awalPenilaian: string;  // YYYY-MM-DD
+  akhirPenilaian: string; // YYYY-MM-DD
+  kelasId: string;
+  templateId: string;
+  /** Bila true, rapor yang sudah diisi tampil di Portal Siswa. */
+  diterbitkan: boolean;
+}
+
+export type RaporJawaban = Record<string, string | string[]>;
+
+/** Isian rapor satu siswa di satu folder. */
+export interface RaporEntry {
+  id: string;
+  folderId: string;
+  siswaId: string;
+  jawaban: RaporJawaban; // kunci = RaporItem.id
+  diisiOleh: string;
+  tanggalIsi: string; // "YYYY-MM-DD HH:mm"
+}

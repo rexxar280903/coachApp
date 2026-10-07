@@ -14,3 +14,9 @@ export function normalizePhone(raw: string): string {
   if (d.startsWith('8')) return '0' + d;
   return d;
 }
+
+/** Nomor untuk tautan wa.me: 0812… / 812… / +62 812… → 62812… (string kosong bila tidak valid). */
+export function toWhatsAppNumber(raw: string): string {
+  const local = normalizePhone(raw);
+  return local.startsWith('0') && local.length >= 9 ? '62' + local.slice(1) : '';
+}

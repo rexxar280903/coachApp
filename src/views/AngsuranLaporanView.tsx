@@ -1,7 +1,9 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Student, ClassGroup, MonthlyDueRecord, PaymentTransaction } from '../types/sportkit';
 import { formatRupiah } from '../utils/numberToWordsId';
-import { BarChart3, Clock, TrendingUp, DollarSign, Receipt, CheckCircle, AlertTriangle, Wallet } from 'lucide-react';
+import { MONTH_NAMES, getCurrentMonth, getCurrentYear, getYearOptions } from '../utils/constants';
+import { effectiveDueStatus, findMonthlyDue } from '../utils/payments';
+import { BarChart3, Clock, CheckCircle } from 'lucide-react';
 
 interface AngsuranLaporanViewProps {
   mode: 'angsuran' | 'laporan';
@@ -22,34 +24,56 @@ export const AngsuranLaporanView: React.FC<AngsuranLaporanViewProps> = ({
   onOpenPaymentModal,
   onViewReceipt,
 }) => {
-  const partialDues = monthlyDues.filter((d) => d.status === 'belum_lunas');
+  const [year, setYear] = useState<number>(getCurrentYear());
 
-  const classStats = classes.map((cls) => {
-    const classStudents = students.filter((s) => s.kelasId === cls.id && s.status === 'Aktif');
-    const classDues = monthlyDues.filter((d) => {
-      const std = students.find((s) => s.id === d.siswaId);
-      return std?.kelasId === cls.id;
-    });
+  const partialDues = monthlyDues
+    .filter((d) => d.status === 'belum_lunas' && students.some((s) => s.id === d.siswaId))
+    .sort((a, b) => b.tahun - a.tahun || b.bulan - a.bulan);
 
-    const totalTerbayar = classDues.reduce((sum, d) => sum + (d.terbayar || 0), 0);
-    const totalPiutang = classDues
-      .filter((d) => d.status === 'belum_bayar' || d.status === 'belum_lunas')
-      .reduce((sum, d) => sum + (d.nominal - (d.terbayar || 0)), 0);
+  // Bulan yang sudah jatuh tempo pada tahun terpilih (tahun berjalan: s/d bulan ini).
+  const lastDueMonth = year < getCurrentYear() ? 12 : year === getCurrentYear() ? getCurrentMonth() : 0;
 
-    return {
-      class: cls,
-      studentCount: classStudents.length,
-      totalTerbayar,
-      totalPiutang,
-    };
-  });
+  const classStats = useMemo(
+    () =>
+      classes.map((cls) => {
+        const members = students.filter((s) => s.kelasId === cls.id && s.status !== 'Calon');
+        const memberIds = new Set(members.map((s) => s.id));
+        const totalTerbayar = monthlyDues
+          .filter((d) => d.tahun === year && memberIds.has(d.siswaId))
+          .reduce((sum, d) => sum + (d.terbayar || 0), 0);
 
+        // Tunggakan dihitung dari status efektif tiap bulan, termasuk bulan yang belum punya catatan
+        // (bulan yang belum dibayar sama sekali memang tidak punya record di database).
+        let totalPiutang = 0;
+        for (const std of members) {
+          const tarif = cls.iuranBulanan || std.iuranBulanan || 0;
+          for (let bulan = 1; bulan <= lastDueMonth; bulan++) {
+            const due = findMonthlyDue(monthlyDues, std.id, bulan, year);
+            const status = effectiveDueStatus(std, due, bulan, year);
+            if (status === 'belum_bayar') totalPiutang += due && due.nominal > 0 ? due.nominal - (due.terbayar || 0) : tarif;
+            else if (status === 'belum_lunas' && due) totalPiutang += Math.max(0, due.nominal - (due.terbayar || 0));
+          }
+        }
+
+        return {
+          class: cls,
+          studentCount: members.filter((s) => s.status === 'Aktif').length,
+          totalTerbayar,
+          totalPiutang,
+        };
+      }),
+    [classes, students, monthlyDues, year, lastDueMonth],
+  );
+
+  const yearTransactions = transactions.filter((tx) => (tx.tanggal || '').startsWith(`${year}-`));
   const methodStats: { [method: string]: number } = {};
-  transactions.forEach((tx) => {
+  yearTransactions.forEach((tx) => {
     methodStats[tx.metodePembayaran] = (methodStats[tx.metodePembayaran] || 0) + tx.nominal;
   });
 
-  const totalCollected = transactions.reduce((sum, tx) => sum + tx.nominal, 0);
+  const totalCollected = yearTransactions.reduce((sum, tx) => sum + tx.nominal, 0);
+  const grandTerbayar = classStats.reduce((sum, s) => sum + s.totalTerbayar, 0);
+  const grandPiutang = classStats.reduce((sum, s) => sum + s.totalPiutang, 0);
 
   return (
     <div className="space-y-6">
@@ -99,8 +123,8 @@ export const AngsuranLaporanView: React.FC<AngsuranLaporanViewProps> = ({
                   ) : (
                     partialDues.map((due, idx) => {
                       const std = students.find((s) => s.id === due.siswaId);
-                      const cls = classes.find((c) => c.id === std?.kelasId) || classes[0];
-                      const sisa = due.nominal - (due.terbayar || 0);
+                      const cls = classes.find((c) => c.id === std?.kelasId);
+                      const sisa = Math.max(0, due.nominal - (due.terbayar || 0));
 
                       return (
                         <tr key={due.id} className="hover:bg-slate-50/80 transition-colors">
@@ -111,10 +135,10 @@ export const AngsuranLaporanView: React.FC<AngsuranLaporanViewProps> = ({
                             {std?.nama}
                           </td>
                           <td className="py-3 px-4 text-slate-600">
-                            {cls.nama}
+                            {cls?.nama ?? '-'}
                           </td>
                           <td className="py-3 px-4 font-mono">
-                            Bulan {due.bulan} / {due.tahun}
+                            {MONTH_NAMES[due.bulan - 1]} {due.tahun}
                           </td>
                           <td className="py-3 px-4 font-mono">
                             {formatRupiah(due.nominal)}
@@ -126,7 +150,7 @@ export const AngsuranLaporanView: React.FC<AngsuranLaporanViewProps> = ({
                             {formatRupiah(sisa)}
                           </td>
                           <td className="py-3 px-4 text-right">
-                            {std && (
+                            {std && cls && (
                               <button
                                 onClick={() => onOpenPaymentModal(due, std, cls)}
                                 className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs transition-colors cursor-pointer"
@@ -147,7 +171,7 @@ export const AngsuranLaporanView: React.FC<AngsuranLaporanViewProps> = ({
       ) : (
         /* LAPORAN KEUANGAN IURAN VIEW */
         <>
-          <div className="sports-card rounded-2xl p-6">
+          <div className="sports-card rounded-2xl p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold">
                 <BarChart3 className="w-5 h-5" />
@@ -157,29 +181,43 @@ export const AngsuranLaporanView: React.FC<AngsuranLaporanViewProps> = ({
                   Laporan Rekapitulasi Kas & Iuran
                 </h1>
                 <p className="text-xs text-slate-500">
-                  Ringkasan penerimaan dana kas, total terbayar per kelas, dan piutang SPP
+                  Ringkasan penerimaan dana kas, total terbayar per kelas, dan tunggakan SPP
                 </p>
               </div>
             </div>
+            <label className="flex items-center gap-2 text-xs font-semibold text-slate-600">
+              Tahun:
+              <select
+                value={year}
+                onChange={(e) => setYear(Number(e.target.value))}
+                className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-900 font-mono cursor-pointer focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              >
+                {getYearOptions(year).map((y) => (
+                  <option key={y} value={y}>
+                    {y}
+                  </option>
+                ))}
+              </select>
+            </label>
           </div>
 
           {/* KPI Summary Cards */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div className="sports-card rounded-2xl p-6">
               <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                Total Kas Masuk
+                Total Kas Masuk {year}
               </span>
               <p className="text-2xl font-display font-bold text-emerald-600 font-mono mt-2 tabular-nums">
                 {formatRupiah(totalCollected)}
               </p>
               <p className="text-[11px] text-slate-400 mt-1">
-                Dari {transactions.length} total kuitansi pembayaran resmi
+                Dari {yearTransactions.length} kuitansi resmi (semua jenis pembayaran)
               </p>
             </div>
 
             <div className="sports-card rounded-2xl p-6">
               <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                Metode Pembayaran
+                Metode Pembayaran {year}
               </span>
               <div className="mt-2 space-y-1.5 text-xs">
                 {Object.entries(methodStats).length === 0 ? (
@@ -212,9 +250,16 @@ export const AngsuranLaporanView: React.FC<AngsuranLaporanViewProps> = ({
           {/* Summary Table by Class */}
           <div className="sports-card rounded-2xl overflow-hidden">
             <div className="p-5 border-b border-slate-100 flex items-center justify-between">
-              <h3 className="font-display font-bold text-slate-900 text-sm">
-                Rekap Pembayaran Berdasarkan Kelompok Kelas
-              </h3>
+              <div>
+                <h3 className="font-display font-bold text-slate-900 text-sm">
+                  Rekap Iuran Rutin per Kelompok Kelas ({year})
+                </h3>
+                <p className="text-[11px] text-slate-500 mt-0.5">
+                  {lastDueMonth === 0
+                    ? 'Tahun ini belum berjalan, belum ada tunggakan.'
+                    : `Tunggakan dihitung dari bulan bergabung s/d ${MONTH_NAMES[lastDueMonth - 1]} ${year} (bulan cuti/nonaktif tidak dihitung).`}
+                </p>
+              </div>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse text-xs">
@@ -223,8 +268,8 @@ export const AngsuranLaporanView: React.FC<AngsuranLaporanViewProps> = ({
                     <th className="py-3 px-4">Kelas</th>
                     <th className="py-3 px-4">Siswa Aktif</th>
                     <th className="py-3 px-4">Tarif SPP</th>
-                    <th className="py-3 px-4 text-emerald-300">Total Kas Terbayar</th>
-                    <th className="py-3 px-4 text-rose-300">Total Piutang Belum Terbayar</th>
+                    <th className="py-3 px-4 text-emerald-300">Iuran Terbayar</th>
+                    <th className="py-3 px-4 text-rose-300">Tunggakan Belum Terbayar</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -248,6 +293,17 @@ export const AngsuranLaporanView: React.FC<AngsuranLaporanViewProps> = ({
                     </tr>
                   ))}
                 </tbody>
+                {classStats.length > 0 && (
+                  <tfoot>
+                    <tr className="bg-slate-50 font-bold border-t border-slate-200">
+                      <td className="py-3 px-4 text-slate-900" colSpan={3}>
+                        Total
+                      </td>
+                      <td className="py-3 px-4 font-mono text-emerald-700">{formatRupiah(grandTerbayar)}</td>
+                      <td className="py-3 px-4 font-mono text-rose-700">{formatRupiah(grandPiutang)}</td>
+                    </tr>
+                  </tfoot>
+                )}
               </table>
             </div>
           </div>

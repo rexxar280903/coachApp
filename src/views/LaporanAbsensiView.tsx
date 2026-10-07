@@ -19,12 +19,13 @@ export const LaporanAbsensiView: React.FC<LaporanAbsensiViewProps> = ({
   students,
   classes,
 }) => {
-  const [selectedClassId, setSelectedClassId] = useState<string>(classes[0]?.id || 'ku-10');
+  const [chosenClassId, setSelectedClassId] = useState<string>(classes[0]?.id || '');
   const [selectedYear, setSelectedYear] = useState<number>(getCurrentYear());
   const [selectedMonth, setSelectedMonth] = useState<number>(getCurrentMonth());
   const [showCuti, setShowCuti] = useState<boolean>(false);
 
-  const currentClass = classes.find((c) => c.id === selectedClassId) || classes[0];
+  const currentClass = classes.find((c) => c.id === chosenClassId) || classes[0];
+  const selectedClassId = currentClass?.id ?? '';
 
   const monthlySessions = useMemo(() => {
     return sessions
@@ -40,9 +41,16 @@ export const LaporanAbsensiView: React.FC<LaporanAbsensiViewProps> = ({
 
   const sessionDays = monthlySessions.map((s) => Number(s.tanggal.split('-')[2]));
 
-  const classStudents = students.filter(
-    (s) => s.kelasId === selectedClassId && (showCuti ? true : s.status === 'Aktif')
-  );
+  // Siswa aktif (dan cuti bila dicentang) di kelas ini, ditambah siswa yang tercatat di sesi bulan ini
+  // walau sekarang sudah pindah kelas / nonaktif, agar rekap bulan lalu tetap utuh.
+  const recordedIds = new Set(monthlySessions.flatMap((s) => Object.keys(s.kehadiran || {})));
+  const classStudents = students
+    .filter(
+      (s) =>
+        recordedIds.has(s.id) ||
+        (s.kelasId === selectedClassId && (s.status === 'Aktif' || (showCuti && s.status === 'Cuti')))
+    )
+    .sort((a, b) => a.nama.localeCompare(b.nama, 'id'));
 
   const handleExportCSV = () => {
     const headers = ['Nama Siswa', ...sessionDays.map((d) => `Tgl ${d}`), 'Total Hadir', '% Hadir'];
@@ -95,7 +103,7 @@ export const LaporanAbsensiView: React.FC<LaporanAbsensiViewProps> = ({
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 print:hidden">
             <button
               onClick={handleExportCSV}
               className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold shadow-xs transition-colors cursor-pointer"
@@ -115,8 +123,12 @@ export const LaporanAbsensiView: React.FC<LaporanAbsensiViewProps> = ({
           </div>
         </div>
 
+        <p className="hidden print:block text-xs font-semibold text-slate-700">
+          Kelas {currentClass?.nama || '-'} · {MONTH_NAMES[selectedMonth - 1]} {selectedYear}
+        </p>
+
         {/* Filter Controls */}
-        <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 pt-3 border-t border-slate-100">
+        <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 pt-3 border-t border-slate-100 print:hidden">
           <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1">Kelas</label>
             <div className="relative">
@@ -205,9 +217,9 @@ export const LaporanAbsensiView: React.FC<LaporanAbsensiViewProps> = ({
                 {sessionDays.length === 0 ? (
                   <th className="py-3 px-4 text-center text-slate-400">Tidak ada sesi latihan pada bulan ini</th>
                 ) : (
-                  sessionDays.map((d) => (
-                    <th key={d} className="py-3 px-2 text-center border-r border-slate-800 min-w-[36px]">
-                      Tgl {d}
+                  monthlySessions.map((session, i) => (
+                    <th key={session.id} className="py-3 px-2 text-center border-r border-slate-800 min-w-[36px]">
+                      Tgl {sessionDays[i]}
                     </th>
                   ))
                 )}
@@ -249,6 +261,11 @@ export const LaporanAbsensiView: React.FC<LaporanAbsensiViewProps> = ({
                       </td>
                       <td className="py-2.5 px-4 font-semibold text-slate-900 border-r border-slate-100">
                         {std.nama}
+                        {(std.kelasId !== selectedClassId || std.status !== 'Aktif') && (
+                          <span className="ml-1.5 text-[10px] font-medium text-slate-400">
+                            {std.kelasId !== selectedClassId ? '(pindah kelas)' : `(${std.status})`}
+                          </span>
+                        )}
                       </td>
                       {sessionDays.length === 0 ? (
                         <td className="py-2.5 px-4 text-center text-slate-400">-</td>

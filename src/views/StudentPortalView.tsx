@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useToast } from '../components/Toast';
-import { receiptForSubmission, remainingMonthlyDue, effectiveDueStatus, isNonBillable, FEE_STATUS_LABEL } from '../utils/payments';
+import { receiptForSubmission, remainingMonthlyDue, effectiveDueStatus, isNonBillable, FEE_STATUS_LABEL, submissionPeriodLabel } from '../utils/payments';
 import { getTodayISO, getCurrentYear, getCurrentMonth, getYearOptions } from '../utils/constants';
 import { 
   Student, 
@@ -10,8 +10,13 @@ import {
   PaymentTransaction, 
   PaymentSubmission,
   ClubProfile,
-  PaymentMethod 
+  PaymentMethod,
+  RaporTemplate,
+  RaporFolder,
+  RaporEntry,
 } from '../types/sportkit';
+import { RaporSiswaList } from '../components/RaporSiswaList';
+import { RaporDocData } from '../components/RaporPrintModal';
 import { 
   CheckCircle2, 
   Clock, 
@@ -51,6 +56,10 @@ interface StudentPortalViewProps {
   onSelectStudent: (studentId: string) => void;
   onSubmitPaymentProof: (newSubmission: Omit<PaymentSubmission, 'id' | 'status' | 'tanggalKirim'>) => Promise<boolean>;
   onViewReceipt: (tx: PaymentTransaction) => void;
+  raporTemplates?: RaporTemplate[];
+  raporFolders?: RaporFolder[];
+  raporEntries?: RaporEntry[];
+  onOpenRapor?: (data: RaporDocData) => void;
 }
 
 export const StudentPortalView: React.FC<StudentPortalViewProps> = ({
@@ -65,9 +74,14 @@ export const StudentPortalView: React.FC<StudentPortalViewProps> = ({
   onSelectStudent,
   onSubmitPaymentProof,
   onViewReceipt,
+  raporTemplates = [],
+  raporFolders = [],
+  raporEntries = [],
+  onOpenRapor,
 }) => {
   const { toast } = useToast();
-  const [activeTab, setActiveTab] = useState<'upload' | 'iuran' | 'absensi'>('upload');
+  const [activeTab, setActiveTab] = useState<'upload' | 'iuran' | 'absensi' | 'rapor'>('upload');
+  const raporCount = raporEntries.filter((e) => e.siswaId === currentStudent.id).length;
   
   // Student's specific class
   const studentClass = classes.find((c) => c.id === currentStudent.kelasId) || classes[0];
@@ -82,7 +96,11 @@ export const StudentPortalView: React.FC<StudentPortalViewProps> = ({
   const [selectedMonth, setSelectedMonth] = useState<number>(getCurrentMonth());
   const [selectedYear, setSelectedYear] = useState<number>(getCurrentYear());
   const [historyYearFilter, setHistoryYearFilter] = useState<number | 'all'>('all');
-  const [transferAmount, setTransferAmount] = useState<number>(studentClass?.iuranBulanan || 100000);
+  const [transferAmount, setTransferAmount] = useState<number>(() =>
+    remainingMonthlyDue(monthlyDues, currentStudent.id, getCurrentMonth(), getCurrentYear(), studentClass?.iuranBulanan || 0) ||
+    studentClass?.iuranBulanan ||
+    0
+  );
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('Transfer BCA');
   const [transferDate, setTransferDate] = useState<string>(
     getTodayISO()
@@ -127,7 +145,9 @@ export const StudentPortalView: React.FC<StudentPortalViewProps> = ({
   const totalSessionsCount = studentSessions.length;
   const attendanceRate = totalSessionsCount > 0 
     ? Math.round((attendedCount / totalSessionsCount) * 100) 
-    : 100;
+    : 0;
+  const attendanceLabel = totalSessionsCount > 0 ? `${attendanceRate}%` : '–';
+  const lunasMonths = studentDues.filter((d) => d.tahun === selectedYear && d.status === 'lunas').length;
 
   // Handle Image File Upload (divalidasi & diperkecil di browser)
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -211,7 +231,7 @@ export const StudentPortalView: React.FC<StudentPortalViewProps> = ({
               .filter((s) => s.status !== 'Calon')
               .map((s) => (
                 <option key={s.id} value={s.id}>
-                  {s.nama} ({s.kelasId.toUpperCase()})
+                  {s.nama} ({classes.find((c) => c.id === s.kelasId)?.nama || '-'})
                 </option>
               ))}
           </select>
@@ -227,9 +247,17 @@ export const StudentPortalView: React.FC<StudentPortalViewProps> = ({
         <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6 pt-2">
           {/* Left: Avatar & Bio */}
           <div className="flex items-start gap-4">
-            <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-slate-900 via-slate-800 to-emerald-950 text-white flex items-center justify-center font-display font-black text-xl border-2 border-emerald-500/40 shadow-md shrink-0">
-              {currentStudent.nama.split(' ').map((n) => n[0]).slice(0, 2).join('')}
-            </div>
+            {currentStudent.foto ? (
+              <img
+                src={currentStudent.foto}
+                alt={`Foto ${currentStudent.nama}`}
+                className="w-16 h-16 rounded-2xl object-cover border-2 border-emerald-500/40 shadow-md shrink-0"
+              />
+            ) : (
+              <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-slate-900 via-slate-800 to-emerald-950 text-white flex items-center justify-center font-display font-black text-xl border-2 border-emerald-500/40 shadow-md shrink-0">
+                {currentStudent.nama.split(' ').filter(Boolean).map((n) => n[0]).slice(0, 2).join('')}
+              </div>
+            )}
 
             <div>
               <div className="flex flex-wrap items-center gap-2">
@@ -247,7 +275,7 @@ export const StudentPortalView: React.FC<StudentPortalViewProps> = ({
               <div className="flex flex-wrap items-center gap-y-1 gap-x-3 text-xs text-slate-500 mt-1.5 font-medium">
                 <span>Wali: <strong className="text-slate-700">{currentStudent.orangTua?.namaAyah || currentStudent.orangTua?.namaIbu || 'Orang Tua'}</strong></span>
                 <span>·</span>
-                <span>Pelatih: <strong className="text-slate-700">{studentClass?.pelatih}</strong></span>
+                <span>Pelatih: <strong className="text-slate-700">{studentClass?.pelatih || '-'}</strong></span>
                 <span>·</span>
                 <span>No. WA: <strong className="text-slate-700">{currentStudent.noHp}</strong></span>
                 <span>·</span>
@@ -266,7 +294,7 @@ export const StudentPortalView: React.FC<StudentPortalViewProps> = ({
               <div>
                 <p className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Presensi Latihan</p>
                 <p className="text-base font-display font-black text-slate-900 leading-none">
-                  {attendanceRate}% <span className="text-xs font-normal text-slate-500">({attendedCount}/{totalSessionsCount} sesi)</span>
+                  {attendanceLabel} <span className="text-xs font-normal text-slate-500">({attendedCount}/{totalSessionsCount} sesi)</span>
                 </p>
               </div>
             </div>
@@ -277,9 +305,9 @@ export const StudentPortalView: React.FC<StudentPortalViewProps> = ({
                 <ShieldCheck className="w-5 h-5" />
               </div>
               <div>
-                <p className="text-[10px] uppercase font-bold text-emerald-800 tracking-wider">Status Pembayaran</p>
+                <p className="text-[10px] uppercase font-bold text-emerald-800 tracking-wider">Iuran Lunas {selectedYear}</p>
                 <p className="text-xs font-bold text-emerald-900 mt-0.5">
-                  {studentSubmissions.filter((s) => s.status === 'verified').length} Bulan Terverifikasi
+                  {lunasMonths} Bulan Lunas
                 </p>
               </div>
             </div>
@@ -347,7 +375,19 @@ export const StudentPortalView: React.FC<StudentPortalViewProps> = ({
             }`}
           >
             <Calendar className="w-3.5 h-3.5" />
-            <span>Rekap Kehadiran Latihan ({attendanceRate}%)</span>
+            <span>Rekap Kehadiran Latihan ({attendanceLabel})</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('rapor')}
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer ${
+              activeTab === 'rapor'
+                ? 'bg-emerald-600 text-white shadow-xs'
+                : 'bg-slate-100 text-slate-600 hover:text-slate-900 hover:bg-slate-200'
+            }`}
+          >
+            <FileText className="w-3.5 h-3.5" />
+            <span>Rapor{raporCount > 0 ? ` (${raporCount})` : ''}</span>
           </button>
         </div>
       </div>
@@ -452,7 +492,11 @@ export const StudentPortalView: React.FC<StudentPortalViewProps> = ({
                   </label>
                   <select
                     value={selectedYear}
-                    onChange={(e) => setSelectedYear(Number(e.target.value))}
+                    onChange={(e) => {
+                      const y = Number(e.target.value);
+                      setSelectedYear(y);
+                      setTransferAmount(sisaTagihan(selectedMonth, y));
+                    }}
                     className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-semibold text-slate-800 bg-white focus:outline-emerald-500 cursor-pointer font-bold font-mono"
                   >
                     {getYearOptions(selectedYear).map((y) => (
@@ -552,7 +596,7 @@ export const StudentPortalView: React.FC<StudentPortalViewProps> = ({
                       Klik untuk upload foto bukti transfer
                     </p>
                     <p className="text-[11px] text-slate-400 mt-0.5">
-                      Format PNG, JPG, JPEG (Maks. 5 MB)
+                      JPG, PNG, atau WebP (maks. 10 MB, otomatis diperkecil)
                     </p>
                   </label>
                 ) : (
@@ -644,9 +688,8 @@ export const StudentPortalView: React.FC<StudentPortalViewProps> = ({
               ) : (
                 <div className="space-y-3.5">
                   {displayedSubmissions.map((sub) => {
-                    const period = sub.bulan && sub.tahun 
-                      ? `${monthNames[sub.bulan - 1]} ${sub.tahun}`
-                      : sub.tipe;
+                    const period = submissionPeriodLabel(sub);
+                    const judul = sub.bulan && sub.tahun ? `Iuran ${period}` : sub.tipe === 'Iuran Insidentil' ? `Iuran Insidentil – ${period}` : period;
 
                     return (
                       <div
@@ -664,14 +707,14 @@ export const StudentPortalView: React.FC<StudentPortalViewProps> = ({
                           <div className="space-y-1.5 flex-1 min-w-0">
                             <div className="flex flex-wrap items-center gap-2">
                               <span className="font-display font-bold text-sm text-slate-900">
-                                Iuran {period}
+                                {judul}
                               </span>
 
                               {/* Status Badge */}
                               {sub.status === 'verified' && (
                                 <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[11px] font-bold border border-emerald-200">
                                   <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                                  Terverifikasi Lunas
+                                  Terverifikasi
                                 </span>
                               )}
                               {sub.status === 'pending' && (
@@ -731,7 +774,7 @@ export const StudentPortalView: React.FC<StudentPortalViewProps> = ({
                             <div
                               onClick={() => sub.buktiGambarUrl && setPreviewImage({
                                 url: sub.buktiGambarUrl,
-                                title: `Bukti Transfer Iuran ${period}`,
+                                title: `Bukti Transfer ${judul}`,
                                 nominal: sub.nominal,
                                 tanggal: sub.tanggalTransfer,
                               })}
@@ -941,6 +984,27 @@ export const StudentPortalView: React.FC<StudentPortalViewProps> = ({
         </div>
       )}
 
+      {/* TAB 4: RAPOR */}
+      {activeTab === 'rapor' && (
+        <div className="bg-white rounded-3xl border border-slate-200/80 p-6 shadow-xs space-y-4">
+          <div>
+            <h2 className="text-base font-display font-bold text-slate-900">Rapor Perkembangan Siswa</h2>
+            <p className="text-xs text-slate-500">
+              Laporan penilaian dari pelatih. Ketuk rapor untuk melihat, mencetak, atau menyimpannya sebagai PDF.
+            </p>
+          </div>
+          <RaporSiswaList
+            student={currentStudent}
+            classes={classes}
+            folders={raporFolders}
+            templates={raporTemplates}
+            entries={raporEntries}
+            onOpen={(d) => onOpenRapor?.(d)}
+            emptyText="Belum ada rapor yang diterbitkan."
+          />
+        </div>
+      )}
+
       {/* TAB 3: DATA KEHADIRAN & ABSENSI SISWA */}
       {activeTab === 'absensi' && (
         <div className="bg-white rounded-3xl border border-slate-200/80 p-6 shadow-xs space-y-6">
@@ -958,7 +1022,7 @@ export const StudentPortalView: React.FC<StudentPortalViewProps> = ({
             <div className="bg-slate-50 p-3 rounded-2xl border border-slate-200 sm:w-64">
               <div className="flex justify-between text-xs font-bold mb-1">
                 <span className="text-slate-700">Tingkat Kehadiran:</span>
-                <span className="text-emerald-700">{attendanceRate}%</span>
+                <span className="text-emerald-700">{attendanceLabel}</span>
               </div>
               <div className="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
                 <div
@@ -987,7 +1051,6 @@ export const StudentPortalView: React.FC<StudentPortalViewProps> = ({
                     <th className="py-3 px-3">Topik / Materi</th>
                     <th className="py-3 px-3">Pelatih</th>
                     <th className="py-3 px-3">Status Kehadiran</th>
-                    <th className="py-3 px-3">Catatan Pelatih</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -1003,7 +1066,7 @@ export const StudentPortalView: React.FC<StudentPortalViewProps> = ({
                           {sess.catatan || 'Latihan Rutin Akademi'}
                         </td>
                         <td className="py-3 px-3 text-slate-600">
-                          {sess.pelatih || studentClass?.pelatih}
+                          {sess.pelatih || studentClass?.pelatih || '-'}
                         </td>
                         <td className="py-3 px-3 whitespace-nowrap">
                           {isPresent ? (
@@ -1018,9 +1081,6 @@ export const StudentPortalView: React.FC<StudentPortalViewProps> = ({
                             </span>
                           )}
                         </td>
-                        <td className="py-3 px-3 text-slate-500 text-[11px]">
-                          {sess.catatan || '-'}
-                        </td>
                       </tr>
                     );
                   })}
@@ -1033,8 +1093,8 @@ export const StudentPortalView: React.FC<StudentPortalViewProps> = ({
 
       {/* FULL-RES IMAGE PREVIEW MODAL */}
       {previewImage && (
-        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl max-w-lg w-full overflow-hidden shadow-2xl border border-slate-200">
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex overflow-y-auto p-4">
+          <div className="m-auto bg-white rounded-3xl max-w-lg w-full overflow-hidden shadow-2xl border border-slate-200">
             <div className="p-4 bg-slate-900 text-white flex items-center justify-between">
               <div>
                 <h3 className="font-display font-bold text-sm tracking-tight">

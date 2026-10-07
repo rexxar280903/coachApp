@@ -29,22 +29,27 @@ export const IuranRutinView: React.FC<IuranRutinViewProps> = ({
   onOpenPaymentModal,
   onSelectStudent,
 }) => {
-  const { toast } = useToast();
-  const [selectedClassId, setSelectedClassId] = useState<string>(initialClassId || classes[0]?.id || 'ku-10');
+  const { toast, confirm } = useToast();
+  const [chosenClassId, setSelectedClassId] = useState<string>(initialClassId || classes[0]?.id || '');
   const [selectedYear, setSelectedYear] = useState<number>(getCurrentYear());
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [showNonaktif, setShowNonaktif] = useState<boolean>(false);
 
-  const currentClass = classes.find((c) => c.id === selectedClassId) || classes[0];
+  // Kelas yang dipilih bisa saja sudah dihapus: jatuh ke kelas pertama.
+  const currentClass = classes.find((c) => c.id === chosenClassId) || classes[0];
+  const selectedClassId = currentClass?.id ?? '';
 
   // Filter students by selected class & search query
   const filteredStudents = useMemo(() => {
-    return students.filter((s) => {
-      const matchClass = s.kelasId === selectedClassId;
-      const matchQuery = s.nama.toLowerCase().includes(searchQuery.toLowerCase());
-      const matchStatus = s.status !== 'Calon' && (showNonaktif || s.status !== 'Nonaktif');
-      return matchClass && matchQuery && matchStatus;
-    });
+    const query = searchQuery.trim().toLowerCase();
+    return students
+      .filter((s) => {
+        const matchClass = s.kelasId === selectedClassId;
+        const matchQuery = s.nama.toLowerCase().includes(query);
+        const matchStatus = s.status !== 'Calon' && (showNonaktif || s.status !== 'Nonaktif');
+        return matchClass && matchQuery && matchStatus;
+      })
+      .sort((a, b) => a.nama.localeCompare(b.nama, 'id'));
   }, [students, selectedClassId, searchQuery, showNonaktif]);
 
   const getCellBg = (status: FeeStatus) => {
@@ -66,7 +71,7 @@ export const IuranRutinView: React.FC<IuranRutinViewProps> = ({
     }
   };
 
-  const handleCellClick = (std: Student, monthNumber: number) => {
+  const handleCellClick = async (std: Student, monthNumber: number) => {
     const due = monthlyDues.find(
       (d) => d.siswaId === std.id && d.tahun === selectedYear && d.bulan === monthNumber
     );
@@ -82,16 +87,28 @@ export const IuranRutinView: React.FC<IuranRutinViewProps> = ({
       return;
     }
 
+    const pending = submissions.some(
+      (s) => s.status === 'pending' && s.siswaId === std.id && s.bulan === monthNumber && s.tahun === selectedYear
+    );
+    if (pending) {
+      const ok = await confirm(
+        'Ada Bukti Transfer Menunggu',
+        `Wali ${std.nama} sudah mengirim bukti transfer iuran ${MONTH_NAMES[monthNumber - 1]} ${selectedYear} yang belum diverifikasi. Verifikasi bukti itu (menu Verifikasi Bukti Bayar) agar tidak tercatat ganda. Tetap catat pembayaran manual?`
+      );
+      if (!ok) return;
+    }
+
     const targetDue: MonthlyDueRecord = due || {
       id: `due-${std.id}-${selectedYear}-${monthNumber}`,
       siswaId: std.id,
       tahun: selectedYear,
       bulan: monthNumber,
-      nominal: currentClass?.iuranBulanan || 100000,
+      nominal: currentClass?.iuranBulanan ?? std.iuranBulanan ?? 0,
       terbayar: 0,
       status: 'belum_bayar',
     };
 
+    if (!currentClass) return;
     onOpenPaymentModal(targetDue, std, currentClass);
   };
 

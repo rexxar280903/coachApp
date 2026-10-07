@@ -210,6 +210,15 @@
   .print-only {
     display: block !important;
   }
+  /* Pertahankan warna latar (mis. kepala tabel rapor) saat dicetak */
+  .receipt-print-root {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  @page {
+    size: A4;
+    margin: 14mm;
+  }
 }
 
 /* Toast & Dialog Animations */

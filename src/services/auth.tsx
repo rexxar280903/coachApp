@@ -18,6 +18,9 @@ interface AuthContextValue {
   staff: StaffUser | null;
   /** Login berhasil di Supabase Auth tetapi belum ada baris di tabel profiles. */
   noAccess: boolean;
+  /** Profil staf gagal dimuat (mis. gangguan jaringan) — bukan berarti tidak punya akses. */
+  profileError: string | null;
+  retryProfile: () => void;
   /** Sesi berasal dari tautan reset password. */
   recovery: boolean;
   signIn: (email: string, password: string) => Promise<string | null>;
@@ -41,6 +44,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [session, setSession] = useState<Session | null>(null);
   const [staff, setStaff] = useState<StaffUser | null>(null);
   const [recovery, setRecovery] = useState<boolean>(startedInRecovery);
+  const [profileError, setProfileError] = useState<string | null>(null);
+  const [profileAttempt, setProfileAttempt] = useState<number>(0);
 
   useEffect(() => {
     if (!isSupabaseConfigured) return;
@@ -66,24 +71,40 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (!userId) return;
     let cancelled = false;
     setLoading(true);
+    setProfileError(null);
     supabase
       .from('profiles')
       .select('nama, role')
       .eq('id', userId)
       .maybeSingle()
-      .then(({ data }) => {
-        if (cancelled) return;
-        setStaff(
-          data && (data.role === 'admin' || data.role === 'coach')
-            ? { id: userId, email: userEmail, nama: data.nama || userEmail, role: data.role }
-            : null,
-        );
-        setLoading(false);
-      });
+      .then(
+        ({ data, error }) => {
+          if (cancelled) return;
+          if (error) {
+            setStaff(null);
+            setProfileError(error.message);
+          } else {
+            setStaff(
+              data && (data.role === 'admin' || data.role === 'coach')
+                ? { id: userId, email: userEmail, nama: data.nama || userEmail, role: data.role }
+                : null,
+            );
+          }
+          setLoading(false);
+        },
+        (e: Error) => {
+          if (cancelled) return;
+          setStaff(null);
+          setProfileError(e.message || 'Gagal terhubung ke server.');
+          setLoading(false);
+        },
+      );
     return () => {
       cancelled = true;
     };
-  }, [userId, userEmail]);
+  }, [userId, userEmail, profileAttempt]);
+
+  const retryProfile = useCallback(() => setProfileAttempt((n) => n + 1), []);
 
   const signIn = useCallback(async (email: string, password: string) => {
     const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
@@ -94,6 +115,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     await supabase.auth.signOut();
     setStaff(null);
     setRecovery(false);
+    setProfileError(null);
   }, []);
 
   const sendPasswordReset = useCallback(async (email: string) => {
@@ -113,14 +135,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     () => ({
       loading,
       staff,
-      noAccess: Boolean(session) && !loading && !staff,
+      noAccess: Boolean(session) && !loading && !staff && !profileError,
+      profileError: session ? profileError : null,
+      retryProfile,
       recovery,
       signIn,
       signOut,
       sendPasswordReset,
       updatePassword,
     }),
-    [loading, staff, session, recovery, signIn, signOut, sendPasswordReset, updatePassword],
+    [loading, staff, session, profileError, retryProfile, recovery, signIn, signOut, sendPasswordReset, updatePassword],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

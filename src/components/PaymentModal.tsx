@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react';
-import { getTodayISO, getCurrentYear, getCurrentMonth, getYearOptions } from '../utils/constants';
-import { PaymentMethod, PaymentTransaction } from '../types/sportkit';
+import React, { useState, useEffect, useRef } from 'react';
+import { getTodayISO, getCurrentYear, getCurrentMonth, getYearOptions, MONTH_NAMES } from '../utils/constants';
+import { FeeStatus, PaymentMethod, PaymentTransaction } from '../types/sportkit';
 import { formatRupiah, numberToWordsId } from '../utils/numberToWordsId';
-import { generateReceiptNumber } from '../services/storage';
+import { generateReceiptNumber, refreshReceiptNumbers } from '../services/storage';
+import { FEE_STATUS_LABEL, isNonBillable } from '../utils/payments';
 import { fileToCompressedDataUrl } from '../utils/image';
 import { useToast } from './Toast';
 import { 
@@ -21,11 +22,6 @@ import {
   MessageSquare
 } from 'lucide-react';
 
-const MONTH_NAMES = [
-  'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
-  'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
-];
-
 interface PaymentModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -43,6 +39,8 @@ interface PaymentModalProps {
   periodeInfo?: string;
   bulan?: number;
   tahun?: number;
+  /** Iuran Rutin: status & sisa tagihan periode yang dipilih (untuk mencegah pembayaran ganda). */
+  getPeriodInfo?: (bulan: number, tahun: number) => { status: FeeStatus; sisa: number };
   onSuccess: (
     transaction: PaymentTransaction,
     proofData?: {
@@ -73,10 +71,15 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
   periodeInfo,
   bulan: initialBulan,
   tahun: initialTahun,
+  getPeriodInfo,
   onSuccess,
   onViewReceipt,
 }) => {
   const { toast, confirm } = useToast();
+  // Handler terbaru (dengan data terbaru) dipakai setelah menunggu konfirmasi / jaringan.
+  const latest = useRef({ onSuccess });
+  latest.current = { onSuccess };
+  const [submitting, setSubmitting] = useState<boolean>(false);
   const [tanggal, setTanggal] = useState<string>('');
   const [jumlahBayar, setJumlahBayar] = useState<number>(nominalAwal);
   const [metode, setMetode] = useState<PaymentMethod>('Transfer BCA');
@@ -95,6 +98,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
       setJumlahBayar(nominalAwal);
       setIsSuccess(false);
       setCreatedTx(null);
+      setSubmitting(false);
       setCatatan('');
       setMetode('Tunai');
       const bln = initialBulan || getCurrentMonth();
@@ -107,10 +111,25 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
           ? `Pembayaran iuran bulan ${MONTH_NAMES[bln - 1]} ${thn} untuk ${siswaNama}`
           : `${keterangan} untuk ${siswaNama}`
       );
+      // Siapkan nomor kuitansi terbaru selagi admin mengisi form.
+      refreshReceiptNumbers();
     }
   }, [isOpen, nominalAwal, initialBulan, initialTahun, siswaNama, tipe, keterangan]);
 
   if (!isOpen) return null;
+
+  const isRutin = tipe === 'Iuran Rutin';
+  // Iuran Rutin: sisa tagihan mengikuti periode yang sedang dipilih (bisa diganti admin).
+  const periodInfo = isRutin && getPeriodInfo ? getPeriodInfo(selectedBulan, selectedTahun) : null;
+  const sisaTagihan = periodInfo ? periodInfo.sisa : nominalAwal;
+
+  const changePeriod = (bulan: number, tahun: number) => {
+    setSelectedBulan(bulan);
+    setSelectedTahun(tahun);
+    setPesanPembayaran(`Pembayaran iuran bulan ${MONTH_NAMES[bulan - 1]} ${tahun} untuk ${siswaNama}`);
+    const info = getPeriodInfo?.(bulan, tahun);
+    if (info && info.sisa > 0) setJumlahBayar(info.sisa);
+  };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -125,24 +144,39 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!jumlahBayar || Number(jumlahBayar) <= 0) {
+    if (submitting) return;
+    const jumlah = Number(jumlahBayar);
+    if (!jumlah || jumlah <= 0) {
       toast.error('Nominal tidak valid', 'Jumlah pembayaran harus lebih dari 0.');
       return;
     }
-    const isRutin = tipe === 'Iuran Rutin';
-    // nominalAwal = sisa tagihan untuk periode yang dibuka (berlaku jika periode tidak diganti)
-    const samePeriod = !isRutin || (selectedBulan === (initialBulan || selectedBulan) && selectedTahun === (initialTahun || selectedTahun));
-    if (samePeriod && nominalAwal > 0 && Number(jumlahBayar) > nominalAwal) {
+    if (!tanggal) {
+      toast.error('Tanggal belum diisi', 'Isi tanggal transaksi terlebih dahulu.');
+      return;
+    }
+    const periode = `${MONTH_NAMES[selectedBulan - 1]} ${selectedTahun}`;
+    if (periodInfo?.status === 'lunas') {
+      toast.error('Iuran sudah lunas', `Iuran ${periode} untuk ${siswaNama} sudah lunas. Pilih bulan lain.`);
+      return;
+    }
+    if (periodInfo && isNonBillable(periodInfo.status)) {
+      toast.error('Bulan tidak ditagih', `Iuran ${periode} berstatus "${FEE_STATUS_LABEL[periodInfo.status]}". Pilih bulan lain.`);
+      return;
+    }
+    if (sisaTagihan > 0 && jumlah > sisaTagihan) {
       const ok = await confirm(
         'Kelebihan Bayar?',
-        `Jumlah ${formatRupiah(Number(jumlahBayar))} melebihi sisa tagihan ${formatRupiah(nominalAwal)} (lebih ${formatRupiah(
-          Number(jumlahBayar) - nominalAwal
+        `Jumlah ${formatRupiah(jumlah)} melebihi sisa tagihan ${formatRupiah(sisaTagihan)} (lebih ${formatRupiah(
+          jumlah - sisaTagihan
         )}). Tetap catat pembayaran ini?`
       );
       if (!ok) return;
     }
+
+    setSubmitting(true);
+    // Nomor kuitansi terbaru dari server (admin lain / perangkat lain mungkin baru mencatat).
+    await refreshReceiptNumbers();
     const receiptNo = generateReceiptNumber();
-    const monthLabel = tipe === 'Iuran Rutin' ? ` ${MONTH_NAMES[selectedBulan - 1]} ${selectedTahun}` : '';
     const tx: PaymentTransaction = {
       id: 'tx-' + Date.now(),
       nomorKuitansi: receiptNo,
@@ -150,19 +184,20 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
       siswaNama,
       kelasNama,
       tanggal,
-      nominal: Number(jumlahBayar),
-      terbilang: numberToWordsId(Number(jumlahBayar)),
+      nominal: jumlah,
+      terbilang: numberToWordsId(jumlah),
       metodePembayaran: metode,
       tipe,
-      keterangan: tipe === 'Iuran Rutin' ? `Iuran Rutin${monthLabel}` : keterangan,
+      keterangan: isRutin ? `Iuran Rutin ${periode}` : keterangan,
       catatan: catatan || pesanPembayaran || 'Pembayaran dicatat & diverifikasi Admin.',
     };
 
     setCreatedTx(tx);
     setIsSuccess(true);
+    setSubmitting(false);
     // Periode bulan/tahun hanya relevan untuk Iuran Rutin; tipe lain tidak boleh
     // menyentuh tagihan bulanan.
-    onSuccess(tx, {
+    latest.current.onSuccess(tx, {
       buktiGambarUrl,
       pesanPembayaran: pesanPembayaran || tx.keterangan,
       catatanAdmin: catatan || 'Diinput & diverifikasi langsung oleh Admin.',
@@ -172,8 +207,8 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full border border-slate-200 overflow-hidden">
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/70 backdrop-blur-xs flex p-4">
+      <div className="m-auto bg-white rounded-2xl shadow-2xl max-w-lg w-full border border-slate-200 overflow-hidden">
         {/* Header */}
         <div className="bg-[#090e17] px-6 py-4 flex items-center justify-between text-white border-b border-slate-800">
           <div>
@@ -189,7 +224,9 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
           </div>
           <button
             onClick={onClose}
-            className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+            disabled={submitting}
+            aria-label="Tutup"
+            className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 disabled:opacity-50 transition-colors"
           >
             <X className="w-5 h-5" />
           </button>
@@ -267,6 +304,27 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
               </div>
             </div>
 
+            {/* Rincian Biaya Masuk for Pendaftaran Siswa Baru */}
+            {tipe === 'Pendaftaran Siswa Baru' && (
+              <div className="p-3.5 rounded-2xl bg-emerald-50/70 border border-emerald-200 text-xs space-y-1.5">
+                <span className="text-[11px] font-bold text-emerald-800 uppercase tracking-wider block">
+                  Rincian Biaya Masuk
+                </span>
+                <div className="flex justify-between text-slate-600">
+                  <span>Biaya Pendaftaran Awal:</span>
+                  <span className="font-mono font-semibold">{formatRupiah(biayaPendaftaran ?? 0)}</span>
+                </div>
+                <div className="flex justify-between text-slate-600">
+                  <span>Iuran SPP Perdana:</span>
+                  <span className="font-mono font-semibold">{formatRupiah(iuranBulanan ?? 0)}</span>
+                </div>
+                <div className="flex justify-between text-emerald-900 font-bold pt-1.5 border-t border-emerald-200">
+                  <span>Total Tagihan Masuk:</span>
+                  <span className="font-mono text-sm">{formatRupiah(nominalAwal)}</span>
+                </div>
+              </div>
+            )}
+
             {/* Target Periode (Bulan & Tahun) for Iuran Rutin */}
             {tipe === 'Iuran Rutin' && (
               <div className="p-3.5 rounded-2xl bg-emerald-50/70 border border-emerald-200 space-y-2">
@@ -286,13 +344,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
                     </label>
                     <select
                       value={selectedBulan}
-                      onChange={(e) => {
-                        const b = Number(e.target.value);
-                        setSelectedBulan(b);
-                        setPesanPembayaran(
-                          `Pembayaran iuran bulan ${MONTH_NAMES[b - 1]} ${selectedTahun} untuk ${siswaNama}`
-                        );
-                      }}
+                      onChange={(e) => changePeriod(Number(e.target.value), selectedTahun)}
                       className="w-full text-xs rounded-xl border border-slate-300 bg-white px-3 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer font-semibold"
                     >
                       {MONTH_NAMES.map((m, idx) => (
@@ -308,13 +360,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
                     </label>
                     <select
                       value={selectedTahun}
-                      onChange={(e) => {
-                        const y = Number(e.target.value);
-                        setSelectedTahun(y);
-                        setPesanPembayaran(
-                          `Pembayaran iuran bulan ${MONTH_NAMES[selectedBulan - 1]} ${y} untuk ${siswaNama}`
-                        );
-                      }}
+                      onChange={(e) => changePeriod(selectedBulan, Number(e.target.value))}
                       className="w-full text-xs rounded-xl border border-slate-300 bg-white px-3 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer font-bold font-mono"
                     >
                       {getYearOptions(selectedTahun).map((y) => (
@@ -325,6 +371,17 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
                     </select>
                   </div>
                 </div>
+                {periodInfo && (periodInfo.status === 'lunas' || isNonBillable(periodInfo.status)) ? (
+                  <p className="text-[11px] font-semibold text-rose-700 bg-rose-50 border border-rose-200 rounded-lg px-2.5 py-1.5">
+                    Iuran {MONTH_NAMES[selectedBulan - 1]} {selectedTahun} berstatus "{FEE_STATUS_LABEL[periodInfo.status]}" — pilih bulan lain.
+                  </p>
+                ) : (
+                  periodInfo && (
+                    <p className="text-[11px] text-emerald-800">
+                      Sisa tagihan bulan ini: <span className="font-mono font-bold">{formatRupiah(periodInfo.sisa)}</span>
+                    </p>
+                  )
+                )}
               </div>
             )}
 
@@ -343,15 +400,15 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
               <p className="text-[11px] text-slate-500 mt-1 italic">
                 Terbilang: {numberToWordsId(Number(jumlahBayar))}
               </p>
-              {nominalAwal > 0 && Number(jumlahBayar) > 0 && Number(jumlahBayar) !== nominalAwal && (
+              {sisaTagihan > 0 && Number(jumlahBayar) > 0 && Number(jumlahBayar) !== sisaTagihan && (
                 <p
                   className={`text-[11px] mt-1 font-semibold ${
-                    Number(jumlahBayar) > nominalAwal ? 'text-rose-600' : 'text-amber-600'
+                    Number(jumlahBayar) > sisaTagihan ? 'text-rose-600' : 'text-amber-600'
                   }`}
                 >
-                  {Number(jumlahBayar) > nominalAwal
-                    ? `Melebihi sisa tagihan ${formatRupiah(nominalAwal)}`
-                    : `Dicatat sebagai cicilan — sisa ${formatRupiah(nominalAwal - Number(jumlahBayar))}`}
+                  {Number(jumlahBayar) > sisaTagihan
+                    ? `Melebihi sisa tagihan ${formatRupiah(sisaTagihan)}`
+                    : `Dicatat sebagai cicilan — sisa ${formatRupiah(sisaTagihan - Number(jumlahBayar))}`}
                 </p>
               )}
             </div>
@@ -393,7 +450,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
                     Bukti Pembayaran & Pesan Siswa
                   </h4>
                   <p className="text-[10px] text-slate-500">
-                    Otomatis disimpan di daftar bukti admin dan dapat dilihat oleh siswa di akun portalnya.
+                    Tersimpan sebagai arsip pembayaran dan tampil di riwayat Portal Siswa (foto bukti hanya bisa dibuka admin).
                   </p>
                 </div>
               </div>
@@ -485,15 +542,17 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
               <button
                 type="button"
                 onClick={onClose}
-                className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100 transition-colors"
+                disabled={submitting}
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100 disabled:opacity-50 transition-colors"
               >
                 Batal
               </button>
               <button
                 type="submit"
-                className="px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-sm transition-colors cursor-pointer"
+                disabled={submitting}
+                className="px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 disabled:cursor-not-allowed text-white text-xs font-bold shadow-sm transition-colors cursor-pointer"
               >
-                Konfirmasi & Terbitkan Kuitansi
+                {submitting ? 'Memproses…' : 'Konfirmasi & Terbitkan Kuitansi'}
               </button>
             </div>
           </form>

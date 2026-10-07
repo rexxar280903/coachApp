@@ -16,6 +16,12 @@ Urutan kerja (±30 menit). Semua langkah di sini dilakukan sekali.
 Skema membuat tabel, kebijakan Row Level Security (RLS), fungsi `public_register` / `portal_data` /
 `portal_submit_payment`, dan dua bucket storage: `avatars` (publik) dan `payment-proofs` (privat).
 
+### Pembaruan skema (wajib setelah update aplikasi 7 Okt 2026)
+
+Database yang sudah dibuat sebelumnya **harus menjalankan ulang seluruh `schema.sql`** sekali (aman diulang).
+Pembaruan ini menambah kolom `students.tanggal_status` (tanggal mulai cuti/nonaktif) dan memperbaiki
+`portal_submit_payment` agar wali bisa melunasi sisa cicilan dari Portal Siswa.
+
 ## 3. Pengaturan Auth
 
 Dashboard → **Authentication**:
@@ -74,8 +80,8 @@ transfer** (ditampilkan kepada siswa di Portal Siswa).
 | Pengguna | Halaman | Login | Akses data |
 | --- | --- | --- | --- |
 | Admin | `/` | Email + kata sandi | Semua tabel (RLS `is_admin()`) |
-| Pelatih | `/sesi-absensi` | Email + kata sandi | Baca siswa/kelas/pelatih, baca-tulis absensi |
-| Siswa / wali | `/portal` | No. HP + **kode akses** | Hanya data siswa itu, lewat fungsi `portal_*` |
+| Pelatih | `/sesi-absensi`, `/rapor` | Email + kata sandi | Baca siswa/kelas/pelatih/template & folder rapor, baca-tulis absensi & isian rapor |
+| Siswa / wali | `/portal` | No. HP + **kode akses** | Hanya data siswa itu (termasuk rapor dari folder yang *diterbitkan*), lewat fungsi `portal_*` |
 | Calon siswa | `/daftar` | Tanpa login | Hanya mengirim pendaftaran (status selalu *Calon*) |
 
 Tautan untuk bio Instagram / WhatsApp: `https://domain-anda/daftar`. Tautan portal: `https://domain-anda/portal`.

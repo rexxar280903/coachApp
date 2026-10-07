@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { getTodayISO } from '../utils/constants';
+import { getTodayISO, formatTanggalPanjang } from '../utils/constants';
 import { Coach, CoachStatus, ClassGroup, Student } from '../types/sportkit';
 import { getCoachClasses, isValidPhone, normalizeName, normalizePhone } from '../utils/coaches';
+import { ImageUploadField } from '../components/ImageUploadField';
 import {
   Search,
   Users,
@@ -52,7 +53,7 @@ export const PelatihView: React.FC<PelatihViewProps> = ({
   const [form, setForm] = useState<Omit<Coach, 'id'>>(EMPTY_FORM());
   const [filterStatus, setFilterStatus] = useState<CoachStatus | 'Semua'>('Semua');
   const [search, setSearch] = useState('');
-  const [errors, setErrors] = useState<{ nama?: string; noHp?: string }>({});
+  const [errors, setErrors] = useState<{ nama?: string; noHp?: string; email?: string }>({});
 
   const openCreateModal = () => {
     setEditingCoach(null);
@@ -71,13 +72,14 @@ export const PelatihView: React.FC<PelatihViewProps> = ({
       status: coach.status,
       catatan: coach.catatan || '',
       tanggalBergabung: coach.tanggalBergabung,
+      foto: coach.foto,
     });
     setErrors({});
     setShowModal(true);
   };
 
   const validate = () => {
-    const next: { nama?: string; noHp?: string } = {};
+    const next: { nama?: string; noHp?: string; email?: string } = {};
     const others = coaches.filter((c) => c.id !== editingCoach?.id);
     const nama = form.nama.trim();
 
@@ -88,6 +90,9 @@ export const PelatihView: React.FC<PelatihViewProps> = ({
     if (!isValidPhone(form.noHp)) next.noHp = 'Format nomor HP tidak valid (contoh: 0812-3456-7890).';
     else if (others.some((c) => normalizePhone(c.noHp) === normalizePhone(form.noHp)))
       next.noHp = 'Nomor HP sudah dipakai pelatih lain.';
+
+    if (form.email?.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim()))
+      next.email = 'Format email tidak valid.';
 
     setErrors(next);
     return Object.keys(next).length === 0;
@@ -101,7 +106,9 @@ export const PelatihView: React.FC<PelatihViewProps> = ({
       ...form,
       nama: form.nama.trim(),
       noHp: form.noHp.trim(),
+      email: form.email?.trim() || undefined,
       spesialisasi: form.spesialisasi.trim(),
+      catatan: form.catatan?.trim() || undefined,
     };
 
     if (editingCoach) {
@@ -219,10 +226,14 @@ export const PelatihView: React.FC<PelatihViewProps> = ({
                 {/* Name & Status */}
                 <div className="flex items-start justify-between mb-3">
                   <div className="flex items-center gap-3">
-                    {/* Avatar Initials */}
-                    <div className={`w-11 h-11 rounded-xl flex items-center justify-center text-white font-bold text-sm shrink-0 ${isActive ? 'bg-gradient-to-br from-sky-500 to-emerald-500' : 'bg-slate-400'}`}>
-                      {coach.nama.split(' ').slice(-1)[0]?.charAt(0) || '?'}
-                    </div>
+                    {/* Avatar: foto atau inisial */}
+                    {coach.foto ? (
+                      <img src={coach.foto} alt={`Foto ${coach.nama}`} className="w-11 h-11 rounded-xl object-cover shrink-0 border border-slate-200" />
+                    ) : (
+                      <div className={`w-11 h-11 rounded-xl flex items-center justify-center text-white font-bold text-sm shrink-0 ${isActive ? 'bg-gradient-to-br from-sky-500 to-emerald-500' : 'bg-slate-400'}`}>
+                        {coach.nama.split(' ').slice(-1)[0]?.charAt(0) || '?'}
+                      </div>
+                    )}
                     <div>
                       <p className="text-sm font-bold text-slate-900 leading-tight">{coach.nama}</p>
                       <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full mt-0.5 ${isActive ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-slate-100 text-slate-500 border border-slate-200'}`}>
@@ -269,7 +280,7 @@ export const PelatihView: React.FC<PelatihViewProps> = ({
                   )}
                   <div className="flex items-center gap-2 text-slate-400">
                     <CalendarDays className="w-3.5 h-3.5 shrink-0" />
-                    <span>Bergabung: {new Date(coach.tanggalBergabung).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}</span>
+                    <span>Bergabung: {formatTanggalPanjang(coach.tanggalBergabung)}</span>
                   </div>
                 </div>
 
@@ -306,8 +317,8 @@ export const PelatihView: React.FC<PelatihViewProps> = ({
 
       {/* Modal Tambah / Edit Coach */}
       {showModal && (
-        <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl border border-slate-200 overflow-hidden">
+        <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-sm flex overflow-y-auto p-4">
+          <div className="m-auto bg-white rounded-2xl max-w-md w-full shadow-2xl border border-slate-200 overflow-hidden">
             <div className="h-1 w-full bg-gradient-to-r from-sky-400 to-emerald-400" />
             <div className="p-6">
               <div className="flex items-center justify-between mb-5">
@@ -320,6 +331,13 @@ export const PelatihView: React.FC<PelatihViewProps> = ({
               </div>
 
               <form onSubmit={handleSubmit} className="space-y-3.5">
+                <ImageUploadField
+                  label="Foto Pelatih"
+                  value={form.foto}
+                  onChange={(foto) => setForm({ ...form, foto })}
+                  hint="Opsional. Otomatis diperkecil sebelum diunggah."
+                  placeholder={<span className="text-lg font-black text-slate-500">{form.nama.charAt(0) || '?'}</span>}
+                />
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                   <div className="sm:col-span-2">
                     <label className="block text-xs font-semibold text-slate-700 mb-1">Nama Lengkap Pelatih *</label>
@@ -354,6 +372,7 @@ export const PelatihView: React.FC<PelatihViewProps> = ({
                       placeholder="coach@email.com"
                       className="w-full text-xs rounded-xl border border-slate-300 px-3 py-2.5 text-slate-900 font-mono focus:outline-none focus:ring-2 focus:ring-sky-500"
                     />
+                    {errors.email && <p className="text-[11px] text-rose-600 mt-1">{errors.email}</p>}
                   </div>
 
                   <div>

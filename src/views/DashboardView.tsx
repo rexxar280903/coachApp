@@ -197,7 +197,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   <option value="">-- Pilih Siswa untuk Buka Profil --</option>
                   {activeStudents.map((std) => (
                     <option key={std.id} value={std.id}>
-                      {std.nama} — Kelas {std.kelasId.toUpperCase()}
+                      {std.nama} — Kelas {classes.find((c) => c.id === std.kelasId)?.nama || '-'}
                     </option>
                   ))}
                 </select>
@@ -315,7 +315,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           <div className="pt-4 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
             <span>Sistem Kuitansi: Cetak PDF & Bagikan ke WhatsApp</span>
             <button
-              onClick={() => onSelectClassIuran(classes[0]?.id || 'ku-10')}
+              onClick={() => (classes.length > 0 ? onSelectClassIuran(classes[0].id) : onNavigateKelas())}
               className="text-xs font-semibold text-emerald-600 hover:text-emerald-700 flex items-center gap-1"
             >
               <span>Buka Matriks</span>

@@ -23,6 +23,10 @@ export class ErrorBoundary extends React.Component<{ children: React.ReactNode }
   render() {
     if (!this.state.error) return this.props.children;
 
+    // Halaman awal sesuai area yang sedang dibuka (portal / pendaftaran publik / pengurus).
+    const path = window.location.pathname;
+    const home = path.startsWith('/portal') ? '/portal' : path.startsWith('/daftar') ? '/daftar' : '/';
+
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm max-w-md w-full p-8 text-center space-y-4">
@@ -40,10 +44,10 @@ export class ErrorBoundary extends React.Component<{ children: React.ReactNode }
           </pre>
           <div className="flex items-center justify-center gap-2">
             <button
-              onClick={() => window.location.assign('/dashboard')}
+              onClick={() => window.location.assign(home)}
               className="px-4 py-2 rounded-xl border border-slate-300 text-slate-700 text-xs font-semibold hover:bg-slate-50 cursor-pointer"
             >
-              Ke Dashboard
+              Ke Halaman Utama
             </button>
             <button
               onClick={() => window.location.reload()}

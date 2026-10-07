@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { getTodayISO } from '../utils/constants';
 import { Student, ClassGroup, Gender, ParentInfo } from '../types/sportkit';
 import { formatRupiah } from '../utils/numberToWordsId';
@@ -28,8 +28,8 @@ export const PendaftaranView: React.FC<PendaftaranViewProps> = ({
   const [nama, setNama] = useState<string>('');
   const [alamat, setAlamat] = useState<string>('');
   const [jenisKelamin, setJenisKelamin] = useState<Gender>('Laki-laki');
-  const [tempatLahir, setTempatLahir] = useState<string>('Surabaya');
-  const [tanggalLahir, setTanggalLahir] = useState<string>('2014-05-11');
+  const [tempatLahir, setTempatLahir] = useState<string>('');
+  const [tanggalLahir, setTanggalLahir] = useState<string>('');
   const [noHp, setNoHp] = useState<string>('');
   const [email, setEmail] = useState<string>('');
   const [catatan, setCatatan] = useState<string>('');
@@ -39,12 +39,24 @@ export const PendaftaranView: React.FC<PendaftaranViewProps> = ({
   const [namaIbu, setNamaIbu] = useState<string>('');
   const [noHpIbu, setNoHpIbu] = useState<string>('');
 
-  const [selectedClassId, setSelectedClassId] = useState<string>(initialClassId || classes[0]?.id || 'ku-10');
+  const [selectedClassId, setSelectedClassId] = useState<string>(initialClassId || classes[0]?.id || '');
   const [successBanner, setSuccessBanner] = useState<boolean>(false);
 
+  useEffect(() => {
+    if (initialClassId && classes.some((c) => c.id === initialClassId)) {
+      setSelectedClassId(initialClassId);
+    }
+  }, [initialClassId]);
+
+  useEffect(() => {
+    if (classes.length > 0 && !classes.some((c) => c.id === selectedClassId)) {
+      setSelectedClassId(classes[0].id);
+    }
+  }, [classes, selectedClassId]);
+
   const selectedClass = classes.find((c) => c.id === selectedClassId) || classes[0];
-  const biayaPendaftaran = selectedClass?.biayaPendaftaran || 1000000;
-  const iuranBulanan = selectedClass?.iuranBulanan || 100000;
+  const biayaPendaftaran = Number(selectedClass?.biayaPendaftaran ?? 0);
+  const iuranBulanan = Number(selectedClass?.iuranBulanan ?? 0);
   const totalBiaya = biayaPendaftaran + iuranBulanan;
 
   const [submitting, setSubmitting] = useState<boolean>(false);
@@ -83,8 +95,12 @@ export const PendaftaranView: React.FC<PendaftaranViewProps> = ({
     }
 
     const today = getTodayISO();
-    if (!tanggalLahir || tanggalLahir >= today) {
-      toast.error('Tanggal lahir tidak valid', 'Tanggal lahir harus sebelum hari ini.');
+    if (!tanggalLahir) {
+      toast.error('Tanggal lahir wajib diisi', 'Silakan isi tanggal lahir siswa.');
+      return;
+    }
+    if (tanggalLahir >= today || tanggalLahir < '1950-01-01') {
+      toast.error('Tanggal lahir tidak valid', 'Periksa kembali tanggal lahir siswa.');
       return;
     }
 
@@ -121,7 +137,8 @@ export const PendaftaranView: React.FC<PendaftaranViewProps> = ({
       setSubmitting(false);
     }
 
-    if (isPublicMode && ok !== false) {
+    if (ok === false) return; // gagal disimpan (pesan sudah tampil): biarkan isian tetap ada
+    if (isPublicMode) {
       setSuccessBanner(true);
       return;
     }
@@ -130,6 +147,8 @@ export const PendaftaranView: React.FC<PendaftaranViewProps> = ({
     }
     // Kosongkan form agar data yang sama tidak terkirim dua kali
     setNama('');
+    setTempatLahir('');
+    setTanggalLahir('');
     setNoHp('');
     setEmail('');
     setAlamat('');
@@ -159,9 +178,13 @@ export const PendaftaranView: React.FC<PendaftaranViewProps> = ({
         </div>
         <button
           onClick={() => {
+            // Data orang tua & alamat dibiarkan untuk memudahkan mendaftarkan saudara kandung.
             setSuccessBanner(false);
             setNama('');
+            setTempatLahir('');
+            setTanggalLahir('');
             setNoHp('');
+            setEmail('');
           }}
           className="px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition-colors shadow-sm"
         >
@@ -223,7 +246,7 @@ export const PendaftaranView: React.FC<PendaftaranViewProps> = ({
               >
                 {classes.map((cls) => (
                   <option key={cls.id} value={cls.id}>
-                    {cls.nama} — {cls.deskripsi} (SPP: {formatRupiah(cls.iuranBulanan)}/bln)
+                    {cls.nama} — {cls.deskripsi} (Daftar: {formatRupiah(cls.biayaPendaftaran ?? 0)} | SPP: {formatRupiah(cls.iuranBulanan)}/bln)
                   </option>
                 ))}
               </select>
@@ -285,6 +308,7 @@ export const PendaftaranView: React.FC<PendaftaranViewProps> = ({
               <label className="block text-xs font-semibold text-slate-700 mb-1">Tempat Lahir</label>
               <input
                 type="text"
+                placeholder="Contoh: Surabaya"
                 value={tempatLahir}
                 onChange={(e) => setTempatLahir(e.target.value)}
                 className="w-full text-xs rounded-xl border border-slate-300 px-3 py-2.5 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
@@ -292,9 +316,13 @@ export const PendaftaranView: React.FC<PendaftaranViewProps> = ({
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">Tanggal Lahir</label>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Tanggal Lahir <span className="text-rose-500">*</span>
+              </label>
               <input
                 type="date"
+                required
+                max={getTodayISO()}
                 value={tanggalLahir}
                 onChange={(e) => setTanggalLahir(e.target.value)}
                 className="w-full text-xs rounded-xl border border-slate-300 px-3 py-2.5 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
@@ -304,7 +332,9 @@ export const PendaftaranView: React.FC<PendaftaranViewProps> = ({
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">No. WhatsApp Siswa</label>
               <input
-                type="text"
+                type="tel"
+                inputMode="tel"
+                autoComplete="tel"
                 placeholder="08123456789"
                 value={noHp}
                 onChange={(e) => setNoHp(e.target.value)}
@@ -358,7 +388,9 @@ export const PendaftaranView: React.FC<PendaftaranViewProps> = ({
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">No. WhatsApp Ayah / Wali</label>
               <input
-                type="text"
+                type="tel"
+                inputMode="tel"
+                autoComplete="tel"
                 placeholder="08xxxxxxxxxx"
                 value={noHpAyah}
                 onChange={(e) => setNoHpAyah(e.target.value)}
@@ -380,7 +412,9 @@ export const PendaftaranView: React.FC<PendaftaranViewProps> = ({
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">No. WhatsApp Ibu / Wali</label>
               <input
-                type="text"
+                type="tel"
+                inputMode="tel"
+                autoComplete="tel"
                 placeholder="08xxxxxxxxxx"
                 value={noHpIbu}
                 onChange={(e) => setNoHpIbu(e.target.value)}
@@ -406,16 +440,16 @@ export const PendaftaranView: React.FC<PendaftaranViewProps> = ({
               <button
                 type="button"
                 onClick={() => handleSubmit(false)}
-              disabled={submitting}
-                className="w-full sm:w-auto px-5 py-2.5 rounded-xl border border-slate-300 hover:bg-slate-50 text-slate-700 font-semibold text-xs transition-colors cursor-pointer"
+                disabled={submitting}
+                className="w-full sm:w-auto px-5 py-2.5 rounded-xl border border-slate-300 hover:bg-slate-50 text-slate-700 font-semibold text-xs transition-colors cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
               >
                 Simpan Sebagai Calon Siswa (Verifikasi Nanti)
               </button>
               <button
                 type="button"
                 onClick={() => handleSubmit(true)}
-              disabled={submitting}
-                className="w-full sm:w-auto px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-md transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                disabled={submitting}
+                className="w-full sm:w-auto px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-md transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
               >
                 <CreditCard className="w-4 h-4" />
                 <span>Simpan & Bayar Langsung (Aktifkan)</span>

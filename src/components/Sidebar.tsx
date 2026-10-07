@@ -21,7 +21,8 @@ import {
   UserCheck,
   GraduationCap,
   Upload,
-  CheckCircle2
+  CheckCircle2,
+  ClipboardList
 } from 'lucide-react';
 
 export type ActiveNav = 
@@ -41,6 +42,7 @@ export type ActiveNav =
   | 'profil-siswa'
   | 'sesi-absensi'
   | 'laporan-absensi'
+  | 'rapor'
   | 'student-portal'
   | 'pengaturan';
 
@@ -82,13 +84,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
       {isOpenMobile && (
         <div
           onClick={onCloseMobile}
-          className="fixed inset-0 bg-slate-950/70 backdrop-blur-xs z-40 lg:hidden"
+          className="print:hidden fixed inset-0 bg-slate-950/70 backdrop-blur-xs z-40 lg:hidden"
         />
       )}
 
       {/* Sidebar Container */}
       <aside
-        className={`fixed top-0 bottom-0 left-0 z-40 w-64 bg-[#090e17] text-slate-300 flex flex-col transition-transform duration-300 ease-in-out border-r border-slate-800/80 lg:translate-x-0 ${
+        className={`print:hidden fixed top-0 bottom-0 left-0 z-40 w-64 bg-[#090e17] text-slate-300 flex flex-col transition-transform duration-300 ease-in-out border-r border-slate-800/80 lg:translate-x-0 ${
           isOpenMobile ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
@@ -122,7 +124,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <span>Akses Pelatih Aktif</span>
             </p>
             <p className="text-[11px] text-slate-400 mt-1 leading-snug">
-              Halaman dibatasi khusus absensi harian dan rekap kehadiran siswa.
+              Halaman dibatasi khusus absensi, rekap kehadiran, dan pengisian rapor siswa.
             </p>
           </div>
         )}
@@ -426,6 +428,29 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   </button>
                 </div>
               )}
+            </div>
+          )}
+
+          {/* RAPOR (Admin & Pelatih) */}
+          {(currentRole === 'admin' || currentRole === 'coach') && (
+            <div className="pt-2">
+              <div className="px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                Penilaian
+              </div>
+              <button
+                onClick={() => handleNavClick('rapor')}
+                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all relative ${
+                  isNavActive('rapor')
+                    ? 'bg-slate-800 text-white font-semibold shadow-xs'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+                }`}
+              >
+                {isNavActive('rapor') && (
+                  <span className="absolute left-0 top-2 bottom-2 w-1 rounded-r-md bg-emerald-500" />
+                )}
+                <ClipboardList className="w-4 h-4 text-amber-400" />
+                <span>Rapor Siswa</span>
+              </button>
             </div>
           )}
 
