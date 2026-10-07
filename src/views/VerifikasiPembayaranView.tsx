@@ -1,7 +1,8 @@
 import { ProofImage } from '../components/ProofImage';
 import React, { useState } from 'react';
 import { useToast } from '../components/Toast';
-import { receiptForSubmission, submissionOutcome, defaultVerifyNote } from '../utils/payments';
+import { receiptForSubmission, submissionOutcome, defaultVerifyNote, submissionPeriodLabel } from '../utils/payments';
+import { refreshReceiptNumbers } from '../services/storage';
 import { 
   PaymentSubmission, 
   Student, 
@@ -73,11 +74,6 @@ export const VerifikasiPembayaranView: React.FC<VerifikasiPembayaranViewProps> =
   // Rejection Modal State
   const [rejectingSubmission, setRejectingSubmission] = useState<PaymentSubmission | null>(null);
   const [rejectReason, setRejectReason] = useState<string>('');
-
-  const monthNames = [
-    'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
-    'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
-  ];
 
   // Calculate Stats
   const pendingCount = submissions.filter((s) => s.status === 'pending').length;
@@ -247,7 +243,7 @@ export const VerifikasiPembayaranView: React.FC<VerifikasiPembayaranViewProps> =
             <option value="all">Semua Kelompok Usia / Kelas</option>
             {classes.map((c) => (
               <option key={c.id} value={c.id}>
-                {c.nama} (Pelatih: {c.pelatih})
+                {c.nama}{c.pelatih ? ` (Pelatih: ${c.pelatih})` : ''}
               </option>
             ))}
           </select>
@@ -282,9 +278,7 @@ export const VerifikasiPembayaranView: React.FC<VerifikasiPembayaranViewProps> =
         <div className="grid grid-cols-1 gap-4">
           {filteredSubmissions.map((sub) => {
             const student = students.find((s) => s.id === sub.siswaId);
-            const periodLabel = sub.bulan && sub.tahun 
-              ? `${monthNames[sub.bulan - 1]} ${sub.tahun}`
-              : sub.eventNama || sub.tipe;
+            const periodLabel = submissionPeriodLabel(sub);
 
             return (
               <div
@@ -422,6 +416,7 @@ export const VerifikasiPembayaranView: React.FC<VerifikasiPembayaranViewProps> =
                         <>
                           <button
                             onClick={() => {
+                              refreshReceiptNumbers();
                               setVerifyingSubmission(sub);
                               setAdminNote(defaultVerifyNote(sub, outcomeFor(sub)));
                             }}
@@ -481,8 +476,8 @@ export const VerifikasiPembayaranView: React.FC<VerifikasiPembayaranViewProps> =
 
       {/* MODAL 1: Full-Screen / High-Res Image Preview */}
       {previewImage?.isOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl max-w-xl w-full overflow-hidden shadow-2xl border border-slate-200 animate-in fade-in zoom-in-95 duration-150">
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex overflow-y-auto p-4">
+          <div className="m-auto bg-white rounded-3xl max-w-xl w-full overflow-hidden shadow-2xl border border-slate-200 animate-scale-in">
             <div className="p-4 bg-slate-900 text-white flex items-center justify-between">
               <div>
                 <h3 className="font-display font-bold text-sm tracking-tight">
@@ -529,8 +524,8 @@ export const VerifikasiPembayaranView: React.FC<VerifikasiPembayaranViewProps> =
 
       {/* MODAL 2: Admin Verification Confirmation */}
       {verifyingSubmission && (
-        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl max-w-lg w-full overflow-hidden shadow-2xl border border-slate-200 animate-in fade-in zoom-in-95 duration-150">
+        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex overflow-y-auto p-4">
+          <div className="m-auto bg-white rounded-3xl max-w-lg w-full overflow-hidden shadow-2xl border border-slate-200 animate-scale-in">
             <div className="p-5 bg-gradient-to-r from-emerald-700 to-teal-800 text-white">
               <div className="flex items-center gap-2 mb-1">
                 <ShieldCheck className="w-5 h-5 text-emerald-300" />
@@ -542,7 +537,7 @@ export const VerifikasiPembayaranView: React.FC<VerifikasiPembayaranViewProps> =
                 Verifikasi & Ceklist Lunas Iuran
               </h3>
               <p className="text-xs text-emerald-100 mt-0.5">
-                Status siswa akan otomatis ditandai LUNAS dan kuitansi resmi diterbitkan.
+                Pembayaran dicatat ke tagihan siswa dan kuitansi resmi diterbitkan.
               </p>
             </div>
 
@@ -559,11 +554,7 @@ export const VerifikasiPembayaranView: React.FC<VerifikasiPembayaranViewProps> =
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-500">Periode Iuran:</span>
-                  <span className="font-bold text-emerald-700">
-                    {verifyingSubmission.bulan && verifyingSubmission.tahun
-                      ? `${monthNames[verifyingSubmission.bulan - 1]} ${verifyingSubmission.tahun}`
-                      : verifyingSubmission.tipe}
-                  </span>
+                  <span className="font-bold text-emerald-700">{submissionPeriodLabel(verifyingSubmission)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-500">Nominal Transfer:</span>
@@ -643,8 +634,8 @@ export const VerifikasiPembayaranView: React.FC<VerifikasiPembayaranViewProps> =
 
       {/* MODAL 3: Rejection Dialog */}
       {rejectingSubmission && (
-        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl max-w-md w-full overflow-hidden shadow-2xl border border-slate-200 animate-in fade-in zoom-in-95 duration-150">
+        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex overflow-y-auto p-4">
+          <div className="m-auto bg-white rounded-3xl max-w-md w-full overflow-hidden shadow-2xl border border-slate-200 animate-scale-in">
             <div className="p-5 bg-gradient-to-r from-rose-700 to-rose-900 text-white">
               <div className="flex items-center gap-2 mb-1">
                 <XCircle className="w-5 h-5 text-rose-300" />

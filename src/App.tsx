@@ -47,7 +47,7 @@ const PortalGate: React.FC = () => {
 
 /** Halaman pengurus (admin / pelatih): wajib login Supabase Auth. */
 const StaffGate: React.FC = () => {
-  const { loading, staff, noAccess, signOut } = useAuth();
+  const { loading, staff, noAccess, profileError, retryProfile, signOut } = useAuth();
   const { pathname } = useLocation();
 
   if (loading) {
@@ -55,6 +55,31 @@ const StaffGate: React.FC = () => {
       <div className="min-h-screen bg-slate-50 flex items-center justify-center">
         <div className="w-8 h-8 rounded-full border-2 border-emerald-500 border-t-transparent animate-spin" />
       </div>
+    );
+  }
+
+  if (profileError) {
+    return (
+      <FullScreenMessage title="Gagal memuat akun">
+        <p className="text-xs text-slate-600 leading-relaxed">
+          Data akun tidak dapat dimuat. Periksa koneksi internet lalu coba lagi.
+        </p>
+        <p className="text-[11px] font-mono text-slate-400 break-words">{profileError}</p>
+        <div className="flex gap-2">
+          <button
+            onClick={retryProfile}
+            className="flex-1 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm cursor-pointer"
+          >
+            Coba lagi
+          </button>
+          <button
+            onClick={signOut}
+            className="flex-1 px-4 py-2.5 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold text-sm cursor-pointer"
+          >
+            Keluar
+          </button>
+        </div>
+      </FullScreenMessage>
     );
   }
 

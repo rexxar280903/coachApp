@@ -2,8 +2,9 @@ import React, { useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { PaymentTransaction, ClubProfile } from '../types/sportkit';
 import { formatRupiah } from '../utils/numberToWordsId';
+import { formatTanggalPanjang } from '../utils/constants';
 import { BRAND_NAME, BRAND_LOGO } from '../utils/brand';
-import { Printer, X, Share2, CheckCircle2, Building, ShieldCheck, Award } from 'lucide-react';
+import { Printer, X, Share2, CheckCircle2, ShieldCheck } from 'lucide-react';
 
 interface ReceiptModalProps {
   transaction: PaymentTransaction | null;
@@ -22,15 +23,23 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
 
   if (!isOpen || !transaction) return null;
 
+  const tanggal = formatTanggalPanjang(transaction.tanggal);
+  const alamat = [profile.alamat, profile.kota].filter(Boolean).join(', ');
+  const kontak = [profile.noHp && `Telp/WA: ${profile.noHp}`, profile.email].filter(Boolean).join(' | ');
+
   const handlePrint = () => {
+    // Judul dokumen menjadi nama file default saat "Simpan sebagai PDF".
+    const prevTitle = document.title;
+    document.title = `Kuitansi ${transaction.nomorKuitansi} - ${transaction.siswaNama}`;
     window.print();
+    document.title = prevTitle;
   };
 
   const handleSendWhatsApp = () => {
     const text = encodeURIComponent(
       `*KUITANSI RESMI PEMBAYARAN - ${profile.namaKlub}*\n\n` +
       `No. Kuitansi: ${transaction.nomorKuitansi}\n` +
-      `Tanggal: ${transaction.tanggal}\n` +
+      `Tanggal: ${tanggal}\n` +
       `Nama Atlet: ${transaction.siswaNama} (${transaction.kelasNama})\n` +
       `Untuk: ${transaction.tipe} - ${transaction.keterangan}\n` +
       `Metode: ${transaction.metodePembayaran}\n` +
@@ -45,8 +54,8 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
   // Dirender di luar #root agar saat dicetak hanya kuitansi yang tampil
   // (#root disembunyikan oleh aturan @media print di index.css).
   return createPortal(
-    <div className="receipt-print-root fixed inset-0 z-50 overflow-y-auto bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4 print:static print:block print:overflow-visible print:p-0 print:bg-white print:backdrop-blur-none">
-      <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full border border-slate-200 overflow-hidden print:border-none print:shadow-none">
+    <div className="receipt-print-root fixed inset-0 z-50 overflow-y-auto bg-slate-950/70 backdrop-blur-xs flex p-4 print:static print:block print:overflow-visible print:p-0 print:bg-white print:backdrop-blur-none">
+      <div className="m-auto bg-white rounded-2xl shadow-2xl max-w-2xl w-full border border-slate-200 overflow-hidden print:border-none print:shadow-none">
         {/* Header Action Bar (Hidden in Print) */}
         <div className="bg-[#090e17] text-white px-6 py-4 flex items-center justify-between border-b border-slate-800 print:hidden">
           <div className="flex items-center gap-2">
@@ -71,6 +80,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
             </button>
             <button
               onClick={onClose}
+              aria-label="Tutup"
               className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors cursor-pointer"
             >
               <X className="w-5 h-5" />
@@ -88,12 +98,8 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
                 <h2 className="text-base font-display font-black tracking-tight text-slate-900 uppercase">
                   {profile.namaKlub}
                 </h2>
-                <p className="text-[11px] text-slate-600 max-w-xs leading-relaxed">
-                  {profile.alamat}, {profile.kota}
-                </p>
-                <p className="text-[10px] text-slate-500 font-mono">
-                  Telp/WA: {profile.noHp} {profile.email ? `| ${profile.email}` : ''}
-                </p>
+                {alamat && <p className="text-[11px] text-slate-600 max-w-xs leading-relaxed">{alamat}</p>}
+                {kontak && <p className="text-[10px] text-slate-500 font-mono">{kontak}</p>}
               </div>
             </div>
 
@@ -105,7 +111,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
                 {transaction.nomorKuitansi}
               </p>
               <p className="text-[11px] text-slate-500 font-mono">
-                {transaction.tanggal}
+                {tanggal}
               </p>
             </div>
           </div>
@@ -168,7 +174,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
 
             <div className="text-center min-w-[140px]">
               <p className="text-slate-500 text-[11px] font-mono">
-                {profile.kota}, {transaction.tanggal}
+                {[profile.kota, tanggal].filter(Boolean).join(', ')}
               </p>
               <p className="text-slate-600 font-medium mt-0.5">Bendahara / Pengurus Klub</p>
               <div className="h-14 flex items-center justify-center text-slate-300 italic text-[11px]">

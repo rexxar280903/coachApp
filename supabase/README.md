@@ -16,6 +16,12 @@ Urutan kerja (±30 menit). Semua langkah di sini dilakukan sekali.
 Skema membuat tabel, kebijakan Row Level Security (RLS), fungsi `public_register` / `portal_data` /
 `portal_submit_payment`, dan dua bucket storage: `avatars` (publik) dan `payment-proofs` (privat).
 
+### Pembaruan skema (wajib setelah update aplikasi 7 Okt 2026)
+
+Database yang sudah dibuat sebelumnya **harus menjalankan ulang seluruh `schema.sql`** sekali (aman diulang).
+Pembaruan ini menambah kolom `students.tanggal_status` (tanggal mulai cuti/nonaktif) dan memperbaiki
+`portal_submit_payment` agar wali bisa melunasi sisa cicilan dari Portal Siswa.
+
 ## 3. Pengaturan Auth
 
 Dashboard → **Authentication**:

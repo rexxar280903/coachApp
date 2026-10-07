@@ -187,7 +187,8 @@ export function receiptForSubmission(
   );
   if (existing) return existing;
 
-  const periode = sub.bulan ? ` ${MONTH_NAMES[sub.bulan - 1]} ${sub.tahun || ''}`.trimEnd() : '';
+  const tipe = sub.tipe === 'Pendaftaran' ? 'Pendaftaran Siswa Baru' : sub.tipe;
+  const label = submissionPeriodLabel(sub);
   return {
     id: sub.transactionId || `tx-${sub.id}`,
     nomorKuitansi: sub.kuitansiId || '-',
@@ -198,10 +199,18 @@ export function receiptForSubmission(
     nominal: sub.nominal,
     terbilang: numberToWordsId(sub.nominal),
     metodePembayaran: sub.metodePembayaran,
-    tipe: sub.tipe === 'Pendaftaran' ? 'Pendaftaran Siswa Baru' : sub.tipe,
-    keterangan: `${sub.tipe}${periode}`,
+    tipe,
+    keterangan: label === tipe ? tipe : `${sub.tipe} ${label}`,
     catatan: sub.catatanAdmin,
   };
+}
+
+/** Label periode / keperluan sebuah bukti bayar, mis. "Oktober 2026", nama event, atau "Pendaftaran Siswa Baru". */
+export function submissionPeriodLabel(sub: Pick<PaymentSubmission, 'tipe' | 'bulan' | 'tahun' | 'eventNama'>): string {
+  if (sub.bulan && sub.tahun) return `${MONTH_NAMES[sub.bulan - 1]} ${sub.tahun}`;
+  if (sub.tipe === 'Iuran Insidentil') return sub.eventNama || 'Event / Kegiatan';
+  if (sub.tipe === 'Pendaftaran') return 'Pendaftaran Siswa Baru';
+  return sub.tipe;
 }
 
 /** Sisa tagihan iuran bulan tertentu (tarif dipakai bila record belum ada / bernominal 0). */

@@ -41,20 +41,26 @@ export const CalonSiswaView: React.FC<CalonSiswaViewProps> = ({
   const [applicantToDelete, setApplicantToDelete] = useState<Student | null>(null);
   const [showBulkDeleteModal, setShowBulkDeleteModal] = useState<boolean>(false);
 
+  const query = searchQuery.trim().toLowerCase();
   const applicants = students.filter(
     (s) =>
       s.status === 'Calon' &&
-      (s.nama.toLowerCase().includes(searchQuery.toLowerCase()) ||
-       s.noHp.includes(searchQuery))
+      (s.nama.toLowerCase().includes(query) || s.noHp.includes(query))
   );
+
+  // Pilihan yang berlaku hanya calon yang sedang tampil (calon yang sudah diaktifkan / tersaring
+  // pencarian tidak ikut terhapus walau sebelumnya dicentang).
+  const visibleSelectedIds = selectedIds.filter((id) => applicants.some((a) => a.id === id));
+  const allVisibleSelected = applicants.length > 0 && visibleSelectedIds.length === applicants.length;
 
   const handlePayClick = (applicant: Student) => {
     const cls = classes.find((c) => c.id === applicant.kelasId) || classes[0];
+    if (!cls) return;
     onOpenApplicantPaymentModal(applicant, cls);
   };
 
   const toggleSelectAll = () => {
-    if (selectedIds.length === applicants.length) {
+    if (allVisibleSelected) {
       setSelectedIds([]);
     } else {
       setSelectedIds(applicants.map((a) => a.id));
@@ -79,9 +85,9 @@ export const CalonSiswaView: React.FC<CalonSiswaViewProps> = ({
 
   const handleConfirmBulkDelete = () => {
     if (onDeleteBulkApplicants) {
-      onDeleteBulkApplicants(selectedIds);
+      onDeleteBulkApplicants(visibleSelectedIds);
     } else {
-      selectedIds.forEach((id) => onDeleteApplicant(id));
+      visibleSelectedIds.forEach((id) => onDeleteApplicant(id));
     }
     setSelectedIds([]);
     setShowBulkDeleteModal(false);
@@ -133,13 +139,13 @@ export const CalonSiswaView: React.FC<CalonSiswaViewProps> = ({
         </div>
 
         <div className="flex items-center gap-2">
-          {selectedIds.length > 0 && (
+          {visibleSelectedIds.length > 0 && (
             <button
               onClick={() => setShowBulkDeleteModal(true)}
               className="px-3 py-1.5 rounded-lg bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
             >
               <Trash2 className="w-3.5 h-3.5" />
-              <span>Hapus ({selectedIds.length}) Terpilih</span>
+              <span>Hapus ({visibleSelectedIds.length}) Terpilih</span>
             </button>
           )}
 
@@ -148,7 +154,7 @@ export const CalonSiswaView: React.FC<CalonSiswaViewProps> = ({
               onClick={toggleSelectAll}
               className="px-3 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 text-xs font-semibold text-slate-700 flex items-center gap-1.5 transition-colors cursor-pointer"
             >
-              {selectedIds.length === applicants.length ? (
+              {allVisibleSelected ? (
                 <>
                   <CheckSquare className="w-3.5 h-3.5 text-emerald-600" />
                   <span>Batal Pilih Semua</span>
@@ -173,7 +179,7 @@ export const CalonSiswaView: React.FC<CalonSiswaViewProps> = ({
                 <th className="py-3 px-4 w-10 text-center">
                   <input
                     type="checkbox"
-                    checked={applicants.length > 0 && selectedIds.length === applicants.length}
+                    checked={allVisibleSelected}
                     onChange={toggleSelectAll}
                     className="rounded border-slate-700 cursor-pointer"
                   />
@@ -222,7 +228,7 @@ export const CalonSiswaView: React.FC<CalonSiswaViewProps> = ({
                             {app.noHp}
                           </span>
                           <span aria-hidden="true">·</span>
-                          <span>Ortu: {app.orangTua.namaAyah}</span>
+                          <span>Ortu: {app.orangTua?.namaAyah || app.orangTua?.namaIbu || '-'}</span>
                         </div>
                       </td>
                       <td className="py-3 px-4">
@@ -230,7 +236,7 @@ export const CalonSiswaView: React.FC<CalonSiswaViewProps> = ({
                           {cls?.nama || app.kelasId.toUpperCase()}
                         </span>
                         <p className="text-[10px] text-slate-400">
-                          Iuran: {formatRupiah(cls?.iuranBulanan || 100000)}/bln
+                          Iuran: {formatRupiah(cls?.iuranBulanan ?? app.iuranBulanan ?? 0)}/bln
                         </p>
                       </td>
                       <td className="py-3 px-4">
@@ -273,8 +279,8 @@ export const CalonSiswaView: React.FC<CalonSiswaViewProps> = ({
 
       {/* Delete Single Confirmation Modal */}
       {applicantToDelete && (
-        <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-sm w-full p-6 shadow-2xl border border-slate-200">
+        <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex overflow-y-auto p-4">
+          <div className="m-auto bg-white rounded-2xl max-w-sm w-full p-6 shadow-2xl border border-slate-200">
             <div className="w-12 h-12 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center mx-auto mb-4 border border-rose-100">
               <AlertTriangle className="w-6 h-6" />
             </div>
@@ -304,13 +310,13 @@ export const CalonSiswaView: React.FC<CalonSiswaViewProps> = ({
 
       {/* Bulk Delete Modal */}
       {showBulkDeleteModal && (
-        <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-sm w-full p-6 shadow-2xl border border-slate-200">
+        <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex overflow-y-auto p-4">
+          <div className="m-auto bg-white rounded-2xl max-w-sm w-full p-6 shadow-2xl border border-slate-200">
             <div className="w-12 h-12 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center mx-auto mb-4 border border-rose-100">
               <AlertTriangle className="w-6 h-6" />
             </div>
             <h3 className="text-base font-display font-bold text-slate-900 text-center mb-1">
-              Hapus {selectedIds.length} Calon Siswa Terpilih?
+              Hapus {visibleSelectedIds.length} Calon Siswa Terpilih?
             </h3>
             <p className="text-xs text-slate-500 text-center mb-6">
               Semua calon siswa yang dicentang akan dihapus permanen. Tindakan ini tidak dapat dibatalkan.

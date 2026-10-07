@@ -37,6 +37,13 @@ export function getTodayISO(): string {
   return `${now.getFullYear()}-${mm}-${dd}`;
 }
 
+/** YYYY-MM-DD → "7 Oktober 2026" (teks asli dikembalikan bila formatnya tidak dikenali). */
+export function formatTanggalPanjang(iso: string): string {
+  const [y, m, d] = (iso || '').slice(0, 10).split('-').map(Number);
+  if (!y || !m || !d || m > 12) return iso || '-';
+  return `${d} ${MONTH_NAMES[m - 1]} ${y}`;
+}
+
 /**
  * Year options for dropdowns: a few years back through next year,
  * always including any extra years passed in (e.g. the selected year).

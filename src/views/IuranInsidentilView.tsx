@@ -383,8 +383,8 @@ export const IuranInsidentilView: React.FC<IuranInsidentilViewProps> = ({
 
       {/* Add Participant Modal */}
       {showAddParticipantModal && currentEvent && (
-        <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 flex flex-col max-h-[90vh]">
+        <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex overflow-y-auto p-4">
+          <div className="m-auto bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 flex flex-col max-h-[90vh]">
             <h3 className="text-base font-display font-bold text-slate-900 pb-2 border-b border-slate-100">
               Tambah Peserta — {currentEvent.nama}
             </h3>
@@ -472,8 +472,8 @@ export const IuranInsidentilView: React.FC<IuranInsidentilViewProps> = ({
 
       {/* Add Event Modal */}
       {showAddEventModal && (
-        <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200">
+        <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex overflow-y-auto p-4">
+          <div className="m-auto bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200">
             <h3 className="text-base font-display font-bold text-slate-900 mb-4 pb-2 border-b border-slate-100">
               {editingEventId ? 'Edit Event & Iuran Insidentil' : 'Buat Event & Iuran Insidentil Baru'}
             </h3>
@@ -499,6 +499,7 @@ export const IuranInsidentilView: React.FC<IuranInsidentilViewProps> = ({
                 <input
                   type="number"
                   required
+                  min={1}
                   value={newEventFee}
                   onChange={(e) => setNewEventFee(Number(e.target.value))}
                   className="w-full text-xs rounded-xl border border-slate-300 px-3 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"

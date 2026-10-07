@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { ClassGroup, Student, Coach } from '../types/sportkit';
 import { formatRupiah } from '../utils/numberToWordsId';
 import { getClassCoaches, getClassCoachLabel } from '../utils/coaches';
+import { useToast } from '../components/Toast';
 import { 
   Plus, 
   Layers, 
@@ -36,6 +37,7 @@ export const KelasManagerView: React.FC<KelasManagerViewProps> = ({
   onDeleteClass,
   onNavigateNewRegistration,
 }) => {
+  const { toast, confirm } = useToast();
   const [showModal, setShowModal] = useState<boolean>(false);
   const [editingClass, setEditingClass] = useState<ClassGroup | null>(null);
 
@@ -77,6 +79,15 @@ export const KelasManagerView: React.FC<KelasManagerViewProps> = ({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!nama.trim()) return;
+    const namaKelas = nama.trim().toUpperCase();
+    if (classes.some((c) => c.id !== editingClass?.id && c.nama.trim().toUpperCase() === namaKelas)) {
+      toast.error('Nama kelas sudah dipakai', `Kelas "${namaKelas}" sudah ada. Gunakan nama lain.`);
+      return;
+    }
+    if (Number(iuranBulanan) < 0 || Number(biayaPendaftaran) < 0) {
+      toast.error('Tarif tidak valid', 'SPP bulanan dan biaya pendaftaran tidak boleh negatif.');
+      return;
+    }
 
     const pelatihNama = pelatihIds
       .map((id) => coaches.find((c) => c.id === id)?.nama)
@@ -86,7 +97,7 @@ export const KelasManagerView: React.FC<KelasManagerViewProps> = ({
     if (editingClass) {
       onUpdateClass({
         ...editingClass,
-        nama: nama.trim().toUpperCase(),
+        nama: namaKelas,
         deskripsi: deskripsi.trim(),
         iuranBulanan: Number(iuranBulanan),
         biayaPendaftaran: Number(biayaPendaftaran),
@@ -96,7 +107,7 @@ export const KelasManagerView: React.FC<KelasManagerViewProps> = ({
     } else {
       const newClass: ClassGroup = {
         id: 'cls-' + Date.now(),
-        nama: nama.trim().toUpperCase(),
+        nama: namaKelas,
         deskripsi: deskripsi.trim() || 'Kelompok Kelas Olahraga',
         iuranBulanan: Number(iuranBulanan),
         biayaPendaftaran: Number(biayaPendaftaran),
@@ -108,12 +119,27 @@ export const KelasManagerView: React.FC<KelasManagerViewProps> = ({
     setShowModal(false);
   };
 
-  const handleConfirmDelete = () => {
-    if (classToDelete) {
-      onDeleteClass(classToDelete.id, reassignClassId || undefined);
-      setClassToDelete(null);
-      setReassignClassId('');
+  // Default: siswa dipindah ke kelas lain. Menghapus siswa harus dipilih secara sadar.
+  const openDeleteModal = (cls: ClassGroup) => {
+    const hasMembers = students.some((s) => s.kelasId === cls.id);
+    setClassToDelete(cls);
+    setReassignClassId(hasMembers ? classes.find((c) => c.id !== cls.id)?.id ?? '' : '');
+  };
+
+  const membersOfDeleted = classToDelete ? students.filter((s) => s.kelasId === classToDelete.id) : [];
+
+  const handleConfirmDelete = async () => {
+    if (!classToDelete) return;
+    if (!reassignClassId && membersOfDeleted.length > 0) {
+      const ok = await confirm(
+        'Hapus Siswa Juga?',
+        `${membersOfDeleted.length} siswa di kelas ${classToDelete.nama} beserta riwayat iuran, absensi, dan rapornya akan DIHAPUS PERMANEN. Transaksi/kuitansi tetap tersimpan sebagai arsip.`
+      );
+      if (!ok) return;
     }
+    onDeleteClass(classToDelete.id, reassignClassId || undefined);
+    setClassToDelete(null);
+    setReassignClassId('');
   };
 
   return (
@@ -175,7 +201,7 @@ export const KelasManagerView: React.FC<KelasManagerViewProps> = ({
                     </button>
                     {classes.length > 1 && (
                       <button
-                        onClick={() => setClassToDelete(cls)}
+                        onClick={() => openDeleteModal(cls)}
                         className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
                         title="Hapus kelas"
                       >
@@ -245,8 +271,8 @@ export const KelasManagerView: React.FC<KelasManagerViewProps> = ({
 
       {/* Modal Tambah / Edit Kelas */}
       {showModal && (
-        <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200">
+        <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex overflow-y-auto p-4">
+          <div className="m-auto bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
               <h3 className="text-base font-display font-bold text-slate-900">
                 {editingClass ? 'Edit Kelompok Kelas' : 'Buat Kelompok Kelas Baru'}
@@ -327,6 +353,7 @@ export const KelasManagerView: React.FC<KelasManagerViewProps> = ({
                   <input
                     type="number"
                     required
+                    min={0}
                     value={iuranBulanan}
                     onChange={(e) => setIuranBulanan(Number(e.target.value))}
                     className="w-full text-xs rounded-xl border border-slate-300 px-3 py-2 text-slate-900 font-mono focus:outline-none focus:ring-2 focus:ring-emerald-500"
@@ -339,6 +366,7 @@ export const KelasManagerView: React.FC<KelasManagerViewProps> = ({
                   <input
                     type="number"
                     required
+                    min={0}
                     value={biayaPendaftaran}
                     onChange={(e) => setBiayaPendaftaran(Number(e.target.value))}
                     className="w-full text-xs rounded-xl border border-slate-300 px-3 py-2 text-slate-900 font-mono focus:outline-none focus:ring-2 focus:ring-emerald-500"
@@ -368,34 +396,43 @@ export const KelasManagerView: React.FC<KelasManagerViewProps> = ({
 
       {/* Delete Confirmation Modal with Reassign */}
       {classToDelete && (
-        <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-sm w-full p-6 shadow-2xl border border-slate-200">
+        <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex overflow-y-auto p-4">
+          <div className="m-auto bg-white rounded-2xl max-w-sm w-full p-6 shadow-2xl border border-slate-200">
             <h3 className="text-base font-display font-bold text-slate-900 mb-2">
               Hapus Kelompok Kelas {classToDelete.nama}?
             </h3>
             <p className="text-xs text-slate-500 mb-4 leading-relaxed">
-              Jika terdapat siswa di kelas ini, Anda dapat memindahkannya ke kelas lain atau menghapusnya.
+              {membersOfDeleted.length > 0
+                ? `Kelas ini memiliki ${membersOfDeleted.length} siswa. Pindahkan mereka ke kelas lain (disarankan) atau hapus bersama kelasnya. Sesi absensi & folder rapor ikut pindah ke kelas tujuan.`
+                : 'Kelas ini tidak memiliki siswa. Sesi absensi kelas ini ikut terhapus.'}
             </p>
 
-            <div className="mb-4">
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Pindahkan Siswa ke Kelas:
-              </label>
-              <select
-                value={reassignClassId}
-                onChange={(e) => setReassignClassId(e.target.value)}
-                className="w-full text-xs rounded-xl border border-slate-300 px-3 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-              >
-                <option value="">-- Jangan Pindahkan (Hapus Siswa) --</option>
-                {classes
-                  .filter((c) => c.id !== classToDelete.id)
-                  .map((c) => (
-                    <option key={c.id} value={c.id}>
-                      Pindahkan ke {c.nama}
-                    </option>
-                  ))}
-              </select>
-            </div>
+            {membersOfDeleted.length > 0 && (
+              <div className="mb-4">
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Pindahkan Siswa ke Kelas:
+                </label>
+                <select
+                  value={reassignClassId}
+                  onChange={(e) => setReassignClassId(e.target.value)}
+                  className="w-full text-xs rounded-xl border border-slate-300 px-3 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                >
+                  {classes
+                    .filter((c) => c.id !== classToDelete.id)
+                    .map((c) => (
+                      <option key={c.id} value={c.id}>
+                        Pindahkan ke {c.nama}
+                      </option>
+                    ))}
+                  <option value="">Jangan pindahkan — HAPUS {membersOfDeleted.length} siswa</option>
+                </select>
+                {!reassignClassId && (
+                  <p className="text-[11px] font-semibold text-rose-600 mt-1.5">
+                    Data siswa beserta riwayat iuran, absensi, dan rapornya akan dihapus permanen.
+                  </p>
+                )}
+              </div>
+            )}
 
             <div className="flex items-center justify-end gap-2 pt-2">
               <button

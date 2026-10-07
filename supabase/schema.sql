@@ -128,6 +128,7 @@ create table if not exists public.students (
   status                   text not null default 'Calon' check (status in ('Calon', 'Aktif', 'Cuti', 'Nonaktif')),
   catatan                  text,
   tanggal_bergabung        text not null default '',
+  tanggal_status           text,   -- YYYY-MM-DD status terakhir diubah (awal cuti / nonaktif)
   biaya_pendaftaran        bigint not null default 0,
   iuran_bulanan            bigint not null default 0,
   total_biaya_pendaftaran  bigint not null default 0,
@@ -135,6 +136,8 @@ create table if not exists public.students (
   kode_akses               text not null default public.gen_kode_akses(),
   created_at               timestamptz not null default now()
 );
+-- Untuk database yang dibuat dari versi skema sebelumnya:
+alter table public.students add column if not exists tanggal_status text;
 create unique index if not exists students_kode_akses_key on public.students (kode_akses);
 create index if not exists students_kelas_idx on public.students (kelas_id);
 create index if not exists students_status_idx on public.students (status);
@@ -531,6 +534,9 @@ begin
   end if;
   select * into v_student from public.students where id = v_id;
   select * into v_class from public.classes where id = v_student.kelas_id;
+  if v_student.status = 'Calon' then
+    raise exception 'Siswa belum aktif. Iuran bulanan mulai ditagih setelah pendaftaran dikonfirmasi pengurus.' using errcode = 'P0001';
+  end if;
 
   v_bulan := (p->>'bulan')::int;
   v_tahun := (p->>'tahun')::int;
@@ -549,9 +555,18 @@ begin
   end if;
   if exists (
     select 1 from public.payment_submissions
-    where siswa_id = v_id and bulan = v_bulan and tahun = v_tahun and status in ('pending', 'verified')
+    where siswa_id = v_id and bulan = v_bulan and tahun = v_tahun and status = 'pending'
   ) then
-    raise exception 'Bukti untuk periode ini sudah dikirim dan sedang diproses / sudah lunas.' using errcode = 'P0001';
+    raise exception 'Bukti untuk periode ini sudah dikirim dan masih menunggu verifikasi admin.' using errcode = 'P0001';
+  end if;
+  -- Cicilan (sudah dibayar sebagian) boleh dilunasi sisanya; yang ditolak hanya bulan yang
+  -- sudah lunas atau dikunci tidak ditagih (cuti / nonaktif).
+  if exists (
+    select 1 from public.monthly_dues
+    where siswa_id = v_id and bulan = v_bulan and tahun = v_tahun
+      and (status in ('lunas', 'cuti', 'nonaktif', 'belum_bergabung') or (nominal > 0 and terbayar >= nominal))
+  ) then
+    raise exception 'Iuran periode ini sudah lunas atau tidak ditagih.' using errcode = 'P0001';
   end if;
 
   insert into public.payment_submissions (

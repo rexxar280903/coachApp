@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { getTodayISO } from '../utils/constants';
+import { getTodayISO, formatTanggalPanjang } from '../utils/constants';
 import { Coach, CoachStatus, ClassGroup, Student } from '../types/sportkit';
 import { getCoachClasses, isValidPhone, normalizeName, normalizePhone } from '../utils/coaches';
 import { ImageUploadField } from '../components/ImageUploadField';
@@ -53,7 +53,7 @@ export const PelatihView: React.FC<PelatihViewProps> = ({
   const [form, setForm] = useState<Omit<Coach, 'id'>>(EMPTY_FORM());
   const [filterStatus, setFilterStatus] = useState<CoachStatus | 'Semua'>('Semua');
   const [search, setSearch] = useState('');
-  const [errors, setErrors] = useState<{ nama?: string; noHp?: string }>({});
+  const [errors, setErrors] = useState<{ nama?: string; noHp?: string; email?: string }>({});
 
   const openCreateModal = () => {
     setEditingCoach(null);
@@ -79,7 +79,7 @@ export const PelatihView: React.FC<PelatihViewProps> = ({
   };
 
   const validate = () => {
-    const next: { nama?: string; noHp?: string } = {};
+    const next: { nama?: string; noHp?: string; email?: string } = {};
     const others = coaches.filter((c) => c.id !== editingCoach?.id);
     const nama = form.nama.trim();
 
@@ -90,6 +90,9 @@ export const PelatihView: React.FC<PelatihViewProps> = ({
     if (!isValidPhone(form.noHp)) next.noHp = 'Format nomor HP tidak valid (contoh: 0812-3456-7890).';
     else if (others.some((c) => normalizePhone(c.noHp) === normalizePhone(form.noHp)))
       next.noHp = 'Nomor HP sudah dipakai pelatih lain.';
+
+    if (form.email?.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim()))
+      next.email = 'Format email tidak valid.';
 
     setErrors(next);
     return Object.keys(next).length === 0;
@@ -103,7 +106,9 @@ export const PelatihView: React.FC<PelatihViewProps> = ({
       ...form,
       nama: form.nama.trim(),
       noHp: form.noHp.trim(),
+      email: form.email?.trim() || undefined,
       spesialisasi: form.spesialisasi.trim(),
+      catatan: form.catatan?.trim() || undefined,
     };
 
     if (editingCoach) {
@@ -275,7 +280,7 @@ export const PelatihView: React.FC<PelatihViewProps> = ({
                   )}
                   <div className="flex items-center gap-2 text-slate-400">
                     <CalendarDays className="w-3.5 h-3.5 shrink-0" />
-                    <span>Bergabung: {new Date(coach.tanggalBergabung).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}</span>
+                    <span>Bergabung: {formatTanggalPanjang(coach.tanggalBergabung)}</span>
                   </div>
                 </div>
 
@@ -312,8 +317,8 @@ export const PelatihView: React.FC<PelatihViewProps> = ({
 
       {/* Modal Tambah / Edit Coach */}
       {showModal && (
-        <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl border border-slate-200 overflow-hidden">
+        <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-sm flex overflow-y-auto p-4">
+          <div className="m-auto bg-white rounded-2xl max-w-md w-full shadow-2xl border border-slate-200 overflow-hidden">
             <div className="h-1 w-full bg-gradient-to-r from-sky-400 to-emerald-400" />
             <div className="p-6">
               <div className="flex items-center justify-between mb-5">
@@ -367,6 +372,7 @@ export const PelatihView: React.FC<PelatihViewProps> = ({
                       placeholder="coach@email.com"
                       className="w-full text-xs rounded-xl border border-slate-300 px-3 py-2.5 text-slate-900 font-mono focus:outline-none focus:ring-2 focus:ring-sky-500"
                     />
+                    {errors.email && <p className="text-[11px] text-rose-600 mt-1">{errors.email}</p>}
                   </div>
 
                   <div>

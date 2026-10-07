@@ -7,7 +7,8 @@ import { useToast } from '../components/Toast';
 interface PengaturanViewProps {
   profile: ClubProfile;
   classes: ClassGroup[];
-  onUpdateProfile: (newProfile: ClubProfile) => void;
+  /** Mengembalikan `false` bila gagal disimpan ke server. */
+  onUpdateProfile: (newProfile: ClubProfile) => void | Promise<boolean>;
   onUpdateClasses: (newClasses: ClassGroup[]) => void;
 }
 
@@ -40,10 +41,24 @@ export const PengaturanView: React.FC<PengaturanViewProps> = ({
       .catch(() => toast.error('Gagal menyalin', url));
   };
   const [savedSuccess, setSavedSuccess] = useState<boolean>(false);
+  const [saving, setSaving] = useState<boolean>(false);
 
-  const handleSaveProfile = (e: React.FormEvent) => {
+  const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
-    onUpdateProfile(profileForm);
+    if (profileForm.email?.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(profileForm.email.trim())) {
+      toast.error('Email tidak valid', 'Periksa kembali format email klub.');
+      return;
+    }
+    setSaving(true);
+    const ok = await onUpdateProfile({
+      ...profileForm,
+      namaKlub: profileForm.namaKlub.trim(),
+      noRekening: profileForm.noRekening?.trim() || undefined,
+      namaBank: profileForm.namaBank?.trim() || undefined,
+      atasNama: profileForm.atasNama?.trim() || undefined,
+    });
+    setSaving(false);
+    if (ok === false) return; // pesan galat sudah ditampilkan
     setSavedSuccess(true);
     setTimeout(() => setSavedSuccess(false), 3000);
   };
@@ -241,10 +256,11 @@ ${l.url}`)}`}
         <div className="flex justify-end pt-4 border-t border-slate-100">
           <button
             type="submit"
-            className="px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-sm transition-colors flex items-center gap-1.5 cursor-pointer"
+            disabled={saving}
+            className="px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 disabled:cursor-not-allowed text-white font-bold text-xs shadow-sm transition-colors flex items-center gap-1.5 cursor-pointer"
           >
             <Save className="w-4 h-4" />
-            <span>Simpan Profil Klub</span>
+            <span>{saving ? 'Menyimpan…' : 'Simpan Profil Klub'}</span>
           </button>
         </div>
       </form>

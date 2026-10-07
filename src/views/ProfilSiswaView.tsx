@@ -1,8 +1,19 @@
 import React, { useState } from 'react';
 import { useToast } from '../components/Toast';
 import { isValidPhone } from '../utils/coaches';
-import { receiptForSubmission, submissionOutcome, defaultVerifyNote, effectiveDueStatus, isNonBillable, FEE_STATUS_LABEL } from '../utils/payments';
-import { getTodayISO, getCurrentYear, getYearOptions } from '../utils/constants';
+import {
+  receiptForSubmission,
+  submissionOutcome,
+  defaultVerifyNote,
+  effectiveDueStatus,
+  isNonBillable,
+  FEE_STATUS_LABEL,
+  findMonthlyDue,
+  remainingMonthlyDue,
+  submissionPeriodLabel,
+} from '../utils/payments';
+import { getTodayISO, getCurrentYear, getCurrentMonth, getYearOptions } from '../utils/constants';
+import { refreshReceiptNumbers } from '../services/storage';
 import { 
   Student, 
   ClassGroup, 
@@ -26,7 +37,7 @@ import { formatRupiah, numberToWordsId } from '../utils/numberToWordsId';
 import { fileToCompressedDataUrl } from '../utils/image';
 import { ImageUploadField } from '../components/ImageUploadField';
 import { ProofImage } from '../components/ProofImage';
-import { generateKodeAkses, normalizePhone } from '../utils/kodeAkses';
+import { generateKodeAkses, normalizePhone, toWhatsAppNumber } from '../utils/kodeAkses';
 import { 
   Phone, 
   Mail, 
@@ -179,17 +190,27 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
     tahun: number;
   } | null>(null);
 
-  const [inputNominal, setInputNominal] = useState<number>(currentClass?.iuranBulanan || 100000);
+  const [inputNominal, setInputNominal] = useState<number>(currentClass?.iuranBulanan ?? 0);
   const [inputMetode, setInputMetode] = useState<PaymentMethod>('Transfer BCA');
   const [inputTanggal, setInputTanggal] = useState<string>(getTodayISO());
   const [inputBuktiUrl, setInputBuktiUrl] = useState<string>('');
   const [inputPesan, setInputPesan] = useState<string>('');
   const [inputCatatanAdmin, setInputCatatanAdmin] = useState<string>('Pembayaran diinput & diverifikasi oleh Admin.');
 
+  // Reset form hanya saat siswa yang dibuka berganti (bukan setiap data dimuat ulang / disimpan),
+  // supaya isian yang sedang diedit tidak hilang.
+  const currentStudentId = currentStudent?.id;
   React.useEffect(() => {
     setEditForm(currentStudent);
     setIsEditingBiodata(false);
-  }, [currentStudent]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentStudentId]);
+
+  // Buka modal verifikasi: siapkan juga nomor kuitansi terbaru dari server.
+  const openVerifyModal = (sub: PaymentSubmission) => {
+    refreshReceiptNumbers();
+    setVerifyModalSub(sub);
+  };
 
   const verifyOutcome = verifyModalSub
     ? submissionOutcome(verifyModalSub, monthlyDues, currentClass?.iuranBulanan || currentStudent?.iuranBulanan || verifyModalSub.nominal)
@@ -272,28 +293,56 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
     }
   };
 
+  const tarifKelas = currentClass?.iuranBulanan ?? currentStudent.iuranBulanan ?? 0;
+
+  /** Status & sisa tagihan satu bulan untuk siswa ini (untuk form input pembayaran admin). */
+  const periodInfo = (monthNumber: number, year: number) => {
+    const due = findMonthlyDue(monthlyDues, currentStudent.id, monthNumber, year);
+    return {
+      status: effectiveDueStatus(currentStudent, due, monthNumber, year),
+      sisa: remainingMonthlyDue(monthlyDues, currentStudent.id, monthNumber, year, tarifKelas),
+    };
+  };
+
+  const pesanDefault = (monthNumber: number, year: number) => {
+    const filled = (v?: string) => (v && v.trim() !== '-' ? v.trim() : '');
+    const wali = filled(currentStudent.orangTua?.namaAyah) || filled(currentStudent.orangTua?.namaIbu) || currentStudent.nama;
+    return `Pembayaran iuran bulan ${FULL_MONTH_NAMES[monthNumber - 1]} ${year} dari wali murid ${wali}`;
+  };
+
   const openAdminInputProofModal = (monthNumber: number, year: number) => {
     // Untuk cicilan, default nominal = sisa tagihan
-    const existing = monthlyDues.find(
-      (d) => d.siswaId === currentStudent.id && d.bulan === monthNumber && d.tahun === year
-    );
-    const tagihan = existing && existing.nominal > 0 ? existing.nominal : currentClass?.iuranBulanan || 0;
-    const defaultNominal = Math.max(0, tagihan - (existing?.terbayar || 0));
-    setInputNominal(defaultNominal);
+    setInputNominal(periodInfo(monthNumber, year).sisa);
     setInputMetode('Transfer BCA');
     setInputTanggal(getTodayISO());
     setInputBuktiUrl('');
-    setInputPesan(
-      `Pembayaran iuran bulan ${FULL_MONTH_NAMES[monthNumber - 1]} ${year} dari wali murid ${
-        currentStudent.orangTua?.namaAyah || currentStudent.orangTua?.namaIbu || currentStudent.nama
-      }`
-    );
+    setInputPesan(pesanDefault(monthNumber, year));
     setInputCatatanAdmin('Pembayaran diinput & diverifikasi langsung oleh Admin.');
+    refreshReceiptNumbers();
     setAdminInputProofModal({
       isOpen: true,
       bulan: monthNumber,
       tahun: year,
     });
+  };
+
+  // Ganti periode di form: nominal mengikuti sisa tagihan bulan yang baru dipilih.
+  const changeAdminInputPeriod = (monthNumber: number, year: number) => {
+    setAdminInputProofModal({ isOpen: true, bulan: monthNumber, tahun: year });
+    setInputPesan(pesanDefault(monthNumber, year));
+    const { sisa } = periodInfo(monthNumber, year);
+    if (sisa > 0) setInputNominal(sisa);
+  };
+
+  /** Tombol "+ Input Pembayaran": buka di bulan tertagih pertama tahun terpilih (atau bulan ini). */
+  const firstBillableMonth = () => {
+    const isCurrentYear = selectedYear === getCurrentYear();
+    const last = isCurrentYear ? getCurrentMonth() : 12;
+    for (let m = 1; m <= last; m++) {
+      const { status } = periodInfo(m, selectedYear);
+      if (status === 'belum_bayar' || status === 'belum_lunas') return m;
+    }
+    return isCurrentYear ? getCurrentMonth() : 1;
   };
 
   const handleAdminFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -307,18 +356,39 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
     }
   };
 
-  const handleSubmitAdminProof = (e: React.FormEvent) => {
+  const handleSubmitAdminProof = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!adminInputProofModal) return;
+    const { bulan, tahun } = adminInputProofModal;
+    const periode = `${FULL_MONTH_NAMES[bulan - 1]} ${tahun}`;
+    const info = periodInfo(bulan, tahun);
 
-    if (!inputBuktiUrl) {
-      toast.error('Bukti pembayaran belum ada', 'Mohon lampirkan struk / foto bukti pembayaran transfer.');
+    if (info.status === 'lunas') {
+      toast.error('Iuran sudah lunas', `Iuran ${periode} untuk ${currentStudent.nama} sudah lunas. Pilih bulan lain.`);
+      return;
+    }
+    if (isNonBillable(info.status)) {
+      toast.error('Bulan tidak ditagih', `Iuran ${periode} berstatus "${FEE_STATUS_LABEL[info.status]}". Pilih bulan lain.`);
+      return;
+    }
+
+    // Bukti foto wajib untuk transfer / QRIS; pembayaran tunai boleh tanpa foto.
+    if (!inputBuktiUrl && inputMetode !== 'Tunai') {
+      toast.error('Bukti pembayaran belum ada', 'Lampirkan foto struk / bukti transfer, atau pilih metode Tunai.');
       return;
     }
 
     if (!inputNominal || inputNominal <= 0) {
       toast.error('Nominal tidak valid', 'Nominal pembayaran harus lebih dari 0.');
       return;
+    }
+
+    if (info.sisa > 0 && inputNominal > info.sisa) {
+      const ok = await confirm(
+        'Kelebihan Bayar?',
+        `Jumlah ${formatRupiah(inputNominal)} melebihi sisa tagihan ${periode} (${formatRupiah(info.sisa)}). Tetap catat pembayaran ini?`
+      );
+      if (!ok) return;
     }
 
     if (onAdminRecordPaymentWithProof) {
@@ -351,9 +421,10 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
     }
 
     if (record && record.status === 'lunas') {
-      const monthSub = studentSubmissions.find(
+      const monthSubs = studentSubmissions.filter(
         (s) => s.bulan === monthNumber && (!s.tahun || s.tahun === selectedYear)
       );
+      const monthSub = monthSubs.find((s) => s.status === 'verified') ?? monthSubs[0];
       if (monthSub) {
         setPreviewImage({
           url: monthSub.buktiGambarUrl,
@@ -365,7 +436,7 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
           sub: monthSub,
         });
       } else {
-        toast.info('Sudah lunas', `Iuran bulan ${FULL_MONTH_NAMES[monthNumber - 1]} sudah lunas (${formatRupiah(record?.nominal || currentClass?.iuranBulanan || 0)}).`);
+        toast.info('Sudah lunas', `Iuran bulan ${FULL_MONTH_NAMES[monthNumber - 1]} sudah lunas (${formatRupiah(record?.nominal || tarifKelas)}).`);
       }
       return;
     }
@@ -420,8 +491,7 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
     toast.success('Biodata disimpan', `Data ${nama} berhasil diperbarui.`);
   };
 
-  const cleanedPhone = currentStudent.noHp.replace(/[^0-9]/g, '');
-  const waPhone = cleanedPhone.startsWith('0') ? '62' + cleanedPhone.slice(1) : cleanedPhone;
+  const waPhone = toWhatsAppNumber(currentStudent.noHp);
 
   return (
     <div className="space-y-6">
@@ -475,7 +545,7 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
 
             {/* Quick Actions & Student Switcher */}
             <div className="flex flex-wrap items-center gap-3">
-              {currentStudent.noHp && (
+              {waPhone && (
                 <a
                   href={`https://wa.me/${waPhone}?text=${encodeURIComponent(
                     `Halo ${currentStudent.nama}, informasi dari pengurus ${currentClass?.nama || 'Akademi'}.`
@@ -570,7 +640,7 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
                 Matriks Pembayaran Iuran Rutin {selectedYear}
               </h2>
               <p className="text-xs text-slate-500">
-                Nominal per bulan: <span className="font-bold text-slate-800 font-mono">{formatRupiah(currentClass?.iuranBulanan || 100000)}</span>. Kotak bulan menampilkan status pembayaran dan bukti transfer yang diunggah.
+                Nominal per bulan: <span className="font-bold text-slate-800 font-mono">{formatRupiah(tarifKelas)}</span>. Kotak bulan menampilkan status pembayaran dan bukti transfer yang diunggah.
               </p>
             </div>
 
@@ -637,7 +707,7 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
                         key={monthNum}
                         onClick={() => {
                           if (monthSub && monthSub.status === 'pending') {
-                            setVerifyModalSub(monthSub);
+                            openVerifyModal(monthSub);
                             return;
                           }
                           handleCellClick(monthNum);
@@ -761,9 +831,7 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
                 {studentSubmissions.slice(0, 4).map((sub) => {
-                  const period = sub.bulan && sub.tahun
-                    ? `${FULL_MONTH_NAMES[sub.bulan - 1]} ${sub.tahun}`
-                    : sub.tipe;
+                  const period = submissionPeriodLabel(sub);
 
                   return (
                     <div
@@ -844,7 +912,7 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
                           {sub.status === 'pending' && onVerifySubmission && (
                             <button
                               type="button"
-                              onClick={() => setVerifyModalSub(sub)}
+                              onClick={() => openVerifyModal(sub)}
                               className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold transition-colors cursor-pointer shadow-xs flex items-center gap-1"
                             >
                               <CheckCheck className="w-3 h-3" />
@@ -923,7 +991,7 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
                 </span>
                 <button
                   type="button"
-                  onClick={() => openAdminInputProofModal(12, selectedYear)}
+                  onClick={() => openAdminInputProofModal(firstBillableMonth(), selectedYear)}
                   className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs sm:ml-2"
                 >
                   <PlusCircle className="w-4 h-4" />
@@ -1006,9 +1074,7 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {filteredProofs.map((sub) => {
-                const period = sub.bulan && sub.tahun
-                  ? `${FULL_MONTH_NAMES[sub.bulan - 1]} ${sub.tahun}`
-                  : sub.tipe;
+                const period = submissionPeriodLabel(sub);
 
                 return (
                   <div
@@ -1204,7 +1270,7 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
                             {onVerifySubmission && (
                               <button
                                 type="button"
-                                onClick={() => setVerifyModalSub(sub)}
+                                onClick={() => openVerifyModal(sub)}
                                 className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-1.5 shadow-sm transition-colors cursor-pointer"
                               >
                                 <CheckCheck className="w-3.5 h-3.5" />
@@ -1321,18 +1387,32 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
       {/* TAB 3: ABSENSI */}
       {activeTab === 'absensi' && (
         <div className="sports-card rounded-2xl p-6 space-y-6">
-          <div className="flex items-center justify-between pb-4 border-b border-slate-100">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-100">
             <div>
               <h2 className="text-base font-display font-bold text-slate-900">
                 Kalender Rekap Presensi Atlet ({selectedYear})
               </h2>
               <p className="text-xs text-slate-500">
-                Warna hijau menandakan atlet tercatat hadir pada sesi latihan
+                Hijau = hadir, merah = tidak hadir pada sesi latihan yang mencatat atlet ini
               </p>
             </div>
-            <div className="flex items-center gap-2">
-              <span className="w-3 h-3 rounded-full bg-emerald-500" />
-              <span className="text-xs font-semibold text-slate-700">Hadir Latihan</span>
+            <div className="flex flex-wrap items-center gap-3">
+              <span className="flex items-center gap-1.5 text-xs font-semibold text-slate-700">
+                <span className="w-3 h-3 rounded-full bg-emerald-500" /> Hadir
+              </span>
+              <span className="flex items-center gap-1.5 text-xs font-semibold text-slate-700">
+                <span className="w-3 h-3 rounded-full bg-rose-400" /> Tidak Hadir
+              </span>
+              <select
+                value={selectedYear}
+                onChange={(e) => setSelectedYear(Number(e.target.value))}
+                className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-bold text-slate-800 cursor-pointer focus:outline-none focus:ring-2 focus:ring-emerald-500 font-mono"
+                aria-label="Tahun"
+              >
+                {getYearOptions(selectedYear).map((yr) => (
+                  <option key={yr} value={yr}>{yr}</option>
+                ))}
+              </select>
             </div>
           </div>
 
@@ -1340,9 +1420,15 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
             {FULL_MONTH_NAMES.map((mName, mIdx) => {
               const monthNumber = mIdx + 1;
               const daysInMonth = new Date(selectedYear, monthNumber, 0).getDate();
+              // Hanya sesi yang mencatat siswa ini (kelas lain bisa latihan di tanggal yang sama).
               const monthSessions = attendanceSessions.filter((s) => {
                 const parts = s.tanggal.split('-');
-                return Number(parts[0]) === selectedYear && Number(parts[1]) === monthNumber;
+                return (
+                  Number(parts[0]) === selectedYear &&
+                  Number(parts[1]) === monthNumber &&
+                  !!s.kehadiran &&
+                  s.kehadiran[currentStudent.id] !== undefined
+                );
               });
 
               return (
@@ -1361,12 +1447,19 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
                   </div>
 
                   <div className="grid grid-cols-7 gap-1 text-[11px] text-center">
+                    {/* Offset sel kosong agar tanggal 1 jatuh di kolom hari yang benar (minggu dimulai Senin) */}
+                    {Array.from(
+                      { length: (new Date(selectedYear, mIdx, 1).getDay() + 6) % 7 },
+                      (_, i) => <div key={`empty-${i}`} className="h-6" />
+                    )}
                     {Array.from({ length: daysInMonth }, (_, dayIdx) => {
                       const day = dayIdx + 1;
                       const dateStr = `${selectedYear}-${monthNumber.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}`;
-                      const session = monthSessions.find((s) => s.tanggal === dateStr);
-                      const isPresent = session?.kehadiran[currentStudent.id] === true;
-                      const isAbsent = session && session.kehadiran[currentStudent.id] === false;
+                      const daySessions = monthSessions.filter((s) => s.tanggal === dateStr);
+                      const session = daySessions[0];
+                      // Lebih dari satu sesi di hari yang sama: dianggap hadir bila hadir di salah satunya.
+                      const isPresent = daySessions.some((s) => s.kehadiran[currentStudent.id] === true);
+                      const isAbsent = !!session && !isPresent;
 
                       return (
                         <div
@@ -1813,7 +1906,7 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
 
       {/* MODAL 1: HIGH-RES PROOF IMAGE LIGHTBOX */}
       {previewImage && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
           <div className="bg-white rounded-3xl max-w-xl w-full max-h-[90vh] overflow-hidden shadow-2xl border border-slate-200 flex flex-col">
             {/* Modal Header */}
             <div className="p-4 bg-slate-900 text-white flex items-center justify-between">
@@ -1900,7 +1993,7 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
                     onClick={() => {
                       const sub = previewImage.sub;
                       setPreviewImage(null);
-                      setVerifyModalSub(sub);
+                      openVerifyModal(sub);
                     }}
                     className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-xs cursor-pointer flex items-center gap-1.5"
                   >
@@ -1930,8 +2023,8 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
 
       {/* MODAL 2: CONFIRM VERIFY */}
       {verifyModalSub && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-white rounded-3xl max-w-lg w-full overflow-hidden shadow-2xl border border-slate-200 flex flex-col">
+        <div className="fixed inset-0 z-50 flex overflow-y-auto p-4 bg-slate-950/80 backdrop-blur-sm">
+          <div className="m-auto bg-white rounded-3xl max-w-lg w-full overflow-hidden shadow-2xl border border-slate-200 flex flex-col">
             <div className="p-4 bg-emerald-800 text-white flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <CheckCheck className="w-5 h-5 text-emerald-300" />
@@ -2007,7 +2100,14 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
                   Konfirmasi Dampak Sistem:
                 </p>
                 <p>
-                  1. Status iuran bulan bersangkutan otomatis berubah menjadi <strong>LUNAS</strong>.
+                  1.{' '}
+                  {verifyOutcome?.kind === 'cicilan' ? (
+                    <>Pembayaran dicatat sebagai <strong>cicilan</strong>; status bulan ini menjadi <strong>Belum Lunas</strong>.</>
+                  ) : verifyOutcome ? (
+                    <>Status iuran bulan bersangkutan otomatis berubah menjadi <strong>LUNAS</strong>.</>
+                  ) : (
+                    <>Pembayaran dicatat ke data {verifyModalSub.tipe}.</>
+                  )}
                 </p>
                 <p>
                   2. Kuitansi resmi digital klub otomatis diterbitkan dan dapat diakses oleh siswa.
@@ -2038,8 +2138,8 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
 
       {/* MODAL 3: REJECT */}
       {rejectModalSub && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-white rounded-3xl max-w-md w-full overflow-hidden shadow-2xl border border-slate-200 flex flex-col">
+        <div className="fixed inset-0 z-50 flex overflow-y-auto p-4 bg-slate-950/80 backdrop-blur-sm">
+          <div className="m-auto bg-white rounded-3xl max-w-md w-full overflow-hidden shadow-2xl border border-slate-200 flex flex-col">
             <div className="p-4 bg-rose-700 text-white flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <AlertCircle className="w-5 h-5 text-rose-200" />
@@ -2098,8 +2198,8 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
 
       {/* MODAL 4: ADMIN INPUT BUKTI PEMBAYARAN & PESAN (UNTUK BULAN DESEMBER DLL) */}
       {adminInputProofModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in duration-200 overflow-y-auto">
-          <div className="bg-white rounded-3xl max-w-xl w-full my-8 overflow-hidden shadow-2xl border border-slate-200 flex flex-col">
+        <div className="fixed inset-0 z-50 flex overflow-y-auto p-4 bg-slate-950/80 backdrop-blur-sm">
+          <div className="m-auto bg-white rounded-3xl max-w-xl w-full overflow-hidden shadow-2xl border border-slate-200 flex flex-col">
             {/* Modal Header */}
             <div className="p-5 bg-slate-900 text-white flex items-center justify-between border-b border-slate-800">
               <div className="flex items-center gap-3">
@@ -2137,7 +2237,7 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
                 <div className="text-right">
                   <span className="text-[10px] text-emerald-700 block">Tarif Kelas</span>
                   <span className="text-xs font-mono font-bold text-emerald-900">
-                    {formatRupiah(currentClass?.iuranBulanan || 100000)}/bln
+                    {formatRupiah(tarifKelas)}/bln
                   </span>
                 </div>
               </div>
@@ -2150,18 +2250,7 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
                   </label>
                   <select
                     value={adminInputProofModal.bulan}
-                    onChange={(e) => {
-                      const newMonth = Number(e.target.value);
-                      setAdminInputProofModal({
-                        ...adminInputProofModal,
-                        bulan: newMonth,
-                      });
-                      setInputPesan(
-                        `Pembayaran iuran bulan ${FULL_MONTH_NAMES[newMonth - 1]} ${adminInputProofModal.tahun} dari wali murid ${
-                          currentStudent.orangTua?.namaAyah || currentStudent.orangTua?.namaIbu || currentStudent.nama
-                        }`
-                      );
-                    }}
+                    onChange={(e) => changeAdminInputPeriod(Number(e.target.value), adminInputProofModal.tahun)}
                     className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-semibold text-slate-800 bg-white focus:outline-emerald-500 cursor-pointer"
                   >
                     {FULL_MONTH_NAMES.map((m, idx) => (
@@ -2178,13 +2267,7 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
                   </label>
                   <select
                     value={adminInputProofModal.tahun}
-                    onChange={(e) => {
-                      const newYear = Number(e.target.value);
-                      setAdminInputProofModal({
-                        ...adminInputProofModal,
-                        tahun: newYear,
-                      });
-                    }}
+                    onChange={(e) => changeAdminInputPeriod(adminInputProofModal.bulan, Number(e.target.value))}
                     className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-semibold text-slate-800 bg-white focus:outline-emerald-500 cursor-pointer"
                   >
                     {getYearOptions(adminInputProofModal.tahun).map((yr) => (
@@ -2193,20 +2276,36 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
                   </select>
                 </div>
               </div>
+              {(() => {
+                const info = periodInfo(adminInputProofModal.bulan, adminInputProofModal.tahun);
+                const blocked = info.status === 'lunas' || isNonBillable(info.status);
+                return (
+                  <p
+                    className={`-mt-1 text-[11px] font-semibold rounded-lg px-2.5 py-1.5 border ${
+                      blocked ? 'text-rose-700 bg-rose-50 border-rose-200' : 'text-emerald-800 bg-emerald-50/60 border-emerald-200'
+                    }`}
+                  >
+                    {blocked
+                      ? `Status bulan ini "${FEE_STATUS_LABEL[info.status]}" — pilih bulan lain.`
+                      : `${FEE_STATUS_LABEL[info.status]} · sisa tagihan ${formatRupiah(info.sisa)}`}
+                  </p>
+                );
+              })()}
 
               {/* Amount & Method */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">
-                    Nominal Transfer (Rp):
+                    Nominal Dibayar (Rp):
                   </label>
                   <input
                     type="number"
                     required
+                    min={1}
                     value={inputNominal}
                     onChange={(e) => setInputNominal(Number(e.target.value))}
                     className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-mono font-bold text-slate-800 focus:outline-emerald-500"
-                    placeholder="100000"
+                    placeholder="Nominal"
                   />
                   <p className="text-[10px] text-slate-500 mt-0.5 italic">
                     Terbilang: {numberToWordsId(Number(inputNominal))}
@@ -2249,7 +2348,12 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
               <div>
                 <div className="flex items-center justify-between mb-1">
                   <label className="block text-xs font-bold text-slate-700">
-                    Unggah Bukti Struk Transfer:
+                    Foto Bukti / Struk{' '}
+                    {inputMetode === 'Tunai' ? (
+                      <span className="font-normal text-slate-400">(opsional untuk tunai)</span>
+                    ) : (
+                      <span className="text-rose-500">*</span>
+                    )}
                   </label>
                 </div>
 
@@ -2263,7 +2367,7 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
                     />
                     <Upload className="w-6 h-6 text-slate-400 mb-1" />
                     <p className="text-xs font-bold text-slate-700">Klik untuk pilih foto struk transfer</p>
-                    <p className="text-[10px] text-slate-400 mt-0.5">Format JPG, PNG, atau WEBP (Maks 5 MB)</p>
+                    <p className="text-[10px] text-slate-400 mt-0.5">JPG, PNG, atau WebP (maks. 10 MB, otomatis diperkecil)</p>
                   </label>
                 ) : (
                   <div className="relative rounded-2xl overflow-hidden border border-slate-300 bg-slate-900 group">
@@ -2300,7 +2404,7 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
                   placeholder="Contoh: Transfer iuran via m-BCA dari orang tua siswa."
                 />
                 <p className="text-[10px] text-slate-400 mt-0.5">
-                  * Pesan ini akan disimpan ke database dan ditampilkan di akun siswa & admin.
+                  * Pesan ini disimpan dan ditampilkan di riwayat pembayaran admin & Portal Siswa.
                 </p>
               </div>
 
@@ -2325,7 +2429,9 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
                   Penyimpanan Sisi Admin & Siswa:
                 </p>
                 <p>
-                  Status iuran bulan <strong>{FULL_MONTH_NAMES[adminInputProofModal.bulan - 1]} {adminInputProofModal.tahun}</strong> akan otomatis menjadi <strong>LUNAS</strong>, bukti pembayaran tersimpan di admin, dan langsung ditampilkan di portal akun siswa sebagai bukti lunas.
+                  Pembayaran untuk <strong>{FULL_MONTH_NAMES[adminInputProofModal.bulan - 1]} {adminInputProofModal.tahun}</strong> dicatat
+                  dan kuitansi resmi terbit. Status menjadi <strong>LUNAS</strong> bila nominal menutup sisa tagihan, atau{' '}
+                  <strong>Belum Lunas (cicilan)</strong> bila kurang. Riwayatnya tampil di Portal Siswa (foto bukti hanya bisa dibuka admin).
                 </p>
               </div>
 
@@ -2353,8 +2459,8 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
 
       {/* Modal Konfirmasi Hapus Siswa */}
       {showDeleteModal && (
-        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="sports-card rounded-2xl max-w-md w-full p-6 space-y-4 bg-white shadow-xl animate-scaleIn">
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex overflow-y-auto p-4">
+          <div className="m-auto sports-card rounded-2xl max-w-md w-full p-6 space-y-4 bg-white shadow-xl animate-scale-in">
             <div className="flex items-center gap-3 text-rose-600">
               <div className="w-10 h-10 rounded-full bg-rose-50 flex items-center justify-center shrink-0">
                 <AlertTriangle className="w-5 h-5 text-rose-600" />

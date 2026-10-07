@@ -30,7 +30,7 @@ export const SesiAbsensiView: React.FC<SesiAbsensiViewProps> = ({
   const [searchQuery, setSearchQuery] = useState<string>('');
 
   const [tanggal, setTanggal] = useState<string>(getTodayISO());
-  const [selectedClassId, setSelectedClassId] = useState<string>(classes[0]?.id || 'ku-10');
+  const [selectedClassId, setSelectedClassId] = useState<string>(classes[0]?.id || '');
   const activeCoaches = coaches.filter((c) => c.status === 'Aktif');
   const [selectedCoachId, setSelectedCoachId] = useState<string>(activeCoaches[0]?.id || '');
   const [manualCoachNama, setManualCoachNama] = useState<string>('');
@@ -157,11 +157,14 @@ export const SesiAbsensiView: React.FC<SesiAbsensiViewProps> = ({
     setEditingSessionId(null);
   };
 
-  const filteredSessions = sessions.filter((s) => {
-    const cls = classes.find((c) => c.id === s.kelasId);
-    const text = `${s.tanggal} ${cls?.nama || ''} ${s.catatan}`.toLowerCase();
-    return text.includes(searchQuery.toLowerCase());
-  });
+  // Terbaru di atas berdasarkan tanggal latihan (bukan urutan input).
+  const filteredSessions = sessions
+    .filter((s) => {
+      const cls = classes.find((c) => c.id === s.kelasId);
+      const text = `${s.tanggal} ${cls?.nama || ''} ${s.catatan}`.toLowerCase();
+      return text.includes(searchQuery.trim().toLowerCase());
+    })
+    .sort((a, b) => b.tanggal.localeCompare(a.tanggal));
 
   return (
     <div className="space-y-6">
