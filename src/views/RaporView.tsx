@@ -16,13 +16,23 @@ import { RaporDocData, RaporDocument } from '../components/RaporPrintModal';
 import { getCurrentTime, getCurrentYear, getTodayISO } from '../utils/constants';
 import {
   RAPOR_ITEM_TIPE_LABEL,
+  RAPOR_NILAI_RENANG,
+  RAPOR_STATUS_KELULUSAN,
+  cleanRaporAnswers,
   createSampleTemplate,
   formatPeriode,
   formatTanggalRapor,
   hasOpsi,
+  isSwimmingTemplate,
   missingRequired,
   newRaporId,
+  groupRaporSections,
+  raporProgress,
+  raporValidationError,
+  structuredRaporAnswer,
+  usiaPadaTanggal,
 } from '../utils/rapor';
+import { createSwimmingEvaluationTemplate } from '../utils/swimmingRaporTemplate';
 import {
   AlertCircle,
   ArrowRight,
@@ -104,6 +114,7 @@ export const RaporView: React.FC<RaporViewProps> = (props) => {
         initial={screen.template}
         isNew={screen.isNew}
         profile={profile}
+        usedBy={folders.filter((f) => f.templateId === screen.template.id).length}
         onCancel={() => setScreen({ kind: 'list' })}
         onSave={(tpl) => {
           props.onSaveTemplate(tpl);
@@ -253,6 +264,30 @@ export const RaporView: React.FC<RaporViewProps> = (props) => {
         </div>
       )}
 
+      {isAdmin && tab === 'folder' && templates.length === 0 && !unavailable && (
+        <button onClick={() => setTab('template')} className={btnSecondary}>
+          <FileText className="w-4 h-4" /> Pilih Template Siap Pakai
+        </button>
+      )}
+
+      {isAdmin && tab === 'template' && !unavailable && (
+        <div className="sports-card rounded-2xl p-5 flex flex-col sm:flex-row sm:items-center gap-4">
+          <div className="flex-1">
+            <p className="text-sm font-bold text-slate-900">Evaluasi & Kurikulum Les Berenang</p>
+            <p className="text-xs text-slate-500 mt-1">
+              Template dari dokumen Word: 5 level, 20 pertemuan, materi, indikator, nilai B/C/M,
+              catatan pelatih, serta rekap kelulusan dan tanda tangan.
+            </p>
+          </div>
+          <button
+            onClick={() => setScreen({ kind: 'template', isNew: true, template: createSwimmingEvaluationTemplate(defaultFooter(profile)) })}
+            className={btnPrimary}
+          >
+            <Copy className="w-4 h-4" /> Gunakan Template Berenang
+          </button>
+        </div>
+      )}
+
       {tab === 'folder' || !isAdmin ? (
         <FolderList
           folders={folders}
@@ -395,9 +430,10 @@ const TemplateEditor: React.FC<{
   initial: RaporTemplate;
   isNew: boolean;
   profile: ClubProfile;
+  usedBy: number;
   onCancel: () => void;
   onSave: (t: RaporTemplate) => void;
-}> = ({ initial, isNew, profile, onCancel, onSave }) => {
+}> = ({ initial, isNew, profile, usedBy, onCancel, onSave }) => {
   const { toast } = useToast();
   const [tpl, setTpl] = useState<RaporTemplate>(initial);
   const [preview, setPreview] = useState(false);
@@ -426,15 +462,19 @@ const TemplateEditor: React.FC<{
       ...it,
       label: it.label.trim(),
       ...(hasOpsi(it.tipe) ? { opsi: (it.opsi ?? []).map((o) => o.trim()).filter(Boolean) } : { opsi: undefined }),
+      materi: it.tipe === 'pertemuan' ? (it.materi ?? []).map((m) => m.trim()).filter(Boolean) : undefined,
+      indikator: it.tipe === 'pertemuan' ? it.indikator?.trim() : undefined,
     }));
     if (items.some((it) => !it.label)) return toast.error('Setiap item wajib punya judul / pertanyaan');
     const noOpsi = items.find((it) => hasOpsi(it.tipe) && (it.opsi?.length ?? 0) === 0);
     if (noOpsi) return toast.error('Opsi belum diisi', `Item "${noOpsi.label}" membutuhkan minimal satu opsi.`);
+    const incomplete = items.find((it) => it.tipe === 'pertemuan' && (!it.materi?.length || !it.indikator));
+    if (incomplete) return toast.error('Kurikulum belum lengkap', `Isi materi dan indikator utama untuk "${incomplete.label}".`);
     onSave({ ...tpl, nama, items });
   };
 
   const sampleDoc: RaporDocData = {
-    entry: { id: 'preview', folderId: '', siswaId: '', jawaban: {}, diisiOleh: '', tanggalIsi: '' },
+    entry: { id: 'preview', folderId: '', siswaId: '', jawaban: {}, diisiOleh: 'Nama Pelatih', tanggalIsi: getTodayISO() },
     folder: {
       id: '',
       nama: `Laporan Perkembangan, Semester 1, ${getCurrentYear()}`,
@@ -464,6 +504,13 @@ const TemplateEditor: React.FC<{
       <h1 className="text-xl font-display font-bold text-slate-900 uppercase">
         {isNew ? 'Tambah Template Rapor' : 'Perbarui Template Rapor'}
       </h1>
+
+      {usedBy > 0 && (
+        <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-xl p-3">
+          Template ini dipakai {usedBy} folder. Perubahan akan memengaruhi tampilan rapor lama.
+          Untuk kurikulum baru, sebaiknya kembali dan duplikat template agar arsip tetap sama.
+        </p>
+      )}
 
       {preview && (
         <div className="sports-card rounded-2xl p-6 sm:p-8">
@@ -512,6 +559,8 @@ const TemplateEditor: React.FC<{
                     tipe,
                     opsi: hasOpsi(tipe) ? (it.opsi?.length ? it.opsi : ['', '']) : undefined,
                     wajib: tipe === 'judul' ? undefined : it.wajib,
+                    materi: tipe === 'pertemuan' ? (it.materi ?? ['']) : undefined,
+                    indikator: tipe === 'pertemuan' ? (it.indikator ?? '') : undefined,
                   });
                 }}
                 className={`${inputCls} w-auto`}
@@ -586,6 +635,28 @@ const TemplateEditor: React.FC<{
                   + Tambah Opsi
                 </button>
               </div>
+            )}
+
+            {it.tipe === 'pertemuan' && (
+              <div className="space-y-3">
+                <label className="block">
+                  <span className={labelCls}>Materi & Kurikulum (satu materi per baris)</span>
+                  <textarea
+                    rows={4}
+                    value={(it.materi ?? []).join('\n')}
+                    onChange={(e) => updateItem(it.id, { materi: e.target.value.split('\n') })}
+                    className={inputCls}
+                  />
+                </label>
+                <label className="block">
+                  <span className={labelCls}>Indikator Utama</span>
+                  <textarea rows={2} value={it.indikator ?? ''} onChange={(e) => updateItem(it.id, { indikator: e.target.value })} className={inputCls} />
+                </label>
+                <p className="text-[11px] text-slate-500">Pelatih memilih satu nilai B/C/M dan mengisi catatan saat menilai siswa.</p>
+              </div>
+            )}
+            {it.tipe === 'kelulusan' && (
+              <p className="text-[11px] text-slate-500">Isian siswa: Lulus/Mengulang, tanggal lulus, dan nama pelatih untuk kolom tanda tangan.</p>
             )}
 
             {it.tipe !== 'judul' && (
@@ -977,6 +1048,15 @@ const FillRapor: React.FC<{
 }> = ({ folder, template, student, kelasNama, existing, actorName, nextStudent, position, onBack, onSave }) => {
   const { toast } = useToast();
   const [jawaban, setJawaban] = useState<RaporJawaban>(existing?.jawaban ?? {});
+  const swimming = isSwimmingTemplate(template);
+  const [pelatihName, setPelatihName] = useState(existing?.diisiOleh || actorName);
+  const [selectedSection, setSelectedSection] = useState(swimming ? '0' : 'all');
+  const sections = groupRaporSections(template.items);
+  const section = sections[Number(selectedSection)];
+  const displayItems: RaporItem[] = selectedSection === 'all' || !section
+    ? template.items
+    : [...(section.judul ? [{ id: 'section-title', tipe: 'judul' as const, label: section.judul }] : []), ...section.items];
+  const progress = raporProgress(template, jawaban);
   const set = (id: string, v: string | string[]) => setJawaban((j) => ({ ...j, [id]: v }));
 
   const submit = (goNext: boolean) => {
@@ -984,19 +1064,17 @@ const FillRapor: React.FC<{
     if (missing.length > 0) {
       return toast.error('Masih ada isian wajib', missing.map((m) => m.label).join(', '));
     }
-    // Simpan hanya jawaban untuk item yang masih ada di template.
-    const clean: RaporJawaban = {};
-    for (const it of template.items) {
-      const v = jawaban[it.id];
-      if (it.tipe !== 'judul' && v !== undefined) clean[it.id] = typeof v === 'string' ? v.trim() : v;
-    }
+    const error = raporValidationError(template, jawaban);
+    if (error) return toast.error('Periksa isian rapor', error);
+    if (swimming && !pelatihName.trim()) return toast.error('Nama pelatih wajib diisi');
+    const clean = cleanRaporAnswers(template, jawaban);
     onSave(
       {
         id: existing?.id ?? newRaporId('rpe'),
         folderId: folder.id,
         siswaId: student.id,
         jawaban: clean,
-        diisiOleh: actorName,
+        diisiOleh: swimming ? pelatihName.trim() : actorName,
         tanggalIsi: `${getTodayISO()} ${getCurrentTime()}`,
       },
       goNext,
@@ -1020,10 +1098,31 @@ const FillRapor: React.FC<{
           Kelas: {kelasNama} · Bergabung: {formatTanggalRapor(student.tanggalBergabung)}
         </p>
         {template.header.trim() && <p className="text-xs text-slate-700 mt-3 whitespace-pre-line">{template.header}</p>}
+        {swimming && (
+          <div className="mt-4 space-y-3">
+            <p className="text-xs text-slate-600">Usia / Kategori: {usiaPadaTanggal(student.tanggalLahir, folder.akhirPenilaian)} / {kelasNama}</p>
+            <label className="block">
+              <span className={labelCls}>Nama Pelatih <span className="text-rose-500">*</span></span>
+              <input value={pelatihName} onChange={(e) => setPelatihName(e.target.value)} className={inputCls} />
+            </label>
+            <p className="text-xs font-semibold text-emerald-700">{progress.dinilai} / {progress.total} pertemuan dinilai</p>
+            <p className="text-[11px] text-slate-500">Bisa disimpan bertahap. Pertemuan yang belum dinilai tetap kosong; kelulusan ditentukan oleh pelatih.</p>
+            <div className="space-y-1">
+              {RAPOR_NILAI_RENANG.map((n) => <p key={n.kode} className="text-[11px] text-slate-600"><strong>{n.kode} ({n.label})</strong>: {n.deskripsi}</p>)}
+            </div>
+            <label className="block">
+              <span className={labelCls}>Bagian Penilaian</span>
+              <select value={selectedSection} onChange={(e) => setSelectedSection(e.target.value)} className={inputCls}>
+                {sections.map((s, i) => <option key={i} value={i}>{s.judul ?? 'Identitas'}</option>)}
+                <option value="all">Tampilkan Semua Bagian</option>
+              </select>
+            </label>
+          </div>
+        )}
       </div>
 
       <div className="sports-card rounded-2xl p-5 space-y-5">
-        {template.items.map((it) => {
+        {displayItems.map((it) => {
           if (it.tipe === 'judul') {
             return (
               <h2 key={it.id} className="text-base font-display font-bold text-slate-900 pt-2 border-t border-slate-100 first:border-0 first:pt-0">
@@ -1040,6 +1139,55 @@ const FillRapor: React.FC<{
           return (
             <div key={it.id}>
               {label}
+              {it.tipe === 'pertemuan' && (
+                <div className="rounded-xl border border-slate-200 p-3 space-y-3">
+                  <ul className="list-disc pl-4 space-y-1 text-xs text-slate-600">
+                    {(it.materi ?? []).map((m, i) => <li key={i}>{m}</li>)}
+                  </ul>
+                  <p className="text-xs text-slate-700"><strong>Indikator Utama:</strong> {it.indikator}</p>
+                  <fieldset>
+                    <legend className={labelCls}>Penilaian</legend>
+                    <div className="flex flex-wrap gap-3">
+                      {RAPOR_NILAI_RENANG.map((n) => (
+                        <label key={n.kode} className="flex items-center gap-1.5 text-xs cursor-pointer">
+                          <input type="radio" name={it.id} checked={structuredRaporAnswer(v)[0] === n.kode}
+                            onChange={() => set(it.id, [n.kode, structuredRaporAnswer(v)[1] ?? ''])} className="accent-emerald-600" />
+                          {n.kode} — {n.label}
+                        </label>
+                      ))}
+                      {structuredRaporAnswer(v)[0] && <button onClick={() => set(it.id, ['', structuredRaporAnswer(v)[1] ?? ''])} className="text-xs text-slate-500 cursor-pointer">Kosongkan Nilai</button>}
+                    </div>
+                  </fieldset>
+                  <label className="block">
+                    <span className={labelCls}>Catatan Evaluasi</span>
+                    <textarea rows={3} value={structuredRaporAnswer(v)[1] ?? ''}
+                      onChange={(e) => set(it.id, [structuredRaporAnswer(v)[0] ?? '', e.target.value])} className={inputCls} />
+                  </label>
+                </div>
+              )}
+              {it.tipe === 'kelulusan' && (
+                <div className="rounded-xl border border-slate-200 p-3 grid sm:grid-cols-2 gap-3">
+                  <label className="block">
+                    <span className={labelCls}>Status Capaian</span>
+                    <select value={structuredRaporAnswer(v)[0] ?? ''} className={inputCls}
+                      onChange={(e) => set(it.id, [e.target.value, e.target.value === 'Lulus' ? structuredRaporAnswer(v)[1] ?? '' : '', e.target.value ? structuredRaporAnswer(v)[2] || pelatihName : ''])}>
+                      <option value="">— Belum dievaluasi —</option>
+                      {RAPOR_STATUS_KELULUSAN.map((s) => <option key={s}>{s}</option>)}
+                    </select>
+                  </label>
+                  <label className="block">
+                    <span className={labelCls}>Tanggal Lulus</span>
+                    <input type="date" disabled={structuredRaporAnswer(v)[0] !== 'Lulus'} value={structuredRaporAnswer(v)[1] ?? ''}
+                      onChange={(e) => set(it.id, [structuredRaporAnswer(v)[0] ?? '', e.target.value, structuredRaporAnswer(v)[2] ?? ''])} className={`${inputCls} disabled:bg-slate-100`} />
+                  </label>
+                  <label className="block sm:col-span-2">
+                    <span className={labelCls}>Nama Pelatih Penandatangan</span>
+                    <input disabled={!structuredRaporAnswer(v)[0]} value={structuredRaporAnswer(v)[2] ?? ''}
+                      onChange={(e) => set(it.id, [structuredRaporAnswer(v)[0] ?? '', structuredRaporAnswer(v)[1] ?? '', e.target.value])} className={`${inputCls} disabled:bg-slate-100`} />
+                    <p className="text-[10px] text-slate-500 mt-1">Nama dicetak di bawah ruang tanda tangan manual, bukan tanda tangan digital.</p>
+                  </label>
+                </div>
+              )}
               {it.tipe === 'isian' && (
                 <input value={(v as string) ?? ''} onChange={(e) => set(it.id, e.target.value)} className={inputCls} />
               )}
@@ -1108,6 +1256,11 @@ const FillRapor: React.FC<{
       </div>
 
       <div className="flex flex-wrap gap-2">
+        {swimming && selectedSection !== 'all' && Number(selectedSection) < sections.length - 1 && (
+          <button onClick={() => setSelectedSection(String(Number(selectedSection) + 1))} className={btnSecondary}>
+            Bagian Selanjutnya <ArrowRight className="w-4 h-4" />
+          </button>
+        )}
         <button onClick={() => submit(false)} className={btnPrimary}>
           <Save className="w-4 h-4" /> Simpan
         </button>

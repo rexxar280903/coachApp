@@ -2,7 +2,8 @@ import React from 'react';
 import { createPortal } from 'react-dom';
 import { ClubProfile, RaporEntry, RaporFolder, RaporTemplate, Student } from '../types/sportkit';
 import { BRAND_LOGO } from '../utils/brand';
-import { formatPeriode, groupRaporSections, jawabanText } from '../utils/rapor';
+import { formatPeriode, formatTanggalRapor, groupRaporSections, isSwimmingTemplate, jawabanText, usiaPadaTanggal } from '../utils/rapor';
+import { RaporGraduationTable, RaporMeetingTable, RaporSwimmingLegend } from './RaporEvaluationTables';
 import { FileText, Printer, X } from 'lucide-react';
 
 export interface RaporDocData {
@@ -24,9 +25,11 @@ export const RaporDocument: React.FC<{ data: RaporDocData; profile: ClubProfile 
   const { entry, folder, template, student, kelasNama } = data;
   const sections = groupRaporSections(template.items);
   const alamat = [profile.alamat, profile.kota].filter(Boolean).join(', ');
+  const swimming = isSwimmingTemplate(template);
+  const parentNames = [student.orangTua?.namaAyah, student.orangTua?.namaIbu].filter(Boolean).join(' / ');
 
   return (
-    <div className="bg-white text-slate-900 font-sans text-[11px] leading-snug">
+    <div className="rapor-document bg-white text-slate-900 font-sans text-[11px] leading-snug">
       {/* Kop klub */}
       <div className="flex items-center gap-3 pb-3 border-b-2 border-slate-900">
         <img
@@ -47,14 +50,20 @@ export const RaporDocument: React.FC<{ data: RaporDocData; profile: ClubProfile 
         </div>
       </div>
 
-      <h1 className="text-center text-base font-bold my-4">{folder.nama}</h1>
+      <h1 className="text-center text-base font-bold my-4">{swimming ? template.header || template.nama : folder.nama}</h1>
+      {swimming && <p className="text-center mb-4">{folder.nama}</p>}
 
-      <div className="grid grid-cols-3 gap-3 mb-4">
-        {[
+      <div className={`grid ${swimming ? 'grid-cols-2' : 'grid-cols-3'} gap-3 mb-4`}>
+        {(swimming ? [
+          ['Nama Murid', student.nama],
+          ['Nama Pelatih', entry.diisiOleh || '-'],
+          ['Usia / Kategori', `${usiaPadaTanggal(student.tanggalLahir, folder.akhirPenilaian)} / ${kelasNama}`],
+          ['Periode Latihan', formatPeriode(folder.awalPenilaian, folder.akhirPenilaian)],
+        ] : [
           ['Nama', student.nama],
           ['Kelas', kelasNama],
           ['Periode', formatPeriode(folder.awalPenilaian, folder.akhirPenilaian)],
-        ].map(([label, value]) => (
+        ]).map(([label, value]) => (
           <div key={label} className="border-l-4 border-slate-900 pl-2">
             <p className="text-[10px] text-slate-500">{label}</p>
             <p className="font-bold">{value}</p>
@@ -62,15 +71,19 @@ export const RaporDocument: React.FC<{ data: RaporDocData; profile: ClubProfile 
         ))}
       </div>
 
-      {template.header.trim() && <p className="whitespace-pre-line mb-2">{template.header}</p>}
+      {!swimming && template.header.trim() && <p className="whitespace-pre-line mb-2">{template.header}</p>}
 
       <div className="space-y-4">
         {sections.map((sec, i) => {
-          const rows = sec.items.filter((it) => it.tipe !== 'paragraf');
+          const meetings = sec.items.filter((it) => it.tipe === 'pertemuan');
+          const graduations = sec.items.filter((it) => it.tipe === 'kelulusan');
+          const rows = sec.items.filter((it) => it.tipe !== 'paragraf' && it.tipe !== 'pertemuan' && it.tipe !== 'kelulusan');
           const paragraphs = sec.items.filter((it) => it.tipe === 'paragraf');
           return (
-            <div key={i} className="break-inside-avoid">
+            <div key={i} className={swimming ? `rapor-section ${i > 0 ? 'rapor-new-page' : ''}` : 'break-inside-avoid'}>
               {sec.judul && <h2 className="text-xs font-bold mb-1.5">{sec.judul}</h2>}
+              {meetings.length > 0 && <RaporMeetingTable items={meetings} jawaban={entry.jawaban} />}
+              {graduations.length > 0 && <RaporGraduationTable items={graduations} jawaban={entry.jawaban} />}
               {rows.length > 0 && (
                 <table className="w-full border-collapse">
                   {sec.judul && (
@@ -105,6 +118,17 @@ export const RaporDocument: React.FC<{ data: RaporDocData; profile: ClubProfile 
           );
         })}
       </div>
+
+      {swimming && (
+        <div className="break-inside-avoid">
+          <RaporSwimmingLegend />
+          <p className="text-right mt-6">{profile.kota ? `${profile.kota}, ` : ''}{formatTanggalRapor(entry.tanggalIsi.split(' ')[0])}</p>
+          <div className="grid grid-cols-2 gap-12 text-center mt-4">
+            <div><p>Orangtua Murid</p><p className="mt-12 pt-1 border-t border-slate-400">{parentNames || 'Nama Orangtua'}</p></div>
+            <div><p>Pelatih</p><p className="mt-12 pt-1 border-t border-slate-400">{entry.diisiOleh || 'Nama Pelatih'}</p></div>
+          </div>
+        </div>
+      )}
 
       {template.footer.trim() && (
         <p className="whitespace-pre-line mt-6 pt-2 border-t border-slate-200 text-slate-600">{template.footer}</p>

@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises';
 import { after, before, test } from 'node:test';
 import { PGlite } from '@electric-sql/pglite';
 import { pgcrypto } from '@electric-sql/pglite/contrib/pgcrypto';
+import { createSwimmingEvaluationTemplate } from '../src/utils/swimmingRaporTemplate';
 
 const db = new PGlite({ extensions: { pgcrypto } });
 const admin = '00000000-0000-0000-0000-000000000001';
@@ -300,5 +301,42 @@ test('the targeted migration disables previously enforced MFA and preserves data
   await asRole('anon', null, async () => {
     await assert.rejects(db.query('select * from public.students'), /permission denied/);
     await assert.rejects(db.query("insert into storage.objects(bucket_id,name) values ('payment-proofs','00000000-0000-0000-0000-000000000001.jpg')"), /row-level security/);
+  });
+});
+
+test('swimming curriculum and structured answers persist unchanged and portal only exposes published own reports', async () => {
+  const template = createSwimmingEvaluationTemplate('Footer uji');
+  const meeting = template.items.find((it) => it.tipe === 'pertemuan')!;
+  const graduation = template.items.find((it) => it.tipe === 'kelulusan')!;
+  const answers = { [meeting.id]: ['M', 'Catatan\nbaris kedua'], [graduation.id]: ['Lulus', '2026-10-08', 'Pelatih Uji'] };
+  await asRole('authenticated', admin, async () => {
+    await db.query('insert into public.rapor_templates(id,nama,header,items,footer) values ($1,$2,$3,$4::jsonb,$5)',
+      [template.id, template.nama, template.header, JSON.stringify(template.items), template.footer]);
+    await db.query(`insert into public.rapor_folders(id,nama,kelas_id,template_id,awal_penilaian,akhir_penilaian)
+      values ('swim-folder','Evaluasi Uji','class-1',$1,'2026-08-01','2026-10-08')`, [template.id]);
+  });
+  await asRole('authenticated', coach, async () => {
+    await db.query(`insert into public.rapor_entries(id,folder_id,siswa_id,jawaban,diisi_oleh,tanggal_isi)
+      values ('swim-entry-1','swim-folder','student-1',$1::jsonb,'Pelatih Uji','2026-10-08'),
+        ('swim-entry-2','swim-folder','student-2',$1::jsonb,'Pelatih Uji','2026-10-08')`, [JSON.stringify(answers)]);
+    assert.equal((await db.query('update public.rapor_templates set nama=$1 where id=$2 returning id', ['Tidak diizinkan', template.id])).rows.length, 0);
+  });
+  await asRole('anon', null, async () => {
+    await assert.rejects(db.query('select * from public.rapor_entries'), /permission denied/);
+    const draft = await portal();
+    assert.deepEqual(draft.rapor_entries, []);
+    assert.deepEqual(draft.rapor_templates, []);
+  });
+  await asRole('authenticated', admin, () => db.query("update public.rapor_folders set diterbitkan=true where id='swim-folder'"));
+  await asRole('anon', null, async () => {
+    const published = await portal();
+    assert.equal(published.rapor_entries.length, 1);
+    assert.equal(published.rapor_entries[0].siswa_id, 'student-1');
+    assert.deepEqual(published.rapor_entries[0].jawaban, answers);
+    assert.deepEqual(published.rapor_templates[0].items, template.items);
+    assert.equal(published.rapor_folders[0].id, 'swim-folder');
+  });
+  await asRole('authenticated', outsider, async () => {
+    assert.equal((await db.query('select * from public.rapor_entries')).rows.length, 0);
   });
 });

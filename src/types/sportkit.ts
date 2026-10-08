@@ -182,8 +182,10 @@ export interface PaymentSubmission {
  *  - checkbox : boleh pilih lebih dari satu opsi
  *  - pilihan  : pilih satu opsi (radio)
  *  - dropdown : pilih satu opsi (daftar turun)
+ *  - pertemuan: kurikulum, indikator, penilaian B/C/M dan catatan evaluasi
+ *  - kelulusan: status capaian, tanggal lulus dan nama penandatangan
  */
-export type RaporItemTipe = 'judul' | 'isian' | 'paragraf' | 'checkbox' | 'pilihan' | 'dropdown';
+export type RaporItemTipe = 'judul' | 'isian' | 'paragraf' | 'checkbox' | 'pilihan' | 'dropdown' | 'pertemuan' | 'kelulusan';
 
 export interface RaporItem {
   id: string;
@@ -192,6 +194,9 @@ export interface RaporItem {
   /** Hanya untuk checkbox / pilihan / dropdown. */
   opsi?: string[];
   wajib?: boolean;
+  /** Materi dan indikator utama untuk item pertemuan. Disimpan di JSON items. */
+  materi?: string[];
+  indikator?: string;
 }
 
 /** Blangko rapor yang bisa dipakai berulang untuk banyak folder/kelas. */
@@ -215,6 +220,7 @@ export interface RaporFolder {
   diterbitkan: boolean;
 }
 
+/** Pertemuan: [nilai, catatan]; kelulusan: [status, tanggalLulus, namaPelatih]. */
 export type RaporJawaban = Record<string, string | string[]>;
 
 /** Isian rapor satu siswa di satu folder. */

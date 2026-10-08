@@ -7,7 +7,37 @@ export const RAPOR_ITEM_TIPE_LABEL: Record<RaporItemTipe, string> = {
   checkbox: 'Checkbox (pilih banyak)',
   pilihan: 'Pilihan Ganda (pilih satu)',
   dropdown: 'Dropdown (pilih satu)',
+  pertemuan: 'Evaluasi Pertemuan (B/C/M)',
+  kelulusan: 'Rekap Kelulusan Level',
 };
+
+export const RAPOR_NILAI_RENANG = [
+  { kode: 'B', label: 'Belum Mampu', deskripsi: 'Membutuhkan bantuan penuh dari pelatih.' },
+  { kode: 'C', label: 'Cukup / Dalam Proses', deskripsi: 'Bisa melakukan gerakan dengan instruksi/sedikit bantuan.' },
+  { kode: 'M', label: 'Mahir / Mandiri', deskripsi: 'Dapat melakukan gerakan secara mandiri, stabil, dan konsisten sesuai standar teknik.' },
+] as const;
+
+export const RAPOR_STATUS_KELULUSAN = ['Lulus', 'Mengulang'] as const;
+
+export const structuredRaporAnswer = (value: string | string[] | undefined): string[] =>
+  Array.isArray(value) ? value : [];
+
+export const isSwimmingTemplate = (template: RaporTemplate) => template.items.some((it) => it.tipe === 'pertemuan');
+
+/** Usia pada akhir periode, bukan pada tanggal ketika rapor dibuka. */
+export function usiaPadaTanggal(lahir: string | undefined, tanggal: string): string {
+  if (!isValidRaporDate(lahir ?? '') || !isValidRaporDate(tanggal) || lahir! > tanggal) return '-';
+  const [year, month, day] = lahir!.split('-').map(Number);
+  const [endYear, endMonth, endDay] = tanggal.split('-').map(Number);
+  const age = endYear - year - (endMonth < month || (endMonth === month && endDay < day) ? 1 : 0);
+  return `${age} tahun`;
+}
+
+export function isValidRaporDate(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const date = new Date(`${value}T00:00:00Z`);
+  return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value;
+}
 
 /** Tipe yang memakai daftar opsi. */
 export const hasOpsi = (tipe: RaporItemTipe) => tipe === 'checkbox' || tipe === 'pilihan' || tipe === 'dropdown';
@@ -35,7 +65,58 @@ export function isJawabanKosong(value: string | string[] | undefined): boolean {
 
 /** Item wajib yang belum diisi (untuk validasi sebelum disimpan). */
 export function missingRequired(template: RaporTemplate, jawaban: RaporJawaban): RaporItem[] {
-  return template.items.filter((it) => it.tipe !== 'judul' && it.wajib && isJawabanKosong(jawaban[it.id]));
+  return template.items.filter((it) => {
+    if (it.tipe === 'judul' || !it.wajib) return false;
+    const value = jawaban[it.id];
+    return it.tipe === 'pertemuan' || it.tipe === 'kelulusan'
+      ? isJawabanKosong(structuredRaporAnswer(value)[0])
+      : isJawabanKosong(value);
+  });
+}
+
+/** Validasi isian terstruktur tanpa mewajibkan semua pertemuan selesai sekaligus. */
+export function raporValidationError(template: RaporTemplate, jawaban: RaporJawaban): string | null {
+  for (const it of template.items) {
+    if (it.tipe !== 'pertemuan' && it.tipe !== 'kelulusan') continue;
+    const raw = jawaban[it.id];
+    if (raw !== undefined && !Array.isArray(raw)) return `Format jawaban ${it.label} tidak valid.`;
+    const [nilai = '', tanggal = '', pelatih = ''] = structuredRaporAnswer(raw);
+    if (it.tipe === 'pertemuan') {
+      if (nilai && !RAPOR_NILAI_RENANG.some((n) => n.kode === nilai)) return `Pilih nilai B, C, atau M untuk ${it.label}.`;
+    } else {
+      if (nilai && !RAPOR_STATUS_KELULUSAN.some((s) => s === nilai)) return `Status ${it.label} tidak valid.`;
+      if (tanggal && !isValidRaporDate(tanggal)) return `Tanggal lulus ${it.label} tidak valid.`;
+      if (nilai === 'Lulus' && !tanggal) return `Isi tanggal lulus untuk ${it.label}.`;
+      if (nilai && !pelatih.trim()) return `Isi nama pelatih penandatangan untuk ${it.label}.`;
+      if (nilai !== 'Lulus' && tanggal) return `Tanggal lulus hanya diisi untuk status Lulus pada ${it.label}.`;
+    }
+  }
+  return null;
+}
+
+/** Buang jawaban item terhapus serta elemen di luar format masing-masing tipe. */
+export function cleanRaporAnswers(template: RaporTemplate, jawaban: RaporJawaban): RaporJawaban {
+  const clean: RaporJawaban = {};
+  for (const it of template.items) {
+    const value = jawaban[it.id];
+    if (it.tipe === 'judul' || value === undefined) continue;
+    if (it.tipe === 'pertemuan' || it.tipe === 'kelulusan') {
+      const length = it.tipe === 'pertemuan' ? 2 : 3;
+      const parts = structuredRaporAnswer(value);
+      clean[it.id] = Array.from({ length }, (_, i) => (parts[i] ?? '').trim());
+    } else {
+      clean[it.id] = typeof value === 'string' ? value.trim() : value.map((v) => v.trim()).filter(Boolean);
+    }
+  }
+  return clean;
+}
+
+export function raporProgress(template: RaporTemplate, jawaban: RaporJawaban): { dinilai: number; total: number } {
+  const pertemuan = template.items.filter((it) => it.tipe === 'pertemuan');
+  return {
+    total: pertemuan.length,
+    dinilai: pertemuan.filter((it) => RAPOR_NILAI_RENANG.some((n) => n.kode === structuredRaporAnswer(jawaban[it.id])[0])).length,
+  };
 }
 
 export interface RaporSection {

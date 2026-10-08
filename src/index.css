@@ -215,6 +215,18 @@
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
   }
+  .rapor-document .rapor-new-page {
+    break-before: page;
+  }
+  .rapor-document h2 {
+    break-after: avoid;
+  }
+  .rapor-evaluation-table thead {
+    display: table-header-group;
+  }
+  .rapor-evaluation-table tr {
+    break-inside: avoid;
+  }
   @page {
     size: A4;
     margin: 14mm;
