@@ -164,7 +164,7 @@ export function fromRow<T>(def: TableDef, row: Obj): T {
 
 const PROOF_BUCKET = 'payment-proofs';
 const AVATAR_BUCKET = 'avatars';
-const SIGNED_URL_TTL = 60 * 60 * 8; // 8 jam
+const SIGNED_URL_TTL = 60 * 60; // 1 jam; bucket tetap privat
 const SIGN_PREFIX = `${SUPABASE_URL}/storage/v1/object/sign/${PROOF_BUCKET}/`;
 
 const isDataUrl = (v: unknown): boolean => typeof v === 'string' && v.startsWith('data:');
@@ -174,13 +174,13 @@ const uuid = () => crypto.randomUUID();
 const uploadMemo = new Map<string, string>();
 
 function extFor(dataUrl: string): 'jpg' | 'png' | 'webp' | null {
-  if (dataUrl.startsWith('data:image/jpeg')) return 'jpg';
-  if (dataUrl.startsWith('data:image/png')) return 'png';
-  if (dataUrl.startsWith('data:image/webp')) return 'webp';
+  if (dataUrl.startsWith('data:image/jpeg;base64,')) return 'jpg';
+  if (dataUrl.startsWith('data:image/png;base64,')) return 'png';
+  if (dataUrl.startsWith('data:image/webp;base64,')) return 'webp';
   return null;
 }
 
-/** Unggah ke bucket publik `avatars` dan kembalikan URL publiknya. */
+/** URL public adalah referensi stabil; bucket privat dibaca melalui signed URL. */
 async function uploadAvatar(dataUrl: string, folder: string): Promise<string> {
   const memoKey = `${AVATAR_BUCKET}:${dataUrl}`;
   const memo = uploadMemo.get(memoKey);
@@ -188,13 +188,48 @@ async function uploadAvatar(dataUrl: string, folder: string): Promise<string> {
   const ext = extFor(dataUrl);
   if (!ext) throw new Error('Format gambar tidak didukung (gunakan JPG, PNG, atau WebP).');
   const path = `${folder}/${uuid()}.${ext}`;
-  const { error } = await supabase.storage.from(AVATAR_BUCKET).upload(path, dataUrlToBlob(dataUrl), {
+  const { error } = await supabase.storage.from(AVATAR_BUCKET).upload(path, dataUrlToBlob(dataUrl, 2 * 1024 * 1024), {
     contentType: `image/${ext === 'jpg' ? 'jpeg' : ext}`,
   });
   if (error) throw new Error(`Gagal mengunggah foto: ${error.message}`);
   const url = supabase.storage.from(AVATAR_BUCKET).getPublicUrl(path).data.publicUrl;
   uploadMemo.set(memoKey, url);
   return url;
+}
+
+function avatarPath(value: string): string | null {
+  try {
+    const parsed = new URL(value);
+    if (parsed.origin !== SUPABASE_URL) return null;
+    const match = /^\/storage\/v1\/object\/(?:public|sign)\/avatars\/(.+)$/.exec(parsed.pathname);
+    if (!match) return null;
+    const path = decodeURIComponent(match[1]);
+    return /^(people|club)\/[0-9a-f-]{36}\.(jpg|png|webp)$/.test(path) ? path : null;
+  } catch { return null; }
+}
+
+function avatarReference(value?: string): string | undefined {
+  if (!value) return undefined;
+  const path = avatarPath(value);
+  if (!path) throw new Error('Referensi foto tidak valid. Unggah ulang gambar.');
+  return supabase.storage.from(AVATAR_BUCKET).getPublicUrl(path).data.publicUrl;
+}
+
+async function signedAvatar(value?: string): Promise<string | undefined> {
+  const path = value ? avatarPath(value) : null;
+  if (!path) return undefined;
+  const { data, error } = await supabase.storage.from(AVATAR_BUCKET).createSignedUrl(path, SIGNED_URL_TTL);
+  if (error) throw new Error('Gagal mengakses gambar privat. Coba muat ulang halaman.');
+  return data.signedUrl;
+}
+
+async function withSignedPhotos<T extends { id: string; foto?: string }>(items: T[]): Promise<T[]> {
+  const paths = [...new Set(items.map((item) => item.foto ? avatarPath(item.foto) : null).filter((p): p is string => Boolean(p)))];
+  if (!paths.length) return items.map((item) => ({ ...item, foto: undefined }));
+  const { data, error } = await supabase.storage.from(AVATAR_BUCKET).createSignedUrls(paths, SIGNED_URL_TTL);
+  if (error) throw new Error('Gagal mengakses foto privat. Coba muat ulang halaman.');
+  const urls = new Map((data ?? []).map((item) => [item.path, item.signedUrl]));
+  return items.map((item) => ({ ...item, foto: urls.get(item.foto ? avatarPath(item.foto) ?? '' : '') }));
 }
 
 /** Unggah ke bucket privat `payment-proofs` dan kembalikan path-nya. */
@@ -223,6 +258,7 @@ async function toProofPath(value: string): Promise<string> {
   if (SUPABASE_URL && value.startsWith(SIGN_PREFIX)) {
     return decodeURIComponent(value.slice(SIGN_PREFIX.length).split('?')[0]);
   }
+  if (!/^[0-9a-f-]{36}\.(jpg|png|webp)$/.test(value)) throw new Error('Referensi bukti transfer tidak valid.');
   return value;
 }
 
@@ -254,12 +290,11 @@ export async function waitForPendingSaves(): Promise<void> {
   await Promise.all([...queues.values()]);
 }
 
-async function fetchAll<T extends { id: string }>(def: TableDef): Promise<T[]> {
+async function fetchAll<T extends { id: string }>(def: TableDef, coach = false): Promise<T[]> {
   const rows: Obj[] = [];
   for (let from = 0; ; from += PAGE) {
-    const { data, error } = await supabase
-      .from(def.table)
-      .select('*')
+    const query = coach ? supabase.rpc('coach_students') : supabase.from(def.table).select('*');
+    const { data, error } = await query
       .order('created_at', { ascending: def.order === 'asc' })
       .order('id', { ascending: def.order === 'asc' })
       .range(from, from + PAGE - 1);
@@ -356,6 +391,7 @@ function save<T extends { id: string }>(def: TableDef, list: T[], prepare?: Prep
 
 const prepareFoto: Prepare = async (row, item) => {
   if (isDataUrl(item.foto)) row.foto = await uploadAvatar(item.foto, 'people');
+  else if (item.foto) row.foto = avatarReference(item.foto);
   return row;
 };
 
@@ -381,10 +417,18 @@ const prepareProof: Prepare = async (row, item) => {
 
 // ─── API publik (dipakai App.tsx) ────────────────────────────────────────────
 
-export const getStudents = () => load<Student>(T.students);
+export async function getStudents(role: 'admin' | 'coach' = 'admin') {
+  const items = await withSignedPhotos(await fetchAll<Student>(T.students, role === 'coach'));
+  snapshots.set(T.students.table, new Map(items.map((item) => [item.id, JSON.stringify(item)])));
+  return items;
+}
 export const saveStudents = (list: Student[]) => save(T.students, list, prepareStudent);
 
-export const getCoaches = () => load<Coach>(T.coaches);
+export async function getCoaches() {
+  const items = await withSignedPhotos(await fetchAll<Coach>(T.coaches));
+  snapshots.set(T.coaches.table, new Map(items.map((item) => [item.id, JSON.stringify(item)])));
+  return items;
+}
 export const saveCoaches = (list: Coach[]) => save(T.coaches, list, prepareFoto);
 
 export const getClasses = () => load<ClassGroup>(T.classes);
@@ -445,14 +489,15 @@ export async function getClubProfile(): Promise<ClubProfile> {
   const { data, error } = await supabase.from('club_profile').select('*').eq('id', 1).maybeSingle();
   if (error) throw new Error(`Gagal memuat profil klub: ${error.message}`);
   const row = data ?? {};
-  return fromRow<ClubProfile>({ table: 'club_profile', cols: PROFILE_COLS, order: 'asc' }, row);
+  const profile = fromRow<ClubProfile>({ table: 'club_profile', cols: PROFILE_COLS, order: 'asc' }, row);
+  return { ...profile, logoUrl: await signedAvatar(profile.logoUrl) };
 }
 
 /** Mengembalikan `true` bila tersimpan (kegagalan dilaporkan lewat handler galat sinkronisasi). */
 export async function saveClubProfile(profile: ClubProfile): Promise<boolean> {
   try {
     const rawLogo = profile.logoUrl;
-    const logoUrl = rawLogo && isDataUrl(rawLogo) ? await uploadAvatar(rawLogo, 'club') : rawLogo;
+    const logoUrl = rawLogo && isDataUrl(rawLogo) ? await uploadAvatar(rawLogo, 'club') : avatarReference(rawLogo);
     const row = toRow({ table: 'club_profile', cols: PROFILE_COLS, nullable: PROFILE_NULLABLE, order: 'asc' }, { ...profile, logoUrl });
     const { error } = await supabase.from('club_profile').upsert({ id: 1, ...row }, { onConflict: 'id' });
     if (error) throw new Error(error.message);
@@ -538,7 +583,31 @@ export interface PortalBundle {
 const localProofPreviews = new Map<string, string>();
 
 function rpcMessage(error: { message: string }): Error {
-  return new Error(error.message);
+  // Known validation errors may be shown; SQL/schema/network internals remain private.
+  const publicMessage = /^(Nama siswa tidak valid|Kelas tidak ditemukan|Jenis kelamin tidak valid|Nomor HP wajib diisi|Tanggal lahir tidak valid)/.test(error.message);
+  return new Error(publicMessage ? error.message : 'Permintaan gagal. Coba lagi atau hubungi pengurus.');
+}
+
+function checkRpcResult(data: unknown) {
+  if (data && typeof data === 'object' && 'error' in data && typeof data.error === 'string') {
+    throw new Error(data.error);
+  }
+}
+
+export function clearSensitiveCaches() {
+  uploadMemo.clear();
+  localProofPreviews.clear();
+  generatedKode.clear();
+  knownReceipts.clear();
+  snapshots.clear();
+}
+
+export async function reviewPaymentSubmission(id: string, action: 'verified' | 'rejected', note: string, terbilang = ''): Promise<PaymentTransaction | null> {
+  await waitForPendingSaves();
+  const { data, error } = await supabase.rpc('admin_review_payment', { p_id: id, p_action: action, p_note: note, p_terbilang: terbilang });
+  if (error) throw rpcMessage(error);
+  checkRpcResult(data);
+  return data?.transaction ? fromRow<PaymentTransaction>(T.transactions, data.transaction) : null;
 }
 
 /** Mengembalikan null jika No. HP / kode akses tidak cocok. */
@@ -546,6 +615,7 @@ export async function portalLogin({ hp, kode }: PortalCredentials): Promise<Port
   const { data, error } = await supabase.rpc('portal_data', { p_hp: hp, p_kode: kode });
   if (error) throw rpcMessage(error);
   if (!data) return null;
+  checkRpcResult(data);
   const b = data as Obj;
   return {
     student: fromRow<Student>(T.students, b.student),
@@ -555,13 +625,14 @@ export async function portalLogin({ hp, kode }: PortalCredentials): Promise<Port
     transactions: (b.transactions as Obj[]).map((r) => fromRow<PaymentTransaction>(T.transactions, r)),
     submissions: (b.payment_submissions as Obj[]).map((r) => {
       const s = fromRow<PaymentSubmission>(T.submissions, r);
-      return { ...s, buktiGambarUrl: localProofPreviews.get(s.buktiGambarUrl) ?? '' };
+      return { ...s, buktiGambarUrl: localProofPreviews.get(s.id) ?? '' };
     }),
     // Kunci rapor_* belum ada bila schema.sql di server belum diperbarui.
     raporTemplates: ((b.rapor_templates ?? []) as Obj[]).map((r) => fromRow<RaporTemplate>(T.raporTemplates, r)),
     raporFolders: ((b.rapor_folders ?? []) as Obj[]).map((r) => fromRow<RaporFolder>(T.raporFolders, r)),
     raporEntries: ((b.rapor_entries ?? []) as Obj[]).map((r) => fromRow<RaporEntry>(T.raporEntries, r)),
-    profile: fromRow<ClubProfile>({ table: 'club_profile', cols: PROFILE_COLS, order: 'asc' }, b.club_profile ?? {}),
+    profile: { ...fromRow<ClubProfile>({ table: 'club_profile', cols: PROFILE_COLS, order: 'asc' }, b.club_profile ?? {}),
+      logoUrl: await signedAvatar(b.club_profile?.logo_url) },
   };
 }
 
@@ -572,8 +643,17 @@ export async function portalSubmitPayment(
   },
 ): Promise<void> {
   if (!isDataUrl(input.buktiGambarUrl)) throw new Error('Bukti transfer wajib diunggah.');
-  const path = await uploadPaymentProof(input.buktiGambarUrl);
-  const { error } = await supabase.rpc('portal_submit_payment', {
+  const ext = extFor(input.buktiGambarUrl);
+  if (!ext) throw new Error('Format bukti transfer tidak valid.');
+  const blob = dataUrlToBlob(input.buktiGambarUrl);
+  const reservation = await supabase.rpc('portal_create_upload', { p_hp: creds.hp, p_kode: creds.kode, p_ext: ext });
+  if (reservation.error) throw rpcMessage(reservation.error);
+  checkRpcResult(reservation.data);
+  const path = reservation.data?.path;
+  if (typeof path !== 'string' || !/^[0-9a-f-]{36}\.(jpg|png|webp)$/.test(path)) throw new Error('Izin unggah tidak valid.');
+  const uploaded = await supabase.storage.from(PROOF_BUCKET).upload(path, blob, { contentType: blob.type, upsert: false });
+  if (uploaded.error) throw new Error('Gagal mengunggah bukti. Coba lagi atau masuk ulang ke portal.');
+  const { data, error } = await supabase.rpc('portal_submit_payment', {
     p_hp: creds.hp,
     p_kode: creds.kode,
     p: {
@@ -587,11 +667,12 @@ export async function portalSubmitPayment(
     },
   });
   if (error) throw rpcMessage(error);
-  localProofPreviews.set(path, input.buktiGambarUrl);
+  checkRpcResult(data);
+  if (data?.id) localProofPreviews.set(data.id, input.buktiGambarUrl);
 }
 
 export async function registerPublic(s: Student): Promise<void> {
-  const { error } = await supabase.rpc('public_register', {
+  const { data, error } = await supabase.rpc('public_register', {
     p: {
       nama: s.nama,
       kelas_id: s.kelasId,
@@ -606,4 +687,5 @@ export async function registerPublic(s: Student): Promise<void> {
     },
   });
   if (error) throw rpcMessage(error);
+  checkRpcResult(data);
 }

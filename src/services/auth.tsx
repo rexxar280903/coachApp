@@ -1,6 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { supabase, isSupabaseConfigured, startedInRecovery } from './supabase';
+import { passwordValidationError } from '../utils/security';
 
 export type StaffRole = 'admin' | 'coach';
 
@@ -35,8 +36,8 @@ function friendlyError(message: string): string {
   if (/invalid login credentials/i.test(message)) return 'Email atau kata sandi salah.';
   if (/email not confirmed/i.test(message)) return 'Email belum dikonfirmasi. Periksa kotak masuk Anda.';
   if (/rate limit|too many/i.test(message)) return 'Terlalu banyak percobaan. Coba lagi beberapa saat lagi.';
-  if (/password should be at least/i.test(message)) return 'Kata sandi minimal 8 karakter.';
-  return message;
+  if (/password|weak/i.test(message)) return 'Kata sandi ditolak. Gunakan kata sandi unik minimal 12 karakter.';
+  return 'Permintaan gagal. Periksa koneksi lalu coba lagi.';
 }
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -49,15 +50,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   useEffect(() => {
     if (!isSupabaseConfigured) return;
-    supabase.auth.getSession().then(({ data }) => {
+    supabase.auth.getSession().then(({ data, error }) => {
       setSession(data.session);
-      if (!data.session) setLoading(false);
+      if (error || !data.session) { setLoading(false); setRecovery(false); }
+    }).catch(() => {
+      setLoading(false);
+      setRecovery(false);
     });
     const { data: sub } = supabase.auth.onAuthStateChange((event, next) => {
       if (event === 'PASSWORD_RECOVERY') setRecovery(true);
       setSession(next);
       if (!next) {
         setStaff(null);
+        setRecovery(false);
         setLoading(false);
       }
     });
@@ -71,21 +76,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (!userId) return;
     let cancelled = false;
     setLoading(true);
+    setStaff(null);
     setProfileError(null);
-    supabase
-      .from('profiles')
-      .select('nama, role')
-      .eq('id', userId)
-      .maybeSingle()
+    supabase.from('profiles').select('nama, role').eq('id', userId).maybeSingle()
       .then(
         ({ data, error }) => {
           if (cancelled) return;
           if (error) {
             setStaff(null);
-            setProfileError(error.message);
+            setProfileError('Tidak dapat memverifikasi akses akun. Coba lagi.');
           } else {
+            const validRole = data && (data.role === 'admin' || data.role === 'coach');
             setStaff(
-              data && (data.role === 'admin' || data.role === 'coach')
+              validRole
                 ? { id: userId, email: userEmail, nama: data.nama || userEmail, role: data.role }
                 : null,
             );
@@ -95,24 +98,32 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         (e: Error) => {
           if (cancelled) return;
           setStaff(null);
-          setProfileError(e.message || 'Gagal terhubung ke server.');
+          setProfileError('Gagal terhubung ke server.');
           setLoading(false);
         },
       );
     return () => {
       cancelled = true;
     };
-  }, [userId, userEmail, profileAttempt]);
+  }, [userId, userEmail, session?.access_token, profileAttempt]);
 
   const retryProfile = useCallback(() => setProfileAttempt((n) => n + 1), []);
 
   const signIn = useCallback(async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
-    return error ? friendlyError(error.message) : null;
+    try {
+      const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
+      return error ? friendlyError(error.message) : null;
+    } catch { return 'Gagal terhubung ke server. Coba lagi.'; }
   }, []);
 
   const signOut = useCallback(async () => {
-    await supabase.auth.signOut();
+    const { error } = await supabase.auth.signOut({ scope: 'local' });
+    if (error) {
+      setStaff(null);
+      setProfileError('Logout gagal. Periksa koneksi lalu klik Keluar lagi.');
+      return;
+    }
+    setSession(null);
     setStaff(null);
     setRecovery(false);
     setProfileError(null);
@@ -126,10 +137,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const updatePassword = useCallback(async (password: string) => {
+    const validation = passwordValidationError(password);
+    if (validation) return validation;
+    if (!recovery || !session) return 'Sesi pemulihan tidak valid. Minta tautan baru.';
     const { error } = await supabase.auth.updateUser({ password });
-    if (!error) setRecovery(false);
+    if (!error) {
+      // Revoke refresh sessions after recovery; old access JWTs expire according to Auth settings.
+      const result = await supabase.auth.signOut({ scope: 'global' });
+      if (result.error) return 'Kata sandi diubah, tetapi logout gagal. Coba keluar lalu masuk ulang.';
+      setRecovery(false);
+    }
     return error ? friendlyError(error.message) : null;
-  }, []);
+  }, [recovery, session]);
 
   const value = useMemo<AuthContextValue>(
     () => ({

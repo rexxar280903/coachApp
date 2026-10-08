@@ -17,7 +17,7 @@ export class ErrorBoundary extends React.Component<{ children: React.ReactNode }
   }
 
   componentDidCatch(error: Error, info: React.ErrorInfo) {
-    console.error('[ErrorBoundary]', error, info.componentStack);
+    if (import.meta.env.DEV) console.error('[ErrorBoundary]', error, info.componentStack);
   }
 
   render() {
@@ -40,7 +40,7 @@ export class ErrorBoundary extends React.Component<{ children: React.ReactNode }
             </p>
           </div>
           <pre className="text-[11px] text-left text-rose-700 bg-rose-50 border border-rose-100 rounded-xl p-3 overflow-x-auto whitespace-pre-wrap">
-            {this.state.error.message}
+            {import.meta.env.DEV ? this.state.error.message : 'Terjadi gangguan. Muat ulang halaman atau hubungi pengurus.'}
           </pre>
           <div className="flex items-center justify-center gap-2">
             <button

@@ -48,7 +48,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
       `Status: Pembayaran diterima & terverifikasi ✅\n` +
       `Terima kasih atas pembayarannya.`
     );
-    window.open(`https://wa.me/?text=${text}`, '_blank');
+    window.open(`https://wa.me/?text=${text}`, '_blank', 'noopener,noreferrer');
   };
 
   // Dirender di luar #root agar saat dicetak hanya kuitansi yang tampil

@@ -8,8 +8,9 @@ import { Navigate, useLocation } from 'react-router-dom';
 import Workspace from './Workspace';
 import { useAuth } from './services/auth';
 import { isSupabaseConfigured } from './services/supabase';
-import { portalLogin, PortalCredentials } from './services/storage';
-import { clearPortalSession, loadPortalSession, savePortalSession } from './services/portalSession';
+import { portalLogin, clearSensitiveCaches, waitForPendingSaves } from './services/storage';
+import { clearPortalSession, loadPortalSession, savePortalSession, type PortalSession } from './services/portalSession';
+import { useSessionExpiry } from './services/sessionExpiry';
 import { LoginView } from './views/auth/LoginView';
 import { ResetPasswordView } from './views/auth/ResetPasswordView';
 import { PortalLoginView } from './views/auth/PortalLoginView';
@@ -21,14 +22,13 @@ const FullScreenMessage: React.FC<{ title: string; children?: React.ReactNode }>
 
 /** Halaman portal siswa/wali: login dengan No. HP + kode akses, tanpa akun. */
 const PortalGate: React.FC = () => {
-  const [creds, setCreds] = useState<PortalCredentials | null>(() => loadPortalSession());
+  const [creds, setCreds] = useState<PortalSession | null>(() => loadPortalSession());
 
   const handleLogin = useCallback(async (hp: string, kode: string): Promise<string | null> => {
     try {
       const bundle = await portalLogin({ hp, kode });
       if (!bundle) return 'Nomor HP atau kode akses tidak cocok.';
-      const next = { hp, kode };
-      savePortalSession(next);
+      const next = savePortalSession({ hp, kode });
       setCreds(next);
       return null;
     } catch (e) {
@@ -38,8 +38,10 @@ const PortalGate: React.FC = () => {
 
   const handleLogout = useCallback(() => {
     clearPortalSession();
+    clearSensitiveCaches();
     setCreds(null);
   }, []);
+  useSessionExpiry(Boolean(creds), handleLogout, creds?.expiresAt);
 
   if (!creds) return <PortalLoginView onLogin={handleLogin} />;
   return <Workspace key={`${creds.hp}:${creds.kode}`} mode="student" portal={creds} onLogout={handleLogout} />;
@@ -49,6 +51,12 @@ const PortalGate: React.FC = () => {
 const StaffGate: React.FC = () => {
   const { loading, staff, noAccess, profileError, retryProfile, signOut } = useAuth();
   const { pathname } = useLocation();
+  const handleLogout = useCallback(async () => {
+    await waitForPendingSaves();
+    await signOut();
+    clearSensitiveCaches();
+  }, [signOut]);
+  useSessionExpiry(Boolean(staff), handleLogout);
 
   if (loading) {
     return (
@@ -105,7 +113,7 @@ const StaffGate: React.FC = () => {
   }
 
   if (pathname === '/login') return <Navigate to="/" replace />;
-  return <Workspace key={staff.id} mode="staff" staff={staff} onLogout={signOut} />;
+  return <Workspace key={`${staff.id}:${staff.role}`} mode="staff" staff={staff} onLogout={handleLogout} />;
 };
 
 export default function App() {

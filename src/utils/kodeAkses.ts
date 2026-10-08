@@ -1,8 +1,8 @@
-// Sama dengan public.gen_kode_akses() di database: 8 karakter tanpa 0/O/1/I.
+// Sama dengan public.gen_kode_akses(): 12 karakter acak (60 bit), tanpa 0/O/1/I.
 const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
 export function generateKodeAkses(): string {
-  const bytes = new Uint8Array(8);
+  const bytes = new Uint8Array(12);
   crypto.getRandomValues(bytes);
   return Array.from(bytes, (b) => ALPHABET[b % ALPHABET.length]).join('');
 }

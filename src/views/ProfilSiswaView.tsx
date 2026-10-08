@@ -91,8 +91,8 @@ interface ProfilSiswaViewProps {
   onOpenEventPaymentModal: (event: ClubEvent, participant: EventParticipant, student: Student, classGroup: ClassGroup) => void;
   onUpdateStudent: (student: Student) => void;
   onDeleteStudent?: (studentId: string) => void;
-  onVerifySubmission?: (submissionId: string, catatanAdmin: string) => void;
-  onRejectSubmission?: (submissionId: string, alasan: string) => void;
+  onVerifySubmission?: (submissionId: string, catatanAdmin: string) => Promise<boolean>;
+  onRejectSubmission?: (submissionId: string, alasan: string) => Promise<boolean>;
   onViewReceipt?: (tx: PaymentTransaction) => void;
   raporTemplates?: RaporTemplate[];
   raporFolders?: RaporFolder[];
@@ -181,6 +181,7 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
 
   // Admin Quick Reject Modal
   const [rejectModalSub, setRejectModalSub] = useState<PaymentSubmission | null>(null);
+  const [reviewing, setReviewing] = useState(false);
   const [rejectReason, setRejectReason] = useState<string>('Bukti transfer tidak valid atau nominal tidak cocok.');
 
   // Admin Manual Input Proof Modal
@@ -260,18 +261,18 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
     onViewReceipt(receiptForSubmission(sub, transactions || []));
   };
 
-  const handleConfirmVerify = () => {
-    if (verifyModalSub && onVerifySubmission) {
-      onVerifySubmission(verifyModalSub.id, verifyNote);
-      setVerifyModalSub(null);
-    }
+  const handleConfirmVerify = async () => {
+    if (!verifyModalSub || !onVerifySubmission || reviewing) return;
+    setReviewing(true);
+    try { if (await onVerifySubmission(verifyModalSub.id, verifyNote)) setVerifyModalSub(null); }
+    finally { setReviewing(false); }
   };
 
-  const handleConfirmReject = () => {
-    if (rejectModalSub && onRejectSubmission) {
-      onRejectSubmission(rejectModalSub.id, rejectReason);
-      setRejectModalSub(null);
-    }
+  const handleConfirmReject = async () => {
+    if (!rejectModalSub || !onRejectSubmission || reviewing) return;
+    setReviewing(true);
+    try { if (await onRejectSubmission(rejectModalSub.id, rejectReason)) setRejectModalSub(null); }
+    finally { setReviewing(false); }
   };
 
   const getCellColorClass = (status: FeeStatus) => {
@@ -2126,6 +2127,7 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
               <button
                 type="button"
                 onClick={handleConfirmVerify}
+                disabled={reviewing}
                 className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-md transition-colors cursor-pointer flex items-center gap-1.5"
               >
                 <CheckCheck className="w-4 h-4" />
