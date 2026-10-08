@@ -122,7 +122,9 @@ const T = {
   },
   raporTemplates: {
     table: 'rapor_templates',
-    cols: ['id', 'nama', 'header', 'items', 'footer'],
+    cols: ['id', 'nama', 'header', 'items', 'footer', 'ttd'],
+    nullable: ['ttd'],
+    optional: ['ttd'],
     order: 'asc',
   },
   raporFolders: {
@@ -219,7 +221,11 @@ async function signedAvatar(value?: string): Promise<string | undefined> {
   const path = value ? avatarPath(value) : null;
   if (!path) return undefined;
   const { data, error } = await supabase.storage.from(AVATAR_BUCKET).createSignedUrl(path, SIGNED_URL_TTL);
-  if (error) throw new Error('Gagal mengakses gambar privat. Coba muat ulang halaman.');
+  if (error) {
+    // Logo yang hilang / tak bisa diakses tidak boleh menggagalkan pemuatan seluruh data.
+    console.warn(`[storage] Gagal mengakses gambar privat "${path}": ${error.message}`);
+    return undefined;
+  }
   return data.signedUrl;
 }
 

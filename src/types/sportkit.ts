@@ -199,6 +199,21 @@ export interface RaporItem {
   indikator?: string;
 }
 
+/** Asal nama yang dicetak di bawah tanda tangan. */
+export type RaporTtdSumber = 'manual' | 'pelatih' | 'orangtua';
+
+/** Satu kolom tanda tangan di bagian bawah rapor. */
+export interface RaporTtd {
+  id: string;
+  /** Judul di atas ruang tanda tangan, mis. "Ketua Klub". */
+  jabatan: string;
+  sumberNama: RaporTtdSumber;
+  /** Nama tetap bila sumberNama = 'manual'. */
+  nama?: string;
+  /** Gambar tanda tangan / stempel (data URL JPEG terkompresi). Kosong = TTD basah. */
+  gambar?: string;
+}
+
 /** Blangko rapor yang bisa dipakai berulang untuk banyak folder/kelas. */
 export interface RaporTemplate {
   id: string;
@@ -206,6 +221,8 @@ export interface RaporTemplate {
   header: string;   // teks pembuka di atas tabel penilaian
   items: RaporItem[];
   footer: string;   // teks penutup di bawah rapor
+  /** Kolom tanda tangan. `undefined` = bawaan (template renang: Orangtua & Pelatih). */
+  ttd?: RaporTtd[];
 }
 
 /** Satu periode penilaian untuk satu kelas, memakai satu template. */

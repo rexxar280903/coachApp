@@ -2,7 +2,7 @@ import React from 'react';
 import { createPortal } from 'react-dom';
 import { ClubProfile, RaporEntry, RaporFolder, RaporTemplate, Student } from '../types/sportkit';
 import { BRAND_LOGO } from '../utils/brand';
-import { formatPeriode, formatTanggalRapor, groupRaporSections, isSwimmingTemplate, jawabanText, usiaPadaTanggal } from '../utils/rapor';
+import { formatPeriode, formatTanggalRapor, groupRaporSections, isSwimmingTemplate, jawabanText, raporSignatures, usiaPadaTanggal } from '../utils/rapor';
 import { RaporGraduationTable, RaporMeetingTable, RaporSwimmingLegend } from './RaporEvaluationTables';
 import { FileText, Printer, X } from 'lucide-react';
 
@@ -27,6 +27,12 @@ export const RaporDocument: React.FC<{ data: RaporDocData; profile: ClubProfile 
   const alamat = [profile.alamat, profile.kota].filter(Boolean).join(', ');
   const swimming = isSwimmingTemplate(template);
   const parentNames = [student.orangTua?.namaAyah, student.orangTua?.namaIbu].filter(Boolean).join(' / ');
+  const signatures = raporSignatures(template);
+  const signerName = (s: (typeof signatures)[number]) =>
+    s.sumberNama === 'pelatih' ? entry.diisiOleh || 'Nama Pelatih'
+      : s.sumberNama === 'orangtua' ? parentNames || 'Nama Orangtua'
+      : s.nama?.trim() || '\u00a0';
+  const gridCols = ['grid-cols-1', 'grid-cols-2', 'grid-cols-3', 'grid-cols-4'][Math.min(signatures.length, 4) - 1];
 
   return (
     <div className="rapor-document bg-white text-slate-900 font-sans text-[11px] leading-snug">
@@ -119,13 +125,21 @@ export const RaporDocument: React.FC<{ data: RaporDocData; profile: ClubProfile 
         })}
       </div>
 
-      {swimming && (
+      {swimming && <div className="break-inside-avoid"><RaporSwimmingLegend /></div>}
+
+      {signatures.length > 0 && (
         <div className="break-inside-avoid">
-          <RaporSwimmingLegend />
           <p className="text-right mt-6">{profile.kota ? `${profile.kota}, ` : ''}{formatTanggalRapor(entry.tanggalIsi.split(' ')[0])}</p>
-          <div className="grid grid-cols-2 gap-12 text-center mt-4">
-            <div><p>Orangtua Murid</p><p className="mt-12 pt-1 border-t border-slate-400">{parentNames || 'Nama Orangtua'}</p></div>
-            <div><p>Pelatih</p><p className="mt-12 pt-1 border-t border-slate-400">{entry.diisiOleh || 'Nama Pelatih'}</p></div>
+          <div className={`grid ${gridCols} gap-8 text-center mt-4`}>
+            {signatures.map((s) => (
+              <div key={s.id} className="flex flex-col">
+                <p>{s.jabatan}</p>
+                <div className="h-16 flex items-center justify-center">
+                  {s.gambar?.startsWith('data:image/') && <img src={s.gambar} alt={`Tanda tangan ${s.jabatan}`} className="max-h-16 max-w-full object-contain" />}
+                </div>
+                <p className="pt-1 border-t border-slate-400">{signerName(s)}</p>
+              </div>
+            ))}
           </div>
         </div>
       )}

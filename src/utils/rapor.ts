@@ -1,4 +1,4 @@
-import { RaporItem, RaporItemTipe, RaporJawaban, RaporTemplate } from '../types/sportkit';
+import { RaporItem, RaporItemTipe, RaporJawaban, RaporTemplate, RaporTtd, RaporTtdSumber } from '../types/sportkit';
 
 export const RAPOR_ITEM_TIPE_LABEL: Record<RaporItemTipe, string> = {
   judul: 'Judul Bagian',
@@ -23,6 +23,27 @@ export const structuredRaporAnswer = (value: string | string[] | undefined): str
   Array.isArray(value) ? value : [];
 
 export const isSwimmingTemplate = (template: RaporTemplate) => template.items.some((it) => it.tipe === 'pertemuan');
+
+export const RAPOR_TTD_SUMBER_LABEL: Record<RaporTtdSumber, string> = {
+  manual: 'Nama tetap (diketik)',
+  pelatih: 'Otomatis: pelatih pengisi rapor',
+  orangtua: 'Otomatis: orang tua siswa',
+};
+
+/** Batas jumlah kolom tanda tangan agar tetap muat satu baris di kertas A4. */
+export const RAPOR_TTD_MAX = 4;
+
+/** Kolom TTD bawaan (perilaku lama template renang). */
+export const defaultRaporTtd = (): RaporTtd[] => [
+  { id: newRaporId('ttd'), jabatan: 'Orangtua Murid', sumberNama: 'orangtua' },
+  { id: newRaporId('ttd'), jabatan: 'Pelatih', sumberNama: 'pelatih' },
+];
+
+/** Kolom TTD yang dicetak: pengaturan template, atau bawaan untuk template renang lama. */
+export function raporSignatures(template: RaporTemplate): RaporTtd[] {
+  if (Array.isArray(template.ttd)) return template.ttd;
+  return isSwimmingTemplate(template) ? defaultRaporTtd() : [];
+}
 
 /** Usia pada akhir periode, bukan pada tanggal ketika rapor dibuka. */
 export function usiaPadaTanggal(lahir: string | undefined, tanggal: string): string {

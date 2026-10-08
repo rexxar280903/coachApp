@@ -254,6 +254,9 @@ create table if not exists public.rapor_templates (
   created_at timestamptz not null default now()
 );
 
+-- Kolom tanda tangan (RaporTtd[]); null = bawaan aplikasi.
+alter table public.rapor_templates add column if not exists ttd jsonb;
+
 create table if not exists public.rapor_folders (
   id              text primary key,
   nama            text not null,

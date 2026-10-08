@@ -13,6 +13,7 @@ import {
 } from '../types/sportkit';
 import { useToast } from '../components/Toast';
 import { RaporDocData, RaporDocument } from '../components/RaporPrintModal';
+import { RaporTtdEditor } from '../components/RaporTtdEditor';
 import { getCurrentTime, getCurrentYear, getTodayISO } from '../utils/constants';
 import {
   RAPOR_ITEM_TIPE_LABEL,
@@ -20,6 +21,8 @@ import {
   RAPOR_STATUS_KELULUSAN,
   cleanRaporAnswers,
   createSampleTemplate,
+  defaultRaporTtd,
+  raporSignatures,
   formatPeriode,
   formatTanggalRapor,
   hasOpsi,
@@ -435,7 +438,11 @@ const TemplateEditor: React.FC<{
   onSave: (t: RaporTemplate) => void;
 }> = ({ initial, isNew, profile, usedBy, onCancel, onSave }) => {
   const { toast } = useToast();
-  const [tpl, setTpl] = useState<RaporTemplate>(initial);
+  // Tampilkan TTD yang benar-benar tercetak saat ini; template baru dimulai dengan Orangtua & Pelatih.
+  const [tpl, setTpl] = useState<RaporTemplate>(() => ({
+    ...initial,
+    ttd: isNew && !initial.ttd && !isSwimmingTemplate(initial) ? defaultRaporTtd() : raporSignatures(initial),
+  }));
   const [preview, setPreview] = useState(false);
 
   const setItems = (fn: (items: RaporItem[]) => RaporItem[]) => setTpl((t) => ({ ...t, items: fn(t.items) }));
@@ -470,7 +477,15 @@ const TemplateEditor: React.FC<{
     if (noOpsi) return toast.error('Opsi belum diisi', `Item "${noOpsi.label}" membutuhkan minimal satu opsi.`);
     const incomplete = items.find((it) => it.tipe === 'pertemuan' && (!it.materi?.length || !it.indikator));
     if (incomplete) return toast.error('Kurikulum belum lengkap', `Isi materi dan indikator utama untuk "${incomplete.label}".`);
-    onSave({ ...tpl, nama, items });
+    const ttd = (tpl.ttd ?? []).map((t) => ({
+      id: t.id,
+      jabatan: t.jabatan.trim(),
+      sumberNama: t.sumberNama,
+      ...(t.sumberNama === 'manual' && t.nama?.trim() ? { nama: t.nama.trim() } : {}),
+      ...(t.gambar ? { gambar: t.gambar } : {}),
+    }));
+    if (ttd.some((t) => !t.jabatan)) return toast.error('Tanda tangan belum lengkap', 'Isi jabatan / keterangan di setiap kolom tanda tangan.');
+    onSave({ ...tpl, nama, items, ttd });
   };
 
   const sampleDoc: RaporDocData = {
@@ -688,6 +703,8 @@ const TemplateEditor: React.FC<{
           </div>
         </div>
       </div>
+
+      <RaporTtdEditor value={tpl.ttd ?? []} onChange={(ttd) => setTpl((t) => ({ ...t, ttd }))} />
 
       <div className="sports-card rounded-2xl p-5">
         <label className={labelCls}>Footer</label>
