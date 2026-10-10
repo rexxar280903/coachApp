@@ -515,7 +515,13 @@ export default function Workspace({ mode, staff, portal, onLogout }: WorkspacePr
     const student = students.find((s) => s.id === tx.siswaId);
 
     // 1. Save Transaction
-    const updatedTxs = [tx, ...transactions];
+    const txWithSigner: PaymentTransaction = {
+      ...tx,
+      pengurusNama: tx.pengurusNama ?? profile.pengurusNama,
+      pengurusJabatan: tx.pengurusJabatan ?? profile.pengurusJabatan,
+      pengurusTtd: tx.pengurusTtd ?? profile.pengurusTtd,
+    };
+    const updatedTxs = [txWithSigner, ...transactions];
     setTransactions(updatedTxs);
     saveTransactions(updatedTxs);
 
@@ -1185,6 +1191,9 @@ export default function Workspace({ mode, staff, portal, onLogout }: WorkspacePr
       tipe: 'Iuran Rutin',
       keterangan: `${periodLabel} (Diinput oleh Admin)`,
       catatan: catatanAdmin || pesanPembayaran || 'Pembayaran dicatat & disahkan Admin.',
+      pengurusNama: profile.pengurusNama,
+      pengurusJabatan: profile.pengurusJabatan,
+      pengurusTtd: profile.pengurusTtd,
     };
 
     const updatedTxs = [newTx, ...transactions];
@@ -1718,6 +1727,7 @@ export default function Workspace({ mode, staff, portal, onLogout }: WorkspacePr
         }
         onSuccess={handlePaymentSuccess}
         onViewReceipt={(tx) => setReceiptModalTx(tx)}
+        profile={profile}
       />
 
       {/* Official Receipt Modal (Print & Share WhatsApp) */}

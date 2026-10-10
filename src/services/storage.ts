@@ -102,9 +102,9 @@ const T = {
     table: 'transactions',
     cols: [
       'id', 'nomorKuitansi', 'siswaId', 'siswaNama', 'kelasNama', 'tanggal', 'nominal', 'terbilang',
-      'metodePembayaran', 'tipe', 'keterangan', 'catatan',
+      'metodePembayaran', 'tipe', 'keterangan', 'catatan', 'pengurusNama', 'pengurusJabatan', 'pengurusTtd',
     ],
-    nullable: ['catatan'],
+    nullable: ['catatan', 'pengurusNama', 'pengurusJabatan', 'pengurusTtd'],
     order: 'desc',
   },
   submissions: {
@@ -421,6 +421,28 @@ const prepareProof: Prepare = async (row, item) => {
   return row;
 };
 
+const prepareTransaction: Prepare = async (row, item) => {
+  if (isDataUrl(item.pengurusTtd)) row.pengurus_ttd = await uploadAvatar(item.pengurusTtd, 'club');
+  else if (item.pengurusTtd) row.pengurus_ttd = avatarReference(item.pengurusTtd);
+  return row;
+};
+
+async function withSignedTransactionTtd(items: PaymentTransaction[]): Promise<PaymentTransaction[]> {
+  const paths = [...new Set(items.map((item) => item.pengurusTtd ? avatarPath(item.pengurusTtd) : null).filter((p): p is string => Boolean(p)))];
+  if (!paths.length) return items;
+  const { data, error } = await supabase.storage.from(AVATAR_BUCKET).createSignedUrls(paths, SIGNED_URL_TTL);
+  if (error) {
+    console.warn(`[storage] Gagal mengakses TTD kuitansi: ${error.message}`);
+    return items;
+  }
+  const urls = new Map((data ?? []).map((item) => [item.path, item.signedUrl]));
+  return items.map((item) => {
+    if (!item.pengurusTtd) return item;
+    const p = avatarPath(item.pengurusTtd);
+    return p && urls.has(p) ? { ...item, pengurusTtd: urls.get(p) || undefined } : item;
+  });
+}
+
 // ─── API publik (dipakai App.tsx) ────────────────────────────────────────────
 
 export async function getStudents(role: 'admin' | 'coach' = 'admin') {
@@ -462,13 +484,13 @@ export const getRaporEntries = () => load<RaporEntry>(T.raporEntries);
 export const saveRaporEntries = (list: RaporEntry[]) => save(T.raporEntries, list);
 
 export async function getTransactions(): Promise<PaymentTransaction[]> {
-  const items = await load<PaymentTransaction>(T.transactions);
+  const items = await withSignedTransactionTtd(await load<PaymentTransaction>(T.transactions));
   rememberReceipts(items.map((t) => t.nomorKuitansi));
   return items;
 }
 export function saveTransactions(list: PaymentTransaction[]) {
   rememberReceipts(list.map((t) => t.nomorKuitansi));
-  return save(T.transactions, list);
+  return save(T.transactions, list, prepareTransaction);
 }
 
 export async function getPaymentSubmissions(): Promise<PaymentSubmission[]> {
@@ -487,16 +509,17 @@ export function savePaymentSubmissions(list: PaymentSubmission[]) {
 // Profil klub (satu baris, id = 1)
 const PROFILE_COLS = [
   'namaKlub', 'cabangOlahraga', 'alamat', 'kota', 'noHp', 'email', 'noWhatsApp', 'logoUrl',
-  'namaBank', 'noRekening', 'atasNama',
+  'namaBank', 'noRekening', 'atasNama', 'pengurusNama', 'pengurusJabatan', 'pengurusTtd',
 ];
-const PROFILE_NULLABLE = ['logoUrl', 'namaBank', 'noRekening', 'atasNama'];
+const PROFILE_NULLABLE = ['logoUrl', 'namaBank', 'noRekening', 'atasNama', 'pengurusNama', 'pengurusJabatan', 'pengurusTtd'];
 
 export async function getClubProfile(): Promise<ClubProfile> {
   const { data, error } = await supabase.from('club_profile').select('*').eq('id', 1).maybeSingle();
   if (error) throw new Error(`Gagal memuat profil klub: ${error.message}`);
   const row = data ?? {};
   const profile = fromRow<ClubProfile>({ table: 'club_profile', cols: PROFILE_COLS, order: 'asc' }, row);
-  return { ...profile, logoUrl: await signedAvatar(profile.logoUrl) };
+  const [logoUrl, pengurusTtd] = await Promise.all([signedAvatar(profile.logoUrl), signedAvatar(profile.pengurusTtd)]);
+  return { ...profile, logoUrl, pengurusTtd };
 }
 
 /** Mengembalikan `true` bila tersimpan (kegagalan dilaporkan lewat handler galat sinkronisasi). */
@@ -504,7 +527,9 @@ export async function saveClubProfile(profile: ClubProfile): Promise<boolean> {
   try {
     const rawLogo = profile.logoUrl;
     const logoUrl = rawLogo && isDataUrl(rawLogo) ? await uploadAvatar(rawLogo, 'club') : avatarReference(rawLogo);
-    const row = toRow({ table: 'club_profile', cols: PROFILE_COLS, nullable: PROFILE_NULLABLE, order: 'asc' }, { ...profile, logoUrl });
+    const rawTtd = profile.pengurusTtd;
+    const pengurusTtd = rawTtd && isDataUrl(rawTtd) ? await uploadAvatar(rawTtd, 'club') : avatarReference(rawTtd);
+    const row = toRow({ table: 'club_profile', cols: PROFILE_COLS, nullable: PROFILE_NULLABLE, order: 'asc' }, { ...profile, logoUrl, pengurusTtd });
     const { error } = await supabase.from('club_profile').upsert({ id: 1, ...row }, { onConflict: 'id' });
     if (error) throw new Error(error.message);
     return true;
@@ -613,7 +638,10 @@ export async function reviewPaymentSubmission(id: string, action: 'verified' | '
   const { data, error } = await supabase.rpc('admin_review_payment', { p_id: id, p_action: action, p_note: note, p_terbilang: terbilang });
   if (error) throw rpcMessage(error);
   checkRpcResult(data);
-  return data?.transaction ? fromRow<PaymentTransaction>(T.transactions, data.transaction) : null;
+  if (!data?.transaction) return null;
+  const tx = fromRow<PaymentTransaction>(T.transactions, data.transaction);
+  const signed = await withSignedTransactionTtd([tx]);
+  return signed[0] ?? tx;
 }
 
 /** Mengembalikan null jika No. HP / kode akses tidak cocok. */
@@ -628,7 +656,7 @@ export async function portalLogin({ hp, kode }: PortalCredentials): Promise<Port
     classes: (b.classes as Obj[]).map((r) => fromRow<ClassGroup>(T.classes, r)),
     monthlyDues: (b.monthly_dues as Obj[]).map((r) => fromRow<MonthlyDueRecord>(T.monthlyDues, r)),
     attendanceSessions: (b.attendance_sessions as Obj[]).map((r) => fromRow<AttendanceSession>(T.attendance, r)),
-    transactions: (b.transactions as Obj[]).map((r) => fromRow<PaymentTransaction>(T.transactions, r)),
+    transactions: await withSignedTransactionTtd((b.transactions as Obj[]).map((r) => fromRow<PaymentTransaction>(T.transactions, r))),
     submissions: (b.payment_submissions as Obj[]).map((r) => {
       const s = fromRow<PaymentSubmission>(T.submissions, r);
       return { ...s, buktiGambarUrl: localProofPreviews.get(s.id) ?? '' };
@@ -638,7 +666,8 @@ export async function portalLogin({ hp, kode }: PortalCredentials): Promise<Port
     raporFolders: ((b.rapor_folders ?? []) as Obj[]).map((r) => fromRow<RaporFolder>(T.raporFolders, r)),
     raporEntries: ((b.rapor_entries ?? []) as Obj[]).map((r) => fromRow<RaporEntry>(T.raporEntries, r)),
     profile: { ...fromRow<ClubProfile>({ table: 'club_profile', cols: PROFILE_COLS, order: 'asc' }, b.club_profile ?? {}),
-      logoUrl: await signedAvatar(b.club_profile?.logo_url) },
+      logoUrl: await signedAvatar(b.club_profile?.logo_url),
+      pengurusTtd: await signedAvatar(b.club_profile?.pengurus_ttd) },
   };
 }
 

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { getTodayISO, getCurrentYear, getCurrentMonth, getYearOptions, MONTH_NAMES } from '../utils/constants';
-import { FeeStatus, PaymentMethod, PaymentTransaction } from '../types/sportkit';
+import { FeeStatus, PaymentMethod, PaymentTransaction, ClubProfile } from '../types/sportkit';
 import { formatRupiah, numberToWordsId } from '../utils/numberToWordsId';
 import { generateReceiptNumber, refreshReceiptNumbers } from '../services/storage';
 import { FEE_STATUS_LABEL, isNonBillable } from '../utils/payments';
@@ -52,6 +52,7 @@ interface PaymentModalProps {
     }
   ) => void;
   onViewReceipt: (transaction: PaymentTransaction) => void;
+  profile?: ClubProfile;
 }
 
 export const PaymentModal: React.FC<PaymentModalProps> = ({
@@ -74,6 +75,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
   getPeriodInfo,
   onSuccess,
   onViewReceipt,
+  profile,
 }) => {
   const { toast, confirm } = useToast();
   // Handler terbaru (dengan data terbaru) dipakai setelah menunggu konfirmasi / jaringan.
@@ -190,6 +192,9 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
       tipe,
       keterangan: isRutin ? `Iuran Rutin ${periode}` : keterangan,
       catatan: catatan || pesanPembayaran || 'Pembayaran dicatat & diverifikasi Admin.',
+      pengurusNama: profile?.pengurusNama,
+      pengurusJabatan: profile?.pengurusJabatan,
+      pengurusTtd: profile?.pengurusTtd,
     };
 
     setCreatedTx(tx);

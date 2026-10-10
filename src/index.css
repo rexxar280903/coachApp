@@ -172,6 +172,31 @@
   transform: translateY(-1px);
 }
 
+/* Logo klub sebagai watermark lembut di belakang isi rapor. */
+.rapor-document {
+  position: relative;
+  isolation: isolate;
+}
+
+.rapor-watermark {
+  position: absolute;
+  z-index: 0;
+  top: 50%;
+  left: 50%;
+  width: min(60%, 430px);
+  max-height: 62%;
+  object-fit: contain;
+  opacity: 0.07;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  user-select: none;
+}
+
+.rapor-content {
+  position: relative;
+  z-index: 1;
+}
+
 /* Custom Athletic pitch pattern */
 .bg-pitch-pattern {
   background-image: radial-gradient(rgba(255, 255, 255, 0.08) 1px, transparent 1px);
@@ -217,6 +242,14 @@
   }
   .rapor-document .rapor-new-page {
     break-before: page;
+  }
+  /* Elemen fixed diulang oleh browser pada setiap halaman cetak/PDF. */
+  .rapor-document .rapor-watermark {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    width: 110mm;
+    max-height: 150mm;
   }
   .rapor-document h2 {
     break-after: avoid;

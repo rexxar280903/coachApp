@@ -26,6 +26,9 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
   const tanggal = formatTanggalPanjang(transaction.tanggal);
   const alamat = [profile.alamat, profile.kota].filter(Boolean).join(', ');
   const kontak = [profile.noHp && `Telp/WA: ${profile.noHp}`, profile.email].filter(Boolean).join(' | ');
+  const signerJabatan = transaction.pengurusJabatan?.trim() || profile.pengurusJabatan?.trim() || 'Bendahara / Pengurus Klub';
+  const signerTtd = transaction.pengurusTtd !== undefined ? transaction.pengurusTtd : profile.pengurusTtd;
+  const signerNama = transaction.pengurusNama?.trim() || profile.pengurusNama?.trim() || `Pengurus ${profile.namaKlub}`;
 
   const handlePrint = () => {
     // Judul dokumen menjadi nama file default saat "Simpan sebagai PDF".
@@ -172,16 +175,26 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
               </p>
             </div>
 
-            <div className="text-center min-w-[140px]">
+            <div className="text-center min-w-[160px]">
               <p className="text-slate-500 text-[11px] font-mono">
                 {[profile.kota, tanggal].filter(Boolean).join(', ')}
               </p>
-              <p className="text-slate-600 font-medium mt-0.5">Bendahara / Pengurus Klub</p>
-              <div className="h-14 flex items-center justify-center text-slate-300 italic text-[11px]">
-                [Tanda Tangan & Stempel]
+              <p className="text-slate-600 font-medium mt-0.5">
+                {signerJabatan}
+              </p>
+              <div className="h-16 flex items-center justify-center text-slate-300 italic text-[11px]">
+                {signerTtd ? (
+                  <img
+                    src={signerTtd}
+                    alt={`Tanda tangan ${signerNama}`}
+                    className="max-h-full max-w-[180px] object-contain mix-blend-multiply"
+                  />
+                ) : (
+                  '[Tanda Tangan & Stempel]'
+                )}
               </div>
               <p className="font-bold text-slate-900 border-t border-slate-400 pt-1">
-                Pengurus {profile.namaKlub}
+                {signerNama}
               </p>
             </div>
           </div>

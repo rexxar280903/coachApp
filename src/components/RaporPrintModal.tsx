@@ -36,117 +36,126 @@ export const RaporDocument: React.FC<{ data: RaporDocData; profile: ClubProfile 
 
   return (
     <div className="rapor-document bg-white text-slate-900 font-sans text-[11px] leading-snug">
-      {/* Kop klub */}
-      <div className="flex items-center gap-3 pb-3 border-b-2 border-slate-900">
-        <img
-          src={profile.logoUrl || BRAND_LOGO}
-          alt={`Logo ${profile.namaKlub}`}
-          className="w-14 h-14 object-contain"
-        />
-        <div>
-          <p className="text-sm font-black uppercase tracking-tight">{profile.namaKlub}</p>
-          {alamat && <p className="text-slate-600">{alamat}</p>}
-          {(profile.noHp || profile.email) && (
-            <p className="text-slate-500">
-              {profile.noHp && `Telp/WA: ${profile.noHp}`}
-              {profile.noHp && profile.email && ' | '}
-              {profile.email}
-            </p>
-          )}
-        </div>
-      </div>
+      <img
+        src={profile.logoUrl || BRAND_LOGO}
+        alt=""
+        aria-hidden="true"
+        className="rapor-watermark"
+      />
 
-      <h1 className="text-center text-base font-bold my-4">{swimming ? template.header || template.nama : folder.nama}</h1>
-      {swimming && <p className="text-center mb-4">{folder.nama}</p>}
-
-      <div className={`grid ${swimming ? 'grid-cols-2' : 'grid-cols-3'} gap-3 mb-4`}>
-        {(swimming ? [
-          ['Nama Murid', student.nama],
-          ['Nama Pelatih', entry.diisiOleh || '-'],
-          ['Usia / Kategori', `${usiaPadaTanggal(student.tanggalLahir, folder.akhirPenilaian)} / ${kelasNama}`],
-          ['Periode Latihan', formatPeriode(folder.awalPenilaian, folder.akhirPenilaian)],
-        ] : [
-          ['Nama', student.nama],
-          ['Kelas', kelasNama],
-          ['Periode', formatPeriode(folder.awalPenilaian, folder.akhirPenilaian)],
-        ]).map(([label, value]) => (
-          <div key={label} className="border-l-4 border-slate-900 pl-2">
-            <p className="text-[10px] text-slate-500">{label}</p>
-            <p className="font-bold">{value}</p>
+      <div className="rapor-content">
+        {/* Kop klub */}
+        <div className="flex items-center gap-3 pb-3 border-b-2 border-slate-900">
+          <img
+            src={profile.logoUrl || BRAND_LOGO}
+            alt={`Logo ${profile.namaKlub}`}
+            className="w-14 h-14 object-contain"
+          />
+          <div>
+            <p className="text-sm font-black uppercase tracking-tight">{profile.namaKlub}</p>
+            {alamat && <p className="text-slate-600">{alamat}</p>}
+            {(profile.noHp || profile.email) && (
+              <p className="text-slate-500">
+                {profile.noHp && `Telp/WA: ${profile.noHp}`}
+                {profile.noHp && profile.email && ' | '}
+                {profile.email}
+              </p>
+            )}
           </div>
-        ))}
-      </div>
+        </div>
 
-      {!swimming && template.header.trim() && <p className="whitespace-pre-line mb-2">{template.header}</p>}
+        <h1 className="text-center text-base font-bold my-4">{swimming ? template.header || template.nama : folder.nama}</h1>
+        {swimming && <p className="text-center mb-4">{folder.nama}</p>}
 
-      <div className="space-y-4">
-        {sections.map((sec, i) => {
-          const meetings = sec.items.filter((it) => it.tipe === 'pertemuan');
-          const graduations = sec.items.filter((it) => it.tipe === 'kelulusan');
-          const rows = sec.items.filter((it) => it.tipe !== 'paragraf' && it.tipe !== 'pertemuan' && it.tipe !== 'kelulusan');
-          const paragraphs = sec.items.filter((it) => it.tipe === 'paragraf');
-          return (
-            <div key={i} className={swimming ? `rapor-section ${i > 0 ? 'rapor-new-page' : ''}` : 'break-inside-avoid'}>
-              {sec.judul && <h2 className="text-xs font-bold mb-1.5">{sec.judul}</h2>}
-              {meetings.length > 0 && <RaporMeetingTable items={meetings} jawaban={entry.jawaban} />}
-              {graduations.length > 0 && <RaporGraduationTable items={graduations} jawaban={entry.jawaban} />}
-              {rows.length > 0 && (
-                <table className="w-full border-collapse">
-                  {sec.judul && (
-                    <thead>
-                      <tr className="bg-slate-100">
-                        <th className="border border-slate-400 px-2 py-1 text-left font-bold">Uraian</th>
-                        <th className="border border-slate-400 px-2 py-1 text-left font-bold w-2/5">Nilai</th>
-                      </tr>
-                    </thead>
-                  )}
-                  <tbody>
-                    {rows.map((it) => (
-                      <tr key={it.id}>
-                        <td className="border border-slate-400 px-2 py-1">{it.label}</td>
-                        <td className="border border-slate-400 px-2 py-1 w-2/5">
-                          {jawabanText(entry.jawaban[it.id]) || '-'}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-              {paragraphs.map((it) => (
-                <div key={it.id} className="mt-1.5">
-                  <p className="font-bold">{it.label}</p>
-                  <p className="whitespace-pre-line pl-3 text-slate-700">
-                    {jawabanText(entry.jawaban[it.id]) || '-'}
-                  </p>
+        <div className={`grid ${swimming ? 'grid-cols-2' : 'grid-cols-3'} gap-3 mb-4`}>
+          {(swimming ? [
+            ['Nama Murid', student.nama],
+            ['Nama Pelatih', entry.diisiOleh || '-'],
+            ['Usia / Kategori', `${usiaPadaTanggal(student.tanggalLahir, folder.akhirPenilaian)} / ${kelasNama}`],
+            ['Periode Latihan', formatPeriode(folder.awalPenilaian, folder.akhirPenilaian)],
+          ] : [
+            ['Nama', student.nama],
+            ['Kelas', kelasNama],
+            ['Periode', formatPeriode(folder.awalPenilaian, folder.akhirPenilaian)],
+          ]).map(([label, value]) => (
+            <div key={label} className="border-l-4 border-slate-900 pl-2">
+              <p className="text-[10px] text-slate-500">{label}</p>
+              <p className="font-bold">{value}</p>
+            </div>
+          ))}
+        </div>
+
+        {!swimming && template.header.trim() && <p className="whitespace-pre-line mb-2">{template.header}</p>}
+
+        <div className="space-y-4">
+          {sections.map((sec, i) => {
+            const meetings = sec.items.filter((it) => it.tipe === 'pertemuan');
+            const graduations = sec.items.filter((it) => it.tipe === 'kelulusan');
+            const rows = sec.items.filter((it) => it.tipe !== 'paragraf' && it.tipe !== 'pertemuan' && it.tipe !== 'kelulusan');
+            const paragraphs = sec.items.filter((it) => it.tipe === 'paragraf');
+            return (
+              <div key={i} className={swimming ? `rapor-section ${i > 0 ? 'rapor-new-page' : ''}` : 'break-inside-avoid'}>
+                {sec.judul && <h2 className="text-xs font-bold mb-1.5">{sec.judul}</h2>}
+                {meetings.length > 0 && <RaporMeetingTable items={meetings} jawaban={entry.jawaban} />}
+                {graduations.length > 0 && <RaporGraduationTable items={graduations} jawaban={entry.jawaban} />}
+                {rows.length > 0 && (
+                  <table className="w-full border-collapse">
+                    {sec.judul && (
+                      <thead>
+                        <tr className="bg-slate-100">
+                          <th className="border border-slate-400 px-2 py-1 text-left font-bold">Uraian</th>
+                          <th className="border border-slate-400 px-2 py-1 text-left font-bold w-2/5">Nilai</th>
+                        </tr>
+                      </thead>
+                    )}
+                    <tbody>
+                      {rows.map((it) => (
+                        <tr key={it.id}>
+                          <td className="border border-slate-400 px-2 py-1">{it.label}</td>
+                          <td className="border border-slate-400 px-2 py-1 w-2/5">
+                            {jawabanText(entry.jawaban[it.id]) || '-'}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+                {paragraphs.map((it) => (
+                  <div key={it.id} className="mt-1.5">
+                    <p className="font-bold">{it.label}</p>
+                    <p className="whitespace-pre-line pl-3 text-slate-700">
+                      {jawabanText(entry.jawaban[it.id]) || '-'}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            );
+          })}
+        </div>
+
+        {swimming && <div className="break-inside-avoid"><RaporSwimmingLegend /></div>}
+
+        {signatures.length > 0 && (
+          <div className="break-inside-avoid">
+            <p className="text-right mt-6">{profile.kota ? `${profile.kota}, ` : ''}{formatTanggalRapor(entry.tanggalIsi.split(' ')[0])}</p>
+            <div className={`grid ${gridCols} gap-8 text-center mt-4`}>
+              {signatures.map((s) => (
+                <div key={s.id} className="flex flex-col">
+                  <p>{s.jabatan}</p>
+                  <div className="h-16 flex items-center justify-center">
+                    {s.gambar?.startsWith('data:image/') && <img src={s.gambar} alt={`Tanda tangan ${s.jabatan}`} className="max-h-16 max-w-full object-contain" />}
+                  </div>
+                  <p className="pt-1 border-t border-slate-400">{signerName(s)}</p>
                 </div>
               ))}
             </div>
-          );
-        })}
-      </div>
-
-      {swimming && <div className="break-inside-avoid"><RaporSwimmingLegend /></div>}
-
-      {signatures.length > 0 && (
-        <div className="break-inside-avoid">
-          <p className="text-right mt-6">{profile.kota ? `${profile.kota}, ` : ''}{formatTanggalRapor(entry.tanggalIsi.split(' ')[0])}</p>
-          <div className={`grid ${gridCols} gap-8 text-center mt-4`}>
-            {signatures.map((s) => (
-              <div key={s.id} className="flex flex-col">
-                <p>{s.jabatan}</p>
-                <div className="h-16 flex items-center justify-center">
-                  {s.gambar?.startsWith('data:image/') && <img src={s.gambar} alt={`Tanda tangan ${s.jabatan}`} className="max-h-16 max-w-full object-contain" />}
-                </div>
-                <p className="pt-1 border-t border-slate-400">{signerName(s)}</p>
-              </div>
-            ))}
           </div>
-        </div>
-      )}
+        )}
 
-      {template.footer.trim() && (
-        <p className="whitespace-pre-line mt-6 pt-2 border-t border-slate-200 text-slate-600">{template.footer}</p>
-      )}
+        {template.footer.trim() && (
+          <p className="whitespace-pre-line mt-6 pt-2 border-t border-slate-200 text-slate-600">{template.footer}</p>
+        )}
+      </div>
     </div>
   );
 };

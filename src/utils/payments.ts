@@ -1,4 +1,4 @@
-import { EventParticipant, FeeStatus, MonthlyDueRecord, PaymentSubmission, PaymentTransaction, Student } from '../types/sportkit';
+import { ClubProfile, EventParticipant, FeeStatus, MonthlyDueRecord, PaymentSubmission, PaymentTransaction, Student } from '../types/sportkit';
 import { MONTH_NAMES, getCurrentMonth, getCurrentYear } from './constants';
 import { numberToWordsId } from './numberToWordsId';
 
@@ -180,7 +180,8 @@ export function recountEvents<T extends { id: string; totalPeserta: number; pese
  */
 export function receiptForSubmission(
   sub: PaymentSubmission,
-  transactions: PaymentTransaction[]
+  transactions: PaymentTransaction[],
+  profile?: ClubProfile,
 ): PaymentTransaction {
   const existing = transactions.find(
     (t) => (sub.transactionId && t.id === sub.transactionId) || (sub.kuitansiId && t.nomorKuitansi === sub.kuitansiId)
@@ -202,6 +203,9 @@ export function receiptForSubmission(
     tipe,
     keterangan: label === tipe ? tipe : `${sub.tipe} ${label}`,
     catatan: sub.catatanAdmin,
+    pengurusNama: profile?.pengurusNama,
+    pengurusJabatan: profile?.pengurusJabatan,
+    pengurusTtd: profile?.pengurusTtd,
   };
 }
 

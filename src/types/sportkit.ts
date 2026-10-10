@@ -126,6 +126,10 @@ export interface PaymentTransaction {
   tipe: 'Pendaftaran Siswa Baru' | 'Iuran Rutin' | 'Iuran Insidentil' | 'Angsuran';
   keterangan: string;
   catatan?: string;
+  /** Snapshot data & TTD pengurus penanda tangan saat kuitansi diterbitkan (tidak berubah jika profil diedit). */
+  pengurusNama?: string;
+  pengurusJabatan?: string;
+  pengurusTtd?: string;
 }
 
 export interface ClubProfile {
@@ -141,6 +145,11 @@ export interface ClubProfile {
   namaBank?: string;
   noRekening?: string;
   atasNama?: string;
+  /** Pengurus yang menandatangani setiap kuitansi. */
+  pengurusNama?: string;
+  pengurusJabatan?: string;
+  /** Gambar tanda tangan (data URL saat diedit, URL bertanda tangan saat dimuat). */
+  pengurusTtd?: string;
 }
 
 export type UserRole = 'admin' | 'coach' | 'student' | 'public';

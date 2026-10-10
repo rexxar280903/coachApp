@@ -90,6 +90,10 @@ create table if not exists public.club_profile (
 alter table public.club_profile add column if not exists nama_bank text;
 alter table public.club_profile add column if not exists no_rekening text;
 alter table public.club_profile add column if not exists atas_nama text;
+-- Pengurus penanda tangan kuitansi (pengurus_ttd = path gambar di bucket avatars).
+alter table public.club_profile add column if not exists pengurus_nama text;
+alter table public.club_profile add column if not exists pengurus_jabatan text;
+alter table public.club_profile add column if not exists pengurus_ttd text;
 insert into public.club_profile (id, nama_klub) values (1, 'Nama Klub Anda')
   on conflict (id) do nothing;
 
@@ -210,11 +214,17 @@ create table if not exists public.transactions (
   tipe              text not null,
   keterangan        text not null default '',
   catatan           text,
+  pengurus_nama     text,
+  pengurus_jabatan  text,
+  pengurus_ttd      text,
   created_at timestamptz not null default now()
 );
 create index if not exists transactions_siswa_idx on public.transactions (siswa_id);
 -- Pengaman agar dua kuitansi tidak pernah memiliki nomor yang sama.
 create unique index if not exists transactions_nomor_kuitansi_key on public.transactions (nomor_kuitansi);
+alter table public.transactions add column if not exists pengurus_nama text;
+alter table public.transactions add column if not exists pengurus_jabatan text;
+alter table public.transactions add column if not exists pengurus_ttd text;
 
 create table if not exists public.payment_submissions (
   id                 text primary key,
@@ -802,11 +812,14 @@ begin
   from public.transactions where nomor_kuitansi ~ ('^' || v_prefix || '[0-9]+$');
   v_receipt := v_prefix || case when v_seq < 1000 then lpad(v_seq::text, 3, '0') else v_seq::text end;
   insert into public.transactions(id,nomor_kuitansi,siswa_id,siswa_nama,kelas_nama,tanggal,nominal,terbilang,
-    metode_pembayaran,tipe,keterangan,catatan)
+    metode_pembayaran,tipe,keterangan,catatan,pengurus_nama,pengurus_jabatan,pengurus_ttd)
   values ('tx-' || gen_random_uuid()::text,v_receipt,v_sub.siswa_id,v_sub.siswa_nama,v_sub.kelas_nama,
     v_today,v_sub.nominal,coalesce(p_terbilang,''),v_sub.metode_pembayaran,
     case when v_sub.tipe='Pendaftaran' then 'Pendaftaran Siswa Baru' else v_sub.tipe end,
-    v_label || ' (Verifikasi Bukti Transfer Siswa)',p_note) returning * into v_tx;
+    v_label || ' (Verifikasi Bukti Transfer Siswa)',p_note,
+    (select pengurus_nama from public.club_profile where id = 1),
+    (select pengurus_jabatan from public.club_profile where id = 1),
+    (select pengurus_ttd from public.club_profile where id = 1)) returning * into v_tx;
 
   if v_sub.tipe = 'Iuran Rutin' then
     if v_due.id is null then
