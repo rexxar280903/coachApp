@@ -126,6 +126,10 @@ export interface PaymentTransaction {
   tipe: 'Pendaftaran Siswa Baru' | 'Iuran Rutin' | 'Iuran Insidentil' | 'Angsuran';
   keterangan: string;
   catatan?: string;
+  /** Snapshot data & TTD pengurus penanda tangan saat kuitansi diterbitkan (tidak berubah jika profil diedit). */
+  pengurusNama?: string;
+  pengurusJabatan?: string;
+  pengurusTtd?: string;
 }
 
 export interface ClubProfile {
@@ -141,6 +145,11 @@ export interface ClubProfile {
   namaBank?: string;
   noRekening?: string;
   atasNama?: string;
+  /** Pengurus yang menandatangani setiap kuitansi. */
+  pengurusNama?: string;
+  pengurusJabatan?: string;
+  /** Gambar tanda tangan (data URL saat diedit, URL bertanda tangan saat dimuat). */
+  pengurusTtd?: string;
 }
 
 export type UserRole = 'admin' | 'coach' | 'student' | 'public';
@@ -182,8 +191,10 @@ export interface PaymentSubmission {
  *  - checkbox : boleh pilih lebih dari satu opsi
  *  - pilihan  : pilih satu opsi (radio)
  *  - dropdown : pilih satu opsi (daftar turun)
+ *  - pertemuan: kurikulum, indikator, penilaian B/C/M dan catatan evaluasi
+ *  - kelulusan: status capaian, tanggal lulus dan nama penandatangan
  */
-export type RaporItemTipe = 'judul' | 'isian' | 'paragraf' | 'checkbox' | 'pilihan' | 'dropdown';
+export type RaporItemTipe = 'judul' | 'isian' | 'paragraf' | 'checkbox' | 'pilihan' | 'dropdown' | 'pertemuan' | 'kelulusan';
 
 export interface RaporItem {
   id: string;
@@ -192,6 +203,24 @@ export interface RaporItem {
   /** Hanya untuk checkbox / pilihan / dropdown. */
   opsi?: string[];
   wajib?: boolean;
+  /** Materi dan indikator utama untuk item pertemuan. Disimpan di JSON items. */
+  materi?: string[];
+  indikator?: string;
+}
+
+/** Asal nama yang dicetak di bawah tanda tangan. */
+export type RaporTtdSumber = 'manual' | 'pelatih' | 'orangtua';
+
+/** Satu kolom tanda tangan di bagian bawah rapor. */
+export interface RaporTtd {
+  id: string;
+  /** Judul di atas ruang tanda tangan, mis. "Ketua Klub". */
+  jabatan: string;
+  sumberNama: RaporTtdSumber;
+  /** Nama tetap bila sumberNama = 'manual'. */
+  nama?: string;
+  /** Gambar tanda tangan / stempel (data URL JPEG terkompresi). Kosong = TTD basah. */
+  gambar?: string;
 }
 
 /** Blangko rapor yang bisa dipakai berulang untuk banyak folder/kelas. */
@@ -201,6 +230,8 @@ export interface RaporTemplate {
   header: string;   // teks pembuka di atas tabel penilaian
   items: RaporItem[];
   footer: string;   // teks penutup di bawah rapor
+  /** Kolom tanda tangan. `undefined` = bawaan (template renang: Orangtua & Pelatih). */
+  ttd?: RaporTtd[];
 }
 
 /** Satu periode penilaian untuk satu kelas, memakai satu template. */
@@ -215,6 +246,7 @@ export interface RaporFolder {
   diterbitkan: boolean;
 }
 
+/** Pertemuan: [nilai, catatan]; kelulusan: [status, tanggalLulus, namaPelatih]. */
 export type RaporJawaban = Record<string, string | string[]>;
 
 /** Isian rapor satu siswa di satu folder. */

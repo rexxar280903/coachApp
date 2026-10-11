@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { getCurrentYear, getCurrentMonth, getYearOptions } from '../utils/constants';
 import { AttendanceSession, Student, ClassGroup } from '../types/sportkit';
 import { FileSpreadsheet, Printer, ChevronDown, Check, X, Calendar, FileText } from 'lucide-react';
+import { escapeCsvCell } from '../utils/security';
 
 interface LaporanAbsensiViewProps {
   sessions: AttendanceSession[];
@@ -67,8 +68,7 @@ export const LaporanAbsensiView: React.FC<LaporanAbsensiViewProps> = ({
 
     // Escape sesuai RFC 4180 (tanda kutip digandakan), lalu unduh lewat Blob
     // agar karakter seperti '#' tidak memotong isi file.
-    const escapeCell = (val: string | number) => `"${String(val).replace(/"/g, '""')}"`;
-    const csvContent = [headers, ...rows].map((r) => r.map(escapeCell).join(',')).join('\r\n');
+    const csvContent = [headers, ...rows].map((r) => r.map(escapeCsvCell).join(',')).join('\r\n');
     // BOM supaya Excel membaca UTF-8 dengan benar
     const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8' });
     const url = URL.createObjectURL(blob);

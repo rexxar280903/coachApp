@@ -2,7 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { getTodayISO, getCurrentYear, getCurrentMonth, getYearOptions, MONTH_NAMES } from '../utils/constants';
 import { FeeStatus, PaymentMethod, PaymentTransaction } from '../types/sportkit';
 import { formatRupiah, numberToWordsId } from '../utils/numberToWordsId';
-import { generateReceiptNumber, refreshReceiptNumbers } from '../services/storage';
+import type { ManualPaymentInput } from '../types/manualPayment';
+import { ManualPaymentError } from '../utils/manualPayment';
 import { FEE_STATUS_LABEL, isNonBillable } from '../utils/payments';
 import { fileToCompressedDataUrl } from '../utils/image';
 import { useToast } from './Toast';
@@ -28,6 +29,7 @@ interface PaymentModalProps {
   title?: string;
   siswaNama: string;
   siswaId: string;
+  participantId?: string;
   kelasId?: string;
   kelasNama: string;
   noHp?: string;
@@ -41,16 +43,7 @@ interface PaymentModalProps {
   tahun?: number;
   /** Iuran Rutin: status & sisa tagihan periode yang dipilih (untuk mencegah pembayaran ganda). */
   getPeriodInfo?: (bulan: number, tahun: number) => { status: FeeStatus; sisa: number };
-  onSuccess: (
-    transaction: PaymentTransaction,
-    proofData?: {
-      buktiGambarUrl?: string;
-      pesanPembayaran?: string;
-      catatanAdmin?: string;
-      bulan?: number;
-      tahun?: number;
-    }
-  ) => void;
+  onSuccess: (input: ManualPaymentInput) => Promise<PaymentTransaction>;
   onViewReceipt: (transaction: PaymentTransaction) => void;
 }
 
@@ -60,7 +53,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
   title = 'Pembayaran Iuran Rutin',
   siswaNama,
   siswaId,
-  kelasId,
+  participantId,
   kelasNama,
   noHp = '08123456789',
   nominalAwal,
@@ -79,6 +72,10 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
   // Handler terbaru (dengan data terbaru) dipakai setelah menunggu konfirmasi / jaringan.
   const latest = useRef({ onSuccess });
   latest.current = { onSuccess };
+  const submittingRef = useRef(false);
+  const pendingRequest = useRef<ManualPaymentInput | null>(null);
+  const requestId = useRef('');
+  const [retryPending, setRetryPending] = useState(false);
   const [submitting, setSubmitting] = useState<boolean>(false);
   const [tanggal, setTanggal] = useState<string>('');
   const [jumlahBayar, setJumlahBayar] = useState<number>(nominalAwal);
@@ -99,6 +96,10 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
       setIsSuccess(false);
       setCreatedTx(null);
       setSubmitting(false);
+      submittingRef.current = false;
+      pendingRequest.current = null;
+      requestId.current = crypto.randomUUID();
+      setRetryPending(false);
       setCatatan('');
       setMetode('Tunai');
       const bln = initialBulan || getCurrentMonth();
@@ -111,14 +112,13 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
           ? `Pembayaran iuran bulan ${MONTH_NAMES[bln - 1]} ${thn} untuk ${siswaNama}`
           : `${keterangan} untuk ${siswaNama}`
       );
-      // Siapkan nomor kuitansi terbaru selagi admin mengisi form.
-      refreshReceiptNumbers();
+
     }
-  }, [isOpen, nominalAwal, initialBulan, initialTahun, siswaNama, tipe, keterangan]);
+  }, [isOpen, siswaId, participantId]);
 
   if (!isOpen) return null;
 
-  const isRutin = tipe === 'Iuran Rutin';
+  const isRutin = tipe === 'Iuran Rutin' || tipe === 'Angsuran';
   // Iuran Rutin: sisa tagihan mengikuti periode yang sedang dipilih (bisa diganti admin).
   const periodInfo = isRutin && getPeriodInfo ? getPeriodInfo(selectedBulan, selectedTahun) : null;
   const sisaTagihan = periodInfo ? periodInfo.sisa : nominalAwal;
@@ -144,66 +144,40 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (submitting) return;
-    const jumlah = Number(jumlahBayar);
-    if (!jumlah || jumlah <= 0) {
-      toast.error('Nominal tidak valid', 'Jumlah pembayaran harus lebih dari 0.');
-      return;
-    }
-    if (!tanggal) {
-      toast.error('Tanggal belum diisi', 'Isi tanggal transaksi terlebih dahulu.');
-      return;
-    }
-    const periode = `${MONTH_NAMES[selectedBulan - 1]} ${selectedTahun}`;
-    if (periodInfo?.status === 'lunas') {
-      toast.error('Iuran sudah lunas', `Iuran ${periode} untuk ${siswaNama} sudah lunas. Pilih bulan lain.`);
-      return;
-    }
-    if (periodInfo && isNonBillable(periodInfo.status)) {
-      toast.error('Bulan tidak ditagih', `Iuran ${periode} berstatus "${FEE_STATUS_LABEL[periodInfo.status]}". Pilih bulan lain.`);
-      return;
-    }
-    if (sisaTagihan > 0 && jumlah > sisaTagihan) {
-      const ok = await confirm(
-        'Kelebihan Bayar?',
-        `Jumlah ${formatRupiah(jumlah)} melebihi sisa tagihan ${formatRupiah(sisaTagihan)} (lebih ${formatRupiah(
-          jumlah - sisaTagihan
-        )}). Tetap catat pembayaran ini?`
-      );
-      if (!ok) return;
-    }
-
+    if (submittingRef.current) return;
+    submittingRef.current = true;
     setSubmitting(true);
-    // Nomor kuitansi terbaru dari server (admin lain / perangkat lain mungkin baru mencatat).
-    await refreshReceiptNumbers();
-    const receiptNo = generateReceiptNumber();
-    const tx: PaymentTransaction = {
-      id: 'tx-' + Date.now(),
-      nomorKuitansi: receiptNo,
-      siswaId,
-      siswaNama,
-      kelasNama,
-      tanggal,
-      nominal: jumlah,
-      terbilang: numberToWordsId(jumlah),
-      metodePembayaran: metode,
-      tipe,
-      keterangan: isRutin ? `Iuran Rutin ${periode}` : keterangan,
-      catatan: catatan || pesanPembayaran || 'Pembayaran dicatat & diverifikasi Admin.',
-    };
-
-    setCreatedTx(tx);
-    setIsSuccess(true);
-    setSubmitting(false);
-    // Periode bulan/tahun hanya relevan untuk Iuran Rutin; tipe lain tidak boleh
-    // menyentuh tagihan bulanan.
-    latest.current.onSuccess(tx, {
-      buktiGambarUrl,
-      pesanPembayaran: pesanPembayaran || tx.keterangan,
-      catatanAdmin: catatan || 'Diinput & diverifikasi langsung oleh Admin.',
-      bulan: isRutin ? selectedBulan : undefined,
-      tahun: isRutin ? selectedTahun : undefined,
-    });
+    try {
+      if (!pendingRequest.current) {
+        const jumlah = Number(jumlahBayar);
+        if (!Number.isSafeInteger(jumlah) || jumlah <= 0) throw new Error('Jumlah pembayaran harus berupa rupiah bulat dan lebih dari 0.');
+        if (!tanggal) throw new Error('Isi tanggal transaksi terlebih dahulu.');
+        const periode = MONTH_NAMES[selectedBulan - 1] + ' ' + selectedTahun;
+        if (periodInfo?.status === 'lunas') throw new Error('Iuran periode ini sudah lunas. Pilih bulan lain.');
+        if (periodInfo && isNonBillable(periodInfo.status)) throw new Error('Bulan ini tidak ditagih. Pilih periode lain.');
+        if (sisaTagihan > 0 && jumlah > sisaTagihan && !await confirm('Kelebihan Bayar?',
+          'Jumlah ' + formatRupiah(jumlah) + ' melebihi sisa tagihan ' + formatRupiah(sisaTagihan) + '. Tetap catat pembayaran ini?')) return;
+        pendingRequest.current = {
+          requestId: requestId.current, siswaId, participantId, tipe, nominal: jumlah,
+          tanggal, metodePembayaran: metode, buktiGambarUrl, pesan: pesanPembayaran,
+          catatan: catatan || 'Diinput & diverifikasi langsung oleh Admin.',
+          bulan: isRutin ? selectedBulan : undefined, tahun: isRutin ? selectedTahun : undefined,
+          keterangan: isRutin ? 'Iuran Rutin ' + periode : keterangan,
+        };
+      }
+      const tx = await latest.current.onSuccess(pendingRequest.current);
+      setCreatedTx(tx);
+      setIsSuccess(true);
+      setRetryPending(false);
+    } catch (error) {
+      const uncertain = error instanceof ManualPaymentError && error.uncertain;
+      setRetryPending(uncertain);
+      if (!uncertain) pendingRequest.current = null;
+      toast.error('Pembayaran belum dikonfirmasi', (error as Error).message);
+    } finally {
+      submittingRef.current = false;
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -224,7 +198,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
           </div>
           <button
             onClick={onClose}
-            disabled={submitting}
+            disabled={submitting || retryPending}
             aria-label="Tutup"
             className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 disabled:opacity-50 transition-colors"
           >
@@ -288,6 +262,8 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
         ) : (
           /* Payment Form */
           <form onSubmit={handleSubmit} className="p-6 space-y-4">
+            {retryPending && <p role="alert" className="text-xs text-amber-700">Respons belum diterima. Tekan Simpan lagi untuk mengecek pembayaran yang sama. Tetap buka form ini sampai hasilnya terkonfirmasi.</p>}
+            <fieldset disabled={submitting || retryPending} className="space-y-4">
             {/* Student Info Card */}
             <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 text-xs space-y-1">
               <div className="flex justify-between items-center">
@@ -538,11 +514,12 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
             </div>
 
             {/* Action Buttons */}
+            </fieldset>
             <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-100">
               <button
                 type="button"
                 onClick={onClose}
-                disabled={submitting}
+                disabled={submitting || retryPending}
                 className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100 disabled:opacity-50 transition-colors"
               >
                 Batal

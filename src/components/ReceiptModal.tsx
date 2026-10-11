@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { PaymentTransaction, ClubProfile } from '../types/sportkit';
 import { formatRupiah } from '../utils/numberToWordsId';
 import { formatTanggalPanjang } from '../utils/constants';
+import { receiptSigner } from '../utils/payments';
 import { BRAND_NAME, BRAND_LOGO } from '../utils/brand';
 import { Printer, X, Share2, CheckCircle2, ShieldCheck } from 'lucide-react';
 
@@ -26,6 +27,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
   const tanggal = formatTanggalPanjang(transaction.tanggal);
   const alamat = [profile.alamat, profile.kota].filter(Boolean).join(', ');
   const kontak = [profile.noHp && `Telp/WA: ${profile.noHp}`, profile.email].filter(Boolean).join(' | ');
+  const { jabatan: signerJabatan, ttd: signerTtd, nama: signerNama } = receiptSigner(transaction, profile);
 
   const handlePrint = () => {
     // Judul dokumen menjadi nama file default saat "Simpan sebagai PDF".
@@ -48,7 +50,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
       `Status: Pembayaran diterima & terverifikasi ✅\n` +
       `Terima kasih atas pembayarannya.`
     );
-    window.open(`https://wa.me/?text=${text}`, '_blank');
+    window.open(`https://wa.me/?text=${text}`, '_blank', 'noopener,noreferrer');
   };
 
   // Dirender di luar #root agar saat dicetak hanya kuitansi yang tampil
@@ -172,16 +174,26 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
               </p>
             </div>
 
-            <div className="text-center min-w-[140px]">
+            <div className="text-center min-w-[160px]">
               <p className="text-slate-500 text-[11px] font-mono">
                 {[profile.kota, tanggal].filter(Boolean).join(', ')}
               </p>
-              <p className="text-slate-600 font-medium mt-0.5">Bendahara / Pengurus Klub</p>
-              <div className="h-14 flex items-center justify-center text-slate-300 italic text-[11px]">
-                [Tanda Tangan & Stempel]
+              <p className="text-slate-600 font-medium mt-0.5">
+                {signerJabatan}
+              </p>
+              <div className="h-16 flex items-center justify-center text-slate-300 italic text-[11px]">
+                {signerTtd ? (
+                  <img
+                    src={signerTtd}
+                    alt={`Tanda tangan ${signerNama}`}
+                    className="max-h-full max-w-[180px] object-contain mix-blend-multiply"
+                  />
+                ) : (
+                  '[Tanda Tangan & Stempel]'
+                )}
               </div>
               <p className="font-bold text-slate-900 border-t border-slate-400 pt-1">
-                Pengurus {profile.namaKlub}
+                {signerNama}
               </p>
             </div>
           </div>

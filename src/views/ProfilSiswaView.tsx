@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { ManualPaymentError } from '../utils/manualPayment';
 import { useToast } from '../components/Toast';
 import { isValidPhone } from '../utils/coaches';
 import {
@@ -13,7 +14,6 @@ import {
   submissionPeriodLabel,
 } from '../utils/payments';
 import { getTodayISO, getCurrentYear, getCurrentMonth, getYearOptions } from '../utils/constants';
-import { refreshReceiptNumbers } from '../services/storage';
 import { 
   Student, 
   ClassGroup, 
@@ -91,14 +91,15 @@ interface ProfilSiswaViewProps {
   onOpenEventPaymentModal: (event: ClubEvent, participant: EventParticipant, student: Student, classGroup: ClassGroup) => void;
   onUpdateStudent: (student: Student) => void;
   onDeleteStudent?: (studentId: string) => void;
-  onVerifySubmission?: (submissionId: string, catatanAdmin: string) => void;
-  onRejectSubmission?: (submissionId: string, alasan: string) => void;
+  onVerifySubmission?: (submissionId: string, catatanAdmin: string) => Promise<boolean>;
+  onRejectSubmission?: (submissionId: string, alasan: string) => Promise<boolean>;
   onViewReceipt?: (tx: PaymentTransaction) => void;
   raporTemplates?: RaporTemplate[];
   raporFolders?: RaporFolder[];
   raporEntries?: RaporEntry[];
   onOpenRapor?: (data: RaporDocData) => void;
   onAdminRecordPaymentWithProof?: (data: {
+    requestId: string;
     siswaId: string;
     siswaNama: string;
     kelasId: string;
@@ -111,7 +112,7 @@ interface ProfilSiswaViewProps {
     buktiGambarUrl: string;
     pesanPembayaran?: string;
     catatanAdmin?: string;
-  }) => void;
+  }) => Promise<void>;
 }
 
 type TabKey = 'iuran' | 'bukti' | 'event' | 'absensi' | 'rapor' | 'biodata';
@@ -181,11 +182,18 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
 
   // Admin Quick Reject Modal
   const [rejectModalSub, setRejectModalSub] = useState<PaymentSubmission | null>(null);
+  const [reviewing, setReviewing] = useState(false);
   const [rejectReason, setRejectReason] = useState<string>('Bukti transfer tidak valid atau nominal tidak cocok.');
+
+  const adminSavingRef = React.useRef(false);
+  const adminPendingRequest = React.useRef<Parameters<NonNullable<ProfilSiswaViewProps['onAdminRecordPaymentWithProof']>>[0] | null>(null);
+  const [adminSaving, setAdminSaving] = useState(false);
+  const [adminRetryPending, setAdminRetryPending] = useState(false);
 
   // Admin Manual Input Proof Modal
   const [adminInputProofModal, setAdminInputProofModal] = useState<{
     isOpen: boolean;
+    requestId: string;
     bulan: number;
     tahun: number;
   } | null>(null);
@@ -206,9 +214,8 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentStudentId]);
 
-  // Buka modal verifikasi: siapkan juga nomor kuitansi terbaru dari server.
+  // Buka modal verifikasi bukti.
   const openVerifyModal = (sub: PaymentSubmission) => {
-    refreshReceiptNumbers();
     setVerifyModalSub(sub);
   };
 
@@ -260,18 +267,18 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
     onViewReceipt(receiptForSubmission(sub, transactions || []));
   };
 
-  const handleConfirmVerify = () => {
-    if (verifyModalSub && onVerifySubmission) {
-      onVerifySubmission(verifyModalSub.id, verifyNote);
-      setVerifyModalSub(null);
-    }
+  const handleConfirmVerify = async () => {
+    if (!verifyModalSub || !onVerifySubmission || reviewing) return;
+    setReviewing(true);
+    try { if (await onVerifySubmission(verifyModalSub.id, verifyNote)) setVerifyModalSub(null); }
+    finally { setReviewing(false); }
   };
 
-  const handleConfirmReject = () => {
-    if (rejectModalSub && onRejectSubmission) {
-      onRejectSubmission(rejectModalSub.id, rejectReason);
-      setRejectModalSub(null);
-    }
+  const handleConfirmReject = async () => {
+    if (!rejectModalSub || !onRejectSubmission || reviewing) return;
+    setReviewing(true);
+    try { if (await onRejectSubmission(rejectModalSub.id, rejectReason)) setRejectModalSub(null); }
+    finally { setReviewing(false); }
   };
 
   const getCellColorClass = (status: FeeStatus) => {
@@ -318,9 +325,11 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
     setInputBuktiUrl('');
     setInputPesan(pesanDefault(monthNumber, year));
     setInputCatatanAdmin('Pembayaran diinput & diverifikasi langsung oleh Admin.');
-    refreshReceiptNumbers();
+    adminPendingRequest.current = null;
+    setAdminRetryPending(false);
     setAdminInputProofModal({
       isOpen: true,
+      requestId: crypto.randomUUID(),
       bulan: monthNumber,
       tahun: year,
     });
@@ -328,7 +337,7 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
 
   // Ganti periode di form: nominal mengikuti sisa tagihan bulan yang baru dipilih.
   const changeAdminInputPeriod = (monthNumber: number, year: number) => {
-    setAdminInputProofModal({ isOpen: true, bulan: monthNumber, tahun: year });
+    setAdminInputProofModal((prev) => prev ? { ...prev, bulan: monthNumber, tahun: year } : null);
     setInputPesan(pesanDefault(monthNumber, year));
     const { sisa } = periodInfo(monthNumber, year);
     if (sisa > 0) setInputNominal(sisa);
@@ -358,57 +367,40 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
 
   const handleSubmitAdminProof = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!adminInputProofModal) return;
-    const { bulan, tahun } = adminInputProofModal;
-    const periode = `${FULL_MONTH_NAMES[bulan - 1]} ${tahun}`;
-    const info = periodInfo(bulan, tahun);
-
-    if (info.status === 'lunas') {
-      toast.error('Iuran sudah lunas', `Iuran ${periode} untuk ${currentStudent.nama} sudah lunas. Pilih bulan lain.`);
-      return;
+    if (!adminInputProofModal || !onAdminRecordPaymentWithProof || adminSavingRef.current) return;
+    adminSavingRef.current = true;
+    setAdminSaving(true);
+    try {
+      if (!adminPendingRequest.current) {
+        const { bulan, tahun, requestId } = adminInputProofModal;
+        const info = periodInfo(bulan, tahun);
+        if (info.status === 'lunas') throw new Error('Iuran periode ini sudah lunas. Pilih bulan lain.');
+        if (isNonBillable(info.status)) throw new Error('Bulan ini tidak ditagih. Pilih periode lain.');
+        if (!inputBuktiUrl && inputMetode !== 'Tunai') throw new Error('Lampirkan bukti transfer, atau pilih metode Tunai.');
+        if (!Number.isSafeInteger(inputNominal) || inputNominal <= 0) throw new Error('Nominal harus berupa rupiah bulat dan lebih dari 0.');
+        if (!inputTanggal) throw new Error('Tanggal pembayaran wajib diisi.');
+        if (info.sisa > 0 && inputNominal > info.sisa && !await confirm('Kelebihan Bayar?',
+          'Jumlah ' + formatRupiah(inputNominal) + ' melebihi sisa tagihan ' + formatRupiah(info.sisa) + '. Tetap catat pembayaran ini?')) return;
+        adminPendingRequest.current = {
+          requestId, siswaId: currentStudent.id, siswaNama: currentStudent.nama,
+          kelasId: currentStudent.kelasId, kelasNama: currentClass?.nama || 'Kelas Akademi',
+          bulan, tahun, nominal: Number(inputNominal), metodePembayaran: inputMetode,
+          tanggalTransfer: inputTanggal, buktiGambarUrl: inputBuktiUrl,
+          pesanPembayaran: inputPesan, catatanAdmin: inputCatatanAdmin,
+        };
+      }
+      await onAdminRecordPaymentWithProof(adminPendingRequest.current);
+      setAdminInputProofModal(null);
+      setAdminRetryPending(false);
+    } catch (error) {
+      const uncertain = error instanceof ManualPaymentError && error.uncertain;
+      setAdminRetryPending(uncertain);
+      if (!uncertain) adminPendingRequest.current = null;
+      toast.error('Pembayaran belum dikonfirmasi', (error as Error).message);
+    } finally {
+      adminSavingRef.current = false;
+      setAdminSaving(false);
     }
-    if (isNonBillable(info.status)) {
-      toast.error('Bulan tidak ditagih', `Iuran ${periode} berstatus "${FEE_STATUS_LABEL[info.status]}". Pilih bulan lain.`);
-      return;
-    }
-
-    // Bukti foto wajib untuk transfer / QRIS; pembayaran tunai boleh tanpa foto.
-    if (!inputBuktiUrl && inputMetode !== 'Tunai') {
-      toast.error('Bukti pembayaran belum ada', 'Lampirkan foto struk / bukti transfer, atau pilih metode Tunai.');
-      return;
-    }
-
-    if (!inputNominal || inputNominal <= 0) {
-      toast.error('Nominal tidak valid', 'Nominal pembayaran harus lebih dari 0.');
-      return;
-    }
-
-    if (info.sisa > 0 && inputNominal > info.sisa) {
-      const ok = await confirm(
-        'Kelebihan Bayar?',
-        `Jumlah ${formatRupiah(inputNominal)} melebihi sisa tagihan ${periode} (${formatRupiah(info.sisa)}). Tetap catat pembayaran ini?`
-      );
-      if (!ok) return;
-    }
-
-    if (onAdminRecordPaymentWithProof) {
-      onAdminRecordPaymentWithProof({
-        siswaId: currentStudent.id,
-        siswaNama: currentStudent.nama,
-        kelasId: currentStudent.kelasId,
-        kelasNama: currentClass?.nama || 'Kelas Akademi',
-        bulan: adminInputProofModal.bulan,
-        tahun: adminInputProofModal.tahun,
-        nominal: Number(inputNominal),
-        metodePembayaran: inputMetode,
-        tanggalTransfer: inputTanggal,
-        buktiGambarUrl: inputBuktiUrl,
-        pesanPembayaran: inputPesan,
-        catatanAdmin: inputCatatanAdmin,
-      });
-    }
-
-    setAdminInputProofModal(null);
   };
 
   const handleCellClick = (monthNumber: number) => {
@@ -2126,6 +2118,7 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
               <button
                 type="button"
                 onClick={handleConfirmVerify}
+                disabled={reviewing}
                 className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-md transition-colors cursor-pointer flex items-center gap-1.5"
               >
                 <CheckCheck className="w-4 h-4" />
@@ -2217,6 +2210,7 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
               </div>
               <button
                 type="button"
+                disabled={adminSaving || adminRetryPending}
                 onClick={() => setAdminInputProofModal(null)}
                 className="p-1.5 rounded-full hover:bg-slate-800 text-slate-400 hover:text-white transition-colors cursor-pointer"
               >
@@ -2226,6 +2220,8 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
 
             {/* Form */}
             <form onSubmit={handleSubmitAdminProof} className="p-6 space-y-4 text-xs">
+              {adminRetryPending && <p role="alert" className="text-amber-700">Respons belum diterima. Simpan lagi untuk mengecek pembayaran yang sama; tetap buka form sampai hasil terkonfirmasi.</p>}
+              <fieldset disabled={adminSaving || adminRetryPending} className="space-y-4">
               {/* Target Period & Class info */}
               <div className="p-3.5 rounded-2xl bg-emerald-50/70 border border-emerald-200 text-emerald-950 flex items-center justify-between">
                 <div>
@@ -2435,10 +2431,12 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
                 </p>
               </div>
 
+              </fieldset>
               {/* Submit Buttons */}
               <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
                 <button
                   type="button"
+                  disabled={adminSaving || adminRetryPending}
                   onClick={() => setAdminInputProofModal(null)}
                   className="px-4 py-2 rounded-xl border border-slate-200 hover:bg-slate-100 text-slate-700 text-xs font-semibold cursor-pointer transition-colors"
                 >
@@ -2446,10 +2444,11 @@ export const ProfilSiswaView: React.FC<ProfilSiswaViewProps> = ({
                 </button>
                 <button
                   type="submit"
+                  disabled={adminSaving}
                   className="px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-md transition-all cursor-pointer flex items-center gap-1.5"
                 >
                   <CheckCheck className="w-4 h-4" />
-                  <span>Simpan Pembayaran & Bukti Transfer</span>
+                  <span>{adminSaving ? 'Memproses…' : 'Simpan Pembayaran & Bukti Transfer'}</span>
                 </button>
               </div>
             </form>

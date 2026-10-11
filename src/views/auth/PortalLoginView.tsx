@@ -36,6 +36,7 @@ export const PortalLoginView: React.FC<PortalLoginViewProps> = ({ onLogin }) => 
             inputMode="tel"
             autoComplete="tel"
             required
+            maxLength={24}
             value={hp}
             onChange={(e) => setHp(e.target.value)}
             className={inputClass}
@@ -46,15 +47,15 @@ export const PortalLoginView: React.FC<PortalLoginViewProps> = ({ onLogin }) => 
           <label htmlFor="kode" className="block text-xs font-semibold text-slate-700 mb-1">Kode akses</label>
           <input
             id="kode"
-            type="text"
+            type="password"
             autoComplete="off"
             autoCapitalize="characters"
             required
             value={kode}
             onChange={(e) => setKode(e.target.value.toUpperCase())}
             className={`${inputClass} font-mono tracking-widest`}
-            placeholder="8 karakter"
-            maxLength={16}
+            placeholder="Kode dari pengurus"
+            maxLength={12}
           />
           <p className="text-[11px] text-slate-500 mt-1">Kode akses dikirim oleh admin klub (WhatsApp).</p>
         </div>

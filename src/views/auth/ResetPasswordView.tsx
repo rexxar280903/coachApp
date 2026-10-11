@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../services/auth';
 import { AuthShell, ErrorText, inputClass, primaryButtonClass } from './AuthShell';
+import { passwordValidationError } from '../../utils/security';
 
 export const ResetPasswordView: React.FC = () => {
   const { recovery, loading, updatePassword } = useAuth();
@@ -14,13 +15,14 @@ export const ResetPasswordView: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-    if (password.length < 8) return setError('Kata sandi minimal 8 karakter.');
+    const validation = passwordValidationError(password);
+    if (validation) return setError(validation);
     if (password !== confirm) return setError('Konfirmasi kata sandi tidak sama.');
     setBusy(true);
     const err = await updatePassword(password);
     setBusy(false);
     if (err) setError(err);
-    else navigate('/', { replace: true });
+    else navigate('/login', { replace: true });
   };
 
   if (!recovery) {
@@ -40,7 +42,7 @@ export const ResetPasswordView: React.FC = () => {
       <form onSubmit={handleSubmit} className="space-y-3.5">
         <div>
           <label htmlFor="pw" className="block text-xs font-semibold text-slate-700 mb-1">Kata sandi baru</label>
-          <input id="pw" type="password" autoComplete="new-password" required value={password} onChange={(e) => setPassword(e.target.value)} className={inputClass} />
+          <input id="pw" type="password" autoComplete="new-password" minLength={12} maxLength={128} required value={password} onChange={(e) => setPassword(e.target.value)} className={inputClass} />
         </div>
         <div>
           <label htmlFor="pw2" className="block text-xs font-semibold text-slate-700 mb-1">Ulangi kata sandi</label>

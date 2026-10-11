@@ -1,8 +1,12 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { ClubProfile, ClassGroup } from '../types/sportkit';
-import { Building, Settings, Save, CheckCircle2, Link2, Copy, Share2 } from 'lucide-react';
+import { Building, Settings, Save, CheckCircle2, Link2, Copy, Share2, PenLine, ImagePlus, X } from 'lucide-react';
 import { ImageUploadField } from '../components/ImageUploadField';
 import { useToast } from '../components/Toast';
+import { fileToCompressedDataUrl } from '../utils/image';
+
+/** Gambar TTD diperkecil agar ringan (± 20–40 KB). */
+const TTD_IMAGE = { maxDim: 480, quality: 0.85 };
 
 interface PengaturanViewProps {
   profile: ClubProfile;
@@ -20,6 +24,22 @@ export const PengaturanView: React.FC<PengaturanViewProps> = ({
 }) => {
   const { toast } = useToast();
   const [profileForm, setProfileForm] = useState<ClubProfile>(profile);
+  const ttdFileRef = useRef<HTMLInputElement>(null);
+  const [ttdBusy, setTtdBusy] = useState(false);
+
+  const handleTtdFile = async (file?: File) => {
+    if (!file) return;
+    setTtdBusy(true);
+    try {
+      const pengurusTtd = await fileToCompressedDataUrl(file, TTD_IMAGE);
+      setProfileForm((p) => ({ ...p, pengurusTtd }));
+    } catch (e) {
+      toast.error('Gambar tidak dapat dipakai', e instanceof Error ? e.message : undefined);
+    } finally {
+      setTtdBusy(false);
+      if (ttdFileRef.current) ttdFileRef.current.value = '';
+    }
+  };
 
   const shareLinks = [
     {
@@ -56,6 +76,8 @@ export const PengaturanView: React.FC<PengaturanViewProps> = ({
       noRekening: profileForm.noRekening?.trim() || undefined,
       namaBank: profileForm.namaBank?.trim() || undefined,
       atasNama: profileForm.atasNama?.trim() || undefined,
+      pengurusNama: profileForm.pengurusNama?.trim() || undefined,
+      pengurusJabatan: profileForm.pengurusJabatan?.trim() || undefined,
     });
     setSaving(false);
     if (ok === false) return; // pesan galat sudah ditampilkan
@@ -250,6 +272,104 @@ ${l.url}`)}`}
               onChange={(e) => setProfileForm({ ...profileForm, email: e.target.value })}
               className="w-full text-xs rounded-xl border border-slate-300 px-3.5 py-2.5 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 font-mono"
             />
+          </div>
+        </div>
+
+        {/* Pengurus penanda tangan kuitansi */}
+        <div className="pt-5 border-t border-slate-100 space-y-4">
+          <div className="flex items-start gap-2.5">
+            <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
+              <PenLine className="w-4 h-4" />
+            </div>
+            <div>
+              <p className="text-xs font-bold text-slate-800">Pengurus Penanda Tangan Kuitansi</p>
+              <p className="text-[11px] text-slate-500">
+                Nama, jabatan, dan tanda tangan ini otomatis dicetak di setiap kuitansi yang diterbitkan.
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-[1fr_260px] gap-5">
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label htmlFor="pengurus-nama" className="block text-xs font-semibold text-slate-700 mb-1">Nama Pengurus</label>
+                  <input
+                    id="pengurus-nama"
+                    type="text"
+                    value={profileForm.pengurusNama || ''}
+                    onChange={(e) => setProfileForm({ ...profileForm, pengurusNama: e.target.value })}
+                    placeholder="Budi Santoso"
+                    className="w-full text-xs rounded-xl border border-slate-300 px-3.5 py-2.5 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 font-semibold"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="pengurus-jabatan" className="block text-xs font-semibold text-slate-700 mb-1">Jabatan</label>
+                  <input
+                    id="pengurus-jabatan"
+                    type="text"
+                    value={profileForm.pengurusJabatan || ''}
+                    onChange={(e) => setProfileForm({ ...profileForm, pengurusJabatan: e.target.value })}
+                    placeholder="Bendahara"
+                    className="w-full text-xs rounded-xl border border-slate-300 px-3.5 py-2.5 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <span className="block text-xs font-semibold text-slate-700 mb-1">Gambar Tanda Tangan / Stempel</span>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    id="pengurus-ttd-upload"
+                    type="button"
+                    onClick={() => ttdFileRef.current?.click()}
+                    disabled={ttdBusy}
+                    className="px-3 py-1.5 rounded-lg bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 text-xs font-semibold flex items-center gap-1.5 cursor-pointer disabled:opacity-60"
+                  >
+                    <ImagePlus className="w-3.5 h-3.5" />
+                    {ttdBusy ? 'Memproses…' : profileForm.pengurusTtd ? 'Ganti Gambar' : 'Unggah Gambar'}
+                  </button>
+                  {profileForm.pengurusTtd && (
+                    <button
+                      id="pengurus-ttd-hapus"
+                      type="button"
+                      onClick={() => setProfileForm({ ...profileForm, pengurusTtd: undefined })}
+                      className="px-3 py-1.5 rounded-lg text-rose-600 hover:bg-rose-50 text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <X className="w-3.5 h-3.5" /> Hapus
+                    </button>
+                  )}
+                  <input
+                    ref={ttdFileRef}
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp"
+                    className="hidden"
+                    onChange={(e) => handleTtdFile(e.target.files?.[0])}
+                  />
+                </div>
+                <p className="text-[11px] text-slate-500 mt-1">
+                  Gunakan foto/scan TTD berlatar putih (JPG, PNG, atau WebP). Kosongkan bila ingin TTD basah setelah dicetak.
+                </p>
+              </div>
+            </div>
+
+            {/* Pratinjau blok TTD seperti di kuitansi */}
+            <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50/60 p-4 text-center text-xs">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">Pratinjau di Kuitansi</p>
+              <div className="bg-white rounded-xl border border-slate-200 px-4 py-3">
+                <p className="text-slate-600 font-medium">{profileForm.pengurusJabatan?.trim() || 'Bendahara / Pengurus Klub'}</p>
+                <div className="h-16 flex items-center justify-center">
+                  {profileForm.pengurusTtd ? (
+                    <img src={profileForm.pengurusTtd} alt="Tanda tangan pengurus" className="max-h-full max-w-full object-contain mix-blend-multiply" />
+                  ) : (
+                    <span className="text-slate-300 italic text-[11px]">[Tanda Tangan &amp; Stempel]</span>
+                  )}
+                </div>
+                <p className="font-bold text-slate-900 border-t border-slate-400 pt-1">
+                  {profileForm.pengurusNama?.trim() || `Pengurus ${profileForm.namaKlub}`}
+                </p>
+              </div>
+            </div>
           </div>
         </div>
 

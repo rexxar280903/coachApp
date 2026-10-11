@@ -35,8 +35,8 @@ interface VerifikasiPembayaranViewProps {
   students: Student[];
   classes: ClassGroup[];
   monthlyDues: MonthlyDueRecord[];
-  onVerifySubmission: (submissionId: string, catatanAdmin: string) => void;
-  onRejectSubmission: (submissionId: string, alasan: string) => void;
+  onVerifySubmission: (submissionId: string, catatanAdmin: string) => Promise<boolean>;
+  onRejectSubmission: (submissionId: string, alasan: string) => Promise<boolean>;
   onViewReceipt: (tx: PaymentTransaction) => void;
   transactions: PaymentTransaction[];
 }
@@ -74,6 +74,7 @@ export const VerifikasiPembayaranView: React.FC<VerifikasiPembayaranViewProps> =
   // Rejection Modal State
   const [rejectingSubmission, setRejectingSubmission] = useState<PaymentSubmission | null>(null);
   const [rejectReason, setRejectReason] = useState<string>('');
+  const [reviewing, setReviewing] = useState(false);
 
   // Calculate Stats
   const pendingCount = submissions.filter((s) => s.status === 'pending').length;
@@ -111,21 +112,26 @@ export const VerifikasiPembayaranView: React.FC<VerifikasiPembayaranViewProps> =
   };
   const verifyingOutcome = verifyingSubmission ? outcomeFor(verifyingSubmission) : null;
 
-  const handleConfirmVerify = () => {
-    if (!verifyingSubmission) return;
-    onVerifySubmission(verifyingSubmission.id, adminNote);
-    setVerifyingSubmission(null);
+  const handleConfirmVerify = async () => {
+    if (!verifyingSubmission || reviewing) return;
+    setReviewing(true);
+    try { if (await onVerifySubmission(verifyingSubmission.id, adminNote)) setVerifyingSubmission(null); }
+    finally { setReviewing(false); }
   };
 
-  const handleConfirmReject = () => {
-    if (!rejectingSubmission) return;
+  const handleConfirmReject = async () => {
+    if (!rejectingSubmission || reviewing) return;
     if (!rejectReason.trim()) {
       toast.error('Alasan wajib diisi', 'Mohon tuliskan alasan penolakan agar siswa dapat memperbaikinya.');
       return;
     }
-    onRejectSubmission(rejectingSubmission.id, rejectReason);
-    setRejectingSubmission(null);
-    setRejectReason('');
+    setReviewing(true);
+    try {
+      if (await onRejectSubmission(rejectingSubmission.id, rejectReason)) {
+        setRejectingSubmission(null);
+        setRejectReason('');
+      }
+    } finally { setReviewing(false); }
   };
 
   return (
@@ -622,6 +628,7 @@ export const VerifikasiPembayaranView: React.FC<VerifikasiPembayaranViewProps> =
               </button>
               <button
                 onClick={handleConfirmVerify}
+                disabled={reviewing}
                 className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-md transition-all flex items-center gap-1.5 cursor-pointer"
               >
                 <CheckCircle2 className="w-4 h-4" />
@@ -676,6 +683,7 @@ export const VerifikasiPembayaranView: React.FC<VerifikasiPembayaranViewProps> =
               </button>
               <button
                 onClick={handleConfirmReject}
+                disabled={reviewing}
                 className="px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs shadow-md transition-all flex items-center gap-1.5 cursor-pointer"
               >
                 <XCircle className="w-4 h-4" />

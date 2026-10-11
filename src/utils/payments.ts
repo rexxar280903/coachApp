@@ -1,6 +1,16 @@
-import { EventParticipant, FeeStatus, MonthlyDueRecord, PaymentSubmission, PaymentTransaction, Student } from '../types/sportkit';
+import { ClubProfile, EventParticipant, FeeStatus, MonthlyDueRecord, PaymentSubmission, PaymentTransaction, Student } from '../types/sportkit';
 import { MONTH_NAMES, getCurrentMonth, getCurrentYear } from './constants';
 import { numberToWordsId } from './numberToWordsId';
+
+/** Nilai kosong pada snapshot tetap kosong; fallback profil hanya untuk data legacy tanpa kolom. */
+export function receiptSigner(transaction: PaymentTransaction, profile: ClubProfile) {
+  const hasSnapshot = transaction.pengurusNama !== undefined || transaction.pengurusJabatan !== undefined || transaction.pengurusTtd !== undefined;
+  return {
+    nama: (hasSnapshot ? transaction.pengurusNama : profile.pengurusNama)?.trim() || `Pengurus ${profile.namaKlub}`,
+    jabatan: (hasSnapshot ? transaction.pengurusJabatan : profile.pengurusJabatan)?.trim() || 'Bendahara / Pengurus Klub',
+    ttd: hasSnapshot ? transaction.pengurusTtd ?? '' : profile.pengurusTtd,
+  };
+}
 
 /** Status tagihan berdasarkan jumlah yang sudah terbayar. */
 export function statusFromPaid(nominal: number, terbayar: number): FeeStatus {
@@ -180,7 +190,8 @@ export function recountEvents<T extends { id: string; totalPeserta: number; pese
  */
 export function receiptForSubmission(
   sub: PaymentSubmission,
-  transactions: PaymentTransaction[]
+  transactions: PaymentTransaction[],
+  profile?: ClubProfile,
 ): PaymentTransaction {
   const existing = transactions.find(
     (t) => (sub.transactionId && t.id === sub.transactionId) || (sub.kuitansiId && t.nomorKuitansi === sub.kuitansiId)
@@ -202,6 +213,9 @@ export function receiptForSubmission(
     tipe,
     keterangan: label === tipe ? tipe : `${sub.tipe} ${label}`,
     catatan: sub.catatanAdmin,
+    pengurusNama: profile?.pengurusNama,
+    pengurusJabatan: profile?.pengurusJabatan,
+    pengurusTtd: profile?.pengurusTtd,
   };
 }
 
