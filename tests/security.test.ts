@@ -17,6 +17,8 @@ test('browser configuration rejects privileged keys and insecure production endp
     assert.throws(() => validateSupabaseConfig(url, jwt('anon'), true));
   }
   assert.equal(validateSupabaseConfig('http://localhost:54321', jwt('anon')), true);
+  assert.equal(validateSupabaseConfig('', ''), false);
+  assert.throws(() => validateSupabaseConfig('', '', true), /wajib diisi/);
 });
 
 test('CSV export neutralizes formulas, including whitespace and control character prefixes', () => {

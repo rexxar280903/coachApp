@@ -7,6 +7,10 @@
  * baris yang berubah dan menghapus baris yang hilang. Penulisan per tabel diserialkan agar
  * tidak saling menimpa. Kegagalan dilaporkan lewat `setSyncErrorHandler`.
  */
+import type { ManualPaymentInput } from '../types/manualPayment';
+import { ManualPaymentError, manualPaymentRpcError } from '../utils/manualPayment';
+import { portalReceiptImages } from './portalReceiptImages';
+import { numberToWordsId } from '../utils/numberToWordsId';
 import {
   Student,
   Coach,
@@ -124,7 +128,6 @@ const T = {
     table: 'rapor_templates',
     cols: ['id', 'nama', 'header', 'items', 'footer', 'ttd'],
     nullable: ['ttd'],
-    optional: ['ttd'],
     order: 'asc',
   },
   raporFolders: {
@@ -157,6 +160,11 @@ export function fromRow<T>(def: TableDef, row: Obj): T {
   const obj: Obj = {};
   for (const c of def.cols) {
     const v = row[toSnake(c)];
+    // Null pada kolom snapshot berarti kosong saat diterbitkan, bukan memakai profil terbaru.
+    if (def.table === 'transactions' && ['pengurusNama', 'pengurusJabatan', 'pengurusTtd'].includes(c) && v === null) {
+      obj[c] = '';
+      continue;
+    }
     if (v !== null && v !== undefined) obj[c] = v;
   }
   return obj as T;
@@ -422,6 +430,9 @@ const prepareProof: Prepare = async (row, item) => {
 };
 
 const prepareTransaction: Prepare = async (row, item) => {
+  row.pengurus_nama = item.pengurusNama ?? '';
+  row.pengurus_jabatan = item.pengurusJabatan ?? '';
+  row.pengurus_ttd = item.pengurusTtd ?? '';
   if (isDataUrl(item.pengurusTtd)) row.pengurus_ttd = await uploadAvatar(item.pengurusTtd, 'club');
   else if (item.pengurusTtd) row.pengurus_ttd = avatarReference(item.pengurusTtd);
   return row;
@@ -439,7 +450,7 @@ async function withSignedTransactionTtd(items: PaymentTransaction[]): Promise<Pa
   return items.map((item) => {
     if (!item.pengurusTtd) return item;
     const p = avatarPath(item.pengurusTtd);
-    return p && urls.has(p) ? { ...item, pengurusTtd: urls.get(p) || undefined } : item;
+    return p && urls.has(p) ? { ...item, pengurusTtd: urls.get(p) || '' } : item;
   });
 }
 
@@ -485,6 +496,7 @@ export const saveRaporEntries = (list: RaporEntry[]) => save(T.raporEntries, lis
 
 export async function getTransactions(): Promise<PaymentTransaction[]> {
   const items = await withSignedTransactionTtd(await load<PaymentTransaction>(T.transactions));
+  snapshots.set(T.transactions.table, new Map(items.map((item) => [item.id, JSON.stringify(item)])));
   rememberReceipts(items.map((t) => t.nomorKuitansi));
   return items;
 }
@@ -598,6 +610,7 @@ export interface PortalCredentials {
 }
 
 export interface PortalBundle {
+  receiptImagesError: boolean;
   student: Student;
   classes: ClassGroup[];
   monthlyDues: MonthlyDueRecord[];
@@ -644,6 +657,37 @@ export async function reviewPaymentSubmission(id: string, action: 'verified' | '
   return signed[0] ?? tx;
 }
 
+/** One database transaction owns the receipt, balance, proof archive and activation. */
+export async function recordManualPayment(input: ManualPaymentInput): Promise<PaymentTransaction> {
+  await waitForPendingSaves();
+  const proofPath = await toProofPath(input.buktiGambarUrl ?? '');
+  let result;
+  try {
+    result = await supabase.rpc('admin_record_payment', {
+      p_request_id: input.requestId,
+      p: {
+        siswa_id: input.siswaId, tipe: input.tipe, nominal: input.nominal,
+        tanggal: input.tanggal, metode_pembayaran: input.metodePembayaran,
+        bulan: input.bulan ?? null, tahun: input.tahun ?? null,
+        participant_id: input.participantId ?? null, bukti_path: proofPath,
+        pesan: input.pesan ?? '', catatan: input.catatan ?? '',
+        keterangan: input.keterangan ?? '', terbilang: numberToWordsId(input.nominal),
+      },
+    });
+  } catch {
+    throw new ManualPaymentError('Respons belum diterima. Coba simpan kembali dengan data yang sama untuk mengecek pembayaran ini.', true);
+  }
+  if (result.error) {
+    throw manualPaymentRpcError(result.error.code);
+  }
+  if (result.data?.error) throw new ManualPaymentError(result.data.error);
+  if (!result.data?.transaction) throw new ManualPaymentError('Respons pembayaran tidak lengkap. Coba simpan kembali dengan data yang sama.', true);
+  const tx = fromRow<PaymentTransaction>(T.transactions, result.data.transaction);
+  // Image signing is optional after commit and must never turn a saved payment into a retry.
+  try { return (await withSignedTransactionTtd([tx]))[0] ?? tx; }
+  catch { return tx; }
+}
+
 /** Mengembalikan null jika No. HP / kode akses tidak cocok. */
 export async function portalLogin({ hp, kode }: PortalCredentials): Promise<PortalBundle | null> {
   const { data, error } = await supabase.rpc('portal_data', { p_hp: hp, p_kode: kode });
@@ -651,12 +695,14 @@ export async function portalLogin({ hp, kode }: PortalCredentials): Promise<Port
   if (!data) return null;
   checkRpcResult(data);
   const b = data as Obj;
+  const receipts = await portalReceiptImages((b.transactions as Obj[]).map(r => fromRow<PaymentTransaction>(T.transactions, r)), { hp, kode });
   return {
+    receiptImagesError: receipts.receiptImagesError,
     student: fromRow<Student>(T.students, b.student),
     classes: (b.classes as Obj[]).map((r) => fromRow<ClassGroup>(T.classes, r)),
     monthlyDues: (b.monthly_dues as Obj[]).map((r) => fromRow<MonthlyDueRecord>(T.monthlyDues, r)),
     attendanceSessions: (b.attendance_sessions as Obj[]).map((r) => fromRow<AttendanceSession>(T.attendance, r)),
-    transactions: await withSignedTransactionTtd((b.transactions as Obj[]).map((r) => fromRow<PaymentTransaction>(T.transactions, r))),
+    transactions: receipts.transactions,
     submissions: (b.payment_submissions as Obj[]).map((r) => {
       const s = fromRow<PaymentSubmission>(T.submissions, r);
       return { ...s, buktiGambarUrl: localProofPreviews.get(s.id) ?? '' };
@@ -667,7 +713,7 @@ export async function portalLogin({ hp, kode }: PortalCredentials): Promise<Port
     raporEntries: ((b.rapor_entries ?? []) as Obj[]).map((r) => fromRow<RaporEntry>(T.raporEntries, r)),
     profile: { ...fromRow<ClubProfile>({ table: 'club_profile', cols: PROFILE_COLS, order: 'asc' }, b.club_profile ?? {}),
       logoUrl: await signedAvatar(b.club_profile?.logo_url),
-      pengurusTtd: await signedAvatar(b.club_profile?.pengurus_ttd) },
+      pengurusTtd: undefined },
   };
 }
 

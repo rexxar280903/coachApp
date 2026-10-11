@@ -39,12 +39,10 @@ import {
   getAttendanceSessions,
   saveAttendanceSessions,
   getTransactions,
-  saveTransactions,
   getClubProfile,
   saveClubProfile,
   getPaymentSubmissions,
   savePaymentSubmissions,
-  generateReceiptNumber,
   registerPublic,
   portalLogin,
   portalSubmitPayment,
@@ -57,18 +55,17 @@ import {
   getRaporEntries,
   saveRaporEntries,
   waitForPendingSaves,
-  refreshReceiptNumbers,
   reviewPaymentSubmission,
+  recordManualPayment,
 } from './services/storage';
+import type { ManualPaymentInput } from './types/manualPayment';
 import { StaffUser } from './services/auth';
 import { generateKodeAkses } from './utils/kodeAkses';
 import { numberToWordsId } from './utils/numberToWordsId';
-import { MONTH_NAMES, getCurrentYear, getCurrentMonth, getTodayISO, getCurrentTime } from './utils/constants';
+import { MONTH_NAMES, getCurrentYear, getCurrentMonth, getTodayISO } from './utils/constants';
 import { useToast } from './components/Toast';
 import { migrateCoachLinks, syncClassSnapshots, getCoachClasses } from './utils/coaches';
 import {
-  applyMonthlyPayment,
-  applyEventPayment,
   findMonthlyDue,
   recountEvents,
   effectiveDueStatus,
@@ -76,7 +73,6 @@ import {
   freezeInactiveMonths,
   FEE_STATUS_LABEL,
   remainingMonthlyDue,
-  describePaymentOutcome,
   statusFromPaid,
 } from './utils/payments';
 
@@ -305,17 +301,6 @@ export default function Workspace({ mode, staff, portal, onLogout }: WorkspacePr
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, staff?.id, portal?.hp, portal?.kode]);
 
-  // Admin bisa bekerja dari beberapa perangkat: saat tab kembali aktif, ambil nomor kuitansi
-  // terbaru dari server agar nomor berikutnya tidak bentrok.
-  useEffect(() => {
-    if (mode !== 'staff' || staff?.role !== 'admin') return;
-    const onVisible = () => {
-      if (document.visibilityState === 'visible') refreshReceiptNumbers();
-    };
-    document.addEventListener('visibilitychange', onVisible);
-    return () => document.removeEventListener('visibilitychange', onVisible);
-  }, [mode, staff?.role]);
-
   const loadAllData = async () => {
     try {
       if (mode === 'public') {
@@ -339,6 +324,7 @@ export default function Workspace({ mode, staff, portal, onLogout }: WorkspacePr
         setRaporEntries(bundle.raporEntries);
         setProfile(bundle.profile);
         setSelectedStudentId(bundle.student.id);
+        if (bundle.receiptImagesError) toast.warning('Tanda tangan belum termuat', 'Kuitansi dapat dibuka, tetapi gambar tanda tangan belum tersedia. Muat ulang halaman atau hubungi pengurus.');
       } else {
         const isAdmin = staff?.role === 'admin';
         // Selesaikan penulisan yang masih antre dulu agar data yang dimuat sudah memuatnya.
@@ -497,149 +483,11 @@ export default function Workspace({ mode, staff, portal, onLogout }: WorkspacePr
     });
   };
 
-  // On Successful Payment Submission in Modal
-  const handlePaymentSuccess = (
-    tx: PaymentTransaction,
-    proofData?: {
-      buktiGambarUrl?: string;
-      pesanPembayaran?: string;
-      catatanAdmin?: string;
-      bulan?: number;
-      tahun?: number;
-    }
-  ) => {
-    const today = getTodayISO();
-    const time = getCurrentTime();
-    const tanggalBayar = tx.tanggal || today;
-    const modal = paymentModalState;
-    const student = students.find((s) => s.id === tx.siswaId);
-
-    // 1. Save Transaction
-    const txWithSigner: PaymentTransaction = {
-      ...tx,
-      pengurusNama: tx.pengurusNama ?? profile.pengurusNama,
-      pengurusJabatan: tx.pengurusJabatan ?? profile.pengurusJabatan,
-      pengurusTtd: tx.pengurusTtd ?? profile.pengurusTtd,
-    };
-    const updatedTxs = [txWithSigner, ...transactions];
-    setTransactions(updatedTxs);
-    saveTransactions(updatedTxs);
-
-    // Arsip bukti pembayaran (langsung terverifikasi karena diinput admin), untuk semua jenis
-    // pembayaran agar foto bukti yang diunggah di modal tidak hilang.
-    const archiveSub = (extra: Pick<PaymentSubmission, 'tipe'> & Partial<PaymentSubmission>): PaymentSubmission => ({
-      id: `sub-${Date.now()}`,
-      siswaId: tx.siswaId,
-      siswaNama: tx.siswaNama,
-      kelasId: modal.kelasId || student?.kelasId || '',
-      kelasNama: tx.kelasNama,
-      nominal: tx.nominal,
-      metodePembayaran: tx.metodePembayaran,
-      tanggalTransfer: tanggalBayar,
-      buktiGambarUrl: proofData?.buktiGambarUrl || '',
-      pesanSiswa: proofData?.pesanPembayaran || tx.keterangan,
-      status: 'verified',
-      tanggalKirim: `${today} ${time}`,
-      tanggalVerifikasi: today,
-      diverifikasiOleh: actorName,
-      catatanAdmin: proofData?.catatanAdmin || 'Diinput & diverifikasi langsung oleh Admin.',
-      kuitansiId: tx.nomorKuitansi,
-      transactionId: tx.id,
-      ...extra,
-    });
-    let newSub: PaymentSubmission | null = null;
-
-    // 2. Iuran Rutin → tagihan bulanan (pembayaran kumulatif / cicilan)
-    if (tx.tipe === 'Iuran Rutin' || tx.tipe === 'Angsuran') {
-      const bulan = proofData?.bulan ?? modal.bulan;
-      const tahun = proofData?.tahun ?? modal.tahun;
-      if (bulan && tahun) {
-        const studentClass = classes.find((c) => c.id === (modal.kelasId || student?.kelasId));
-        const samePeriod = modal.bulan === bulan && modal.tahun === tahun;
-        const nominalTagihan =
-          (samePeriod && modal.dueNominal) ||
-          studentClass?.iuranBulanan ||
-          student?.iuranBulanan ||
-          tx.nominal;
-
-        const updatedDues = applyMonthlyPayment(monthlyDues, {
-          siswaId: tx.siswaId,
-          bulan,
-          tahun,
-          nominalTagihan,
-          jumlah: tx.nominal,
-          tanggalBayar,
-          kuitansiId: tx.nomorKuitansi,
-        });
-        setMonthlyDues(updatedDues);
-        saveMonthlyDues(updatedDues);
-
-        newSub = archiveSub({ tipe: 'Iuran Rutin', bulan, tahun });
-      }
-    }
-
-    // 3. Iuran Insidentil → peserta event
-    if (tx.tipe === 'Iuran Insidentil' && modal.targetParticipantId) {
-      const part = eventParticipants.find((p) => p.id === modal.targetParticipantId);
-      newSub = archiveSub({
-        tipe: 'Iuran Insidentil',
-        eventId: part?.eventId,
-        eventNama: events.find((e) => e.id === part?.eventId)?.nama,
-      });
-      const updatedParts = applyEventPayment(
-        eventParticipants,
-        modal.targetParticipantId,
-        tx.nominal,
-        tanggalBayar,
-        tx.nomorKuitansi
-      );
-      setEventParticipants(updatedParts);
-      saveEventParticipants(updatedParts);
-
-      if (part) {
-        const updatedEvents = recountEvents(events, updatedParts, [part.eventId]);
-        setEvents(updatedEvents);
-        saveEvents(updatedEvents);
-      }
-    }
-
-    // 4. Pendaftaran calon siswa → aktifkan siswa & catat iuran bulan pertama
-    if (tx.tipe === 'Pendaftaran Siswa Baru' && modal.isApplicantApproval) {
-      newSub = archiveSub({ tipe: 'Pendaftaran' });
-      // Tanggal bergabung = tanggal aktif (iuran mulai dihitung dari bulan ini)
-      const updatedStudents = students.map((s) =>
-        s.id === tx.siswaId
-          ? { ...s, status: 'Aktif' as StudentStatus, tanggalBergabung: tanggalBayar, tanggalStatus: tanggalBayar }
-          : s
-      );
-      setStudents(updatedStudents);
-      saveStudents(updatedStudents);
-
-      const biayaDaftar = modal.biayaPendaftaran ?? student?.biayaPendaftaran ?? 0;
-      const iuran = modal.iuranBulanan ?? student?.iuranBulanan ?? 0;
-      const untukIuran = Math.min(Math.max(0, tx.nominal - biayaDaftar), iuran);
-      if (iuran > 0 && untukIuran > 0) {
-        // Iuran perdana = bulan tanggal bergabung (tanggal pembayaran), bukan bulan saat dicatat.
-        const [tahunBayar, bulanBayar] = tanggalBayar.split('-').map(Number);
-        const updatedDues = applyMonthlyPayment(monthlyDues, {
-          siswaId: tx.siswaId,
-          bulan: bulanBayar || getCurrentMonth(),
-          tahun: tahunBayar || getCurrentYear(),
-          nominalTagihan: iuran,
-          jumlah: untukIuran,
-          tanggalBayar,
-          kuitansiId: tx.nomorKuitansi,
-        });
-        setMonthlyDues(updatedDues);
-        saveMonthlyDues(updatedDues);
-      }
-    }
-
-    if (newSub) {
-      const updatedSubs = [newSub, ...submissions];
-      setSubmissions(updatedSubs);
-      savePaymentSubmissions(updatedSubs);
-    }
+  // Only show success once the server has committed the complete payment.
+  const handlePaymentSuccess = async (input: ManualPaymentInput): Promise<PaymentTransaction> => {
+    const tx = await recordManualPayment(input);
+    await loadAllData();
+    return tx;
   };
 
   // Add new student from form
@@ -658,8 +506,8 @@ export default function Workspace({ mode, staff, portal, onLogout }: WorkspacePr
 
     const student: Student = { ...newStudent, kodeAkses: newStudent.kodeAkses || generateKodeAkses() };
     const updated = [student, ...students];
+    if (!await saveStudents(updated)) return false;
     setStudents(updated);
-    saveStudents(updated);
 
     if (autoPayDirectly) {
       // Siswa tetap 'Calon' sampai pembayaran benar-benar dicatat di modal.
@@ -1136,131 +984,33 @@ export default function Workspace({ mode, staff, portal, onLogout }: WorkspacePr
     }
   };
 
-  // Admin directly records payment with uploaded proof & message
-  const handleAdminRecordPaymentWithProof = ({
-    siswaId,
-    siswaNama,
-    kelasId,
-    kelasNama,
-    bulan,
-    tahun,
-    nominal,
-    metodePembayaran,
-    tanggalTransfer,
-    buktiGambarUrl,
-    pesanPembayaran,
-    catatanAdmin,
-  }: {
-    siswaId: string;
-    siswaNama: string;
-    kelasId: string;
-    kelasNama: string;
-    bulan: number;
-    tahun: number;
-    nominal: number;
-    metodePembayaran: PaymentMethod;
-    tanggalTransfer: string;
-    buktiGambarUrl: string;
-    pesanPembayaran?: string;
-    catatanAdmin?: string;
-  }) => {
-    const existingDue = findMonthlyDue(monthlyDues, siswaId, bulan, tahun);
-    if (existingDue?.status === 'lunas') {
-      toast.warning('Iuran sudah lunas', `Iuran ${MONTH_NAMES[bulan - 1]} ${tahun} untuk ${siswaNama} sudah lunas.`);
-      return;
-    }
-
-    const receiptNo = generateReceiptNumber();
-    const txId = `tx-${Date.now()}`;
-    const today = getTodayISO();
-    const time = getCurrentTime();
-
-    const periodLabel = `Iuran Rutin ${MONTH_NAMES[bulan - 1]} ${tahun}`;
-
-    // 1. Transaction
-    const newTx: PaymentTransaction = {
-      id: txId,
-      nomorKuitansi: receiptNo,
-      siswaId,
-      siswaNama,
-      kelasNama,
-      tanggal: tanggalTransfer || today,
-      nominal,
-      terbilang: numberToWordsId(nominal),
-      metodePembayaran,
-      tipe: 'Iuran Rutin',
-      keterangan: `${periodLabel} (Diinput oleh Admin)`,
-      catatan: catatanAdmin || pesanPembayaran || 'Pembayaran dicatat & disahkan Admin.',
-      pengurusNama: profile.pengurusNama,
-      pengurusJabatan: profile.pengurusJabatan,
-      pengurusTtd: profile.pengurusTtd,
-    };
-
-    const updatedTxs = [newTx, ...transactions];
-    setTransactions(updatedTxs);
-    saveTransactions(updatedTxs);
-
-    // 2. Update or Create Monthly Due (kumulatif, mendukung cicilan)
-    const student = students.find((s) => s.id === siswaId);
-    const cls = classes.find((c) => c.id === (student?.kelasId || kelasId));
-    const outcome = describePaymentOutcome(
-      nominal,
-      remainingMonthlyDue(monthlyDues, siswaId, bulan, tahun, cls?.iuranBulanan || student?.iuranBulanan || nominal)
-    );
-    if (outcome.kind === 'lebih') toast.warning('Kelebihan bayar', `${siswaNama}: ${outcome.text}.`);
-    if (outcome.kind === 'cicilan') toast.info('Dicatat sebagai cicilan', `${siswaNama}: ${outcome.text}.`);
-    const updatedDues = applyMonthlyPayment(monthlyDues, {
-      siswaId,
-      bulan,
-      tahun,
-      nominalTagihan: existingDue?.nominal || cls?.iuranBulanan || student?.iuranBulanan || nominal,
-      jumlah: nominal,
-      tanggalBayar: tanggalTransfer || today,
-      kuitansiId: receiptNo,
+  // Reuse the atomic operation for payments entered from the student profile.
+  const handleAdminRecordPaymentWithProof = async (data: {
+    requestId: string; siswaId: string; siswaNama: string; kelasId: string; kelasNama: string;
+    bulan: number; tahun: number; nominal: number; metodePembayaran: PaymentMethod;
+    tanggalTransfer: string; buktiGambarUrl: string; pesanPembayaran?: string; catatanAdmin?: string;
+  }): Promise<void> => {
+    const tx = await recordManualPayment({
+      requestId: data.requestId, siswaId: data.siswaId, tipe: 'Iuran Rutin',
+      bulan: data.bulan, tahun: data.tahun, nominal: data.nominal,
+      metodePembayaran: data.metodePembayaran, tanggal: data.tanggalTransfer,
+      buktiGambarUrl: data.buktiGambarUrl, pesan: data.pesanPembayaran,
+      catatan: data.catatanAdmin,
+      keterangan: 'Iuran Rutin ' + MONTH_NAMES[data.bulan - 1] + ' ' + data.tahun + ' (Diinput oleh Admin)',
     });
-    setMonthlyDues(updatedDues);
-    saveMonthlyDues(updatedDues);
-
-    // 3. Create Submission record (status: 'verified')
-    const subId = `sub-${Date.now()}`;
-    const newSub: PaymentSubmission = {
-      id: subId,
-      siswaId,
-      siswaNama,
-      kelasId,
-      kelasNama,
-      tipe: 'Iuran Rutin',
-      bulan,
-      tahun,
-      nominal,
-      metodePembayaran,
-      tanggalTransfer: tanggalTransfer || today,
-      buktiGambarUrl: buktiGambarUrl || '',
-      pesanSiswa: pesanPembayaran || `Pembayaran iuran ${MONTH_NAMES[bulan - 1]} ${tahun}`,
-      status: 'verified',
-      tanggalKirim: `${today} ${time}`,
-      tanggalVerifikasi: today,
-      diverifikasiOleh: actorName,
-      catatanAdmin: catatanAdmin || 'Pembayaran diinput & diverifikasi langsung oleh Admin.',
-      kuitansiId: receiptNo,
-      transactionId: txId,
-    };
-
-    const updatedSubs = [newSub, ...submissions];
-    setSubmissions(updatedSubs);
-    savePaymentSubmissions(updatedSubs);
-
-    // 4. Pop up official receipt
-    setReceiptModalTx(newTx);
+    await loadAllData();
+    setReceiptModalTx(tx);
   };
 
   // ─── Rapor ─────────────────────────────────────────────────────────────────
-  const handleSaveRaporTemplate = (tpl: RaporTemplate) => {
+  const handleSaveRaporTemplate = async (tpl: RaporTemplate): Promise<boolean> => {
     const exists = raporTemplates.some((t) => t.id === tpl.id);
     const updated = exists ? raporTemplates.map((t) => (t.id === tpl.id ? tpl : t)) : [...raporTemplates, tpl];
     setRaporTemplates(updated);
-    saveRaporTemplates(updated);
+    const saved = await saveRaporTemplates(updated);
+    if (!saved) return false;
     toast.success('Template rapor disimpan', tpl.nama);
+    return true;
   };
 
   const handleDeleteRaporTemplate = async (templateId: string) => {
@@ -1709,6 +1459,7 @@ export default function Workspace({ mode, staff, portal, onLogout }: WorkspacePr
         title={paymentModalState.title}
         siswaNama={paymentModalState.siswaNama}
         siswaId={paymentModalState.siswaId}
+        participantId={paymentModalState.targetParticipantId}
         kelasId={paymentModalState.kelasId}
         kelasNama={paymentModalState.kelasNama}
         noHp={paymentModalState.noHp}
@@ -1727,7 +1478,6 @@ export default function Workspace({ mode, staff, portal, onLogout }: WorkspacePr
         }
         onSuccess={handlePaymentSuccess}
         onViewReceipt={(tx) => setReceiptModalTx(tx)}
-        profile={profile}
       />
 
       {/* Official Receipt Modal (Print & Share WhatsApp) */}

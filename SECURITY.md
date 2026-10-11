@@ -1,8 +1,9 @@
 # Keamanan SportKit
 
-Pembaruan 8 Oktober 2026 di branch `dev-next`. Perubahan ini mengurangi celah yang ditemukan pada
-kode aplikasi dan skema database. Tidak menjamin aplikasi kebal serangan. Database dan konfigurasi
-hosting produksi belum diubah oleh pekerjaan lokal ini.
+Pembaruan hingga 11 Oktober 2026 di branch `dev-next`. Perubahan ini mengurangi celah yang ditemukan
+pada kode aplikasi dan skema database. Tidak menjamin aplikasi kebal serangan. Skema Supabase
+Production sudah diterapkan setelah membuat snapshot pemulihan. Key server TTD sudah disimpan
+sebagai Secret Vercel khusus Production; frontend dan fungsi server terbaru masih perlu dideploy.
 
 Authenticator sementara dinonaktifkan sesuai keputusan pemilik aplikasi. Admin/pelatih login dengan
 email + kata sandi; frontend tidak menampilkan enrollment atau meminta kode authenticator. Database
@@ -73,8 +74,12 @@ Pengujian menjalankan skema asli pada PostgreSQL lokal berbasis PGlite + pgcrypt
 `anon`/`authenticated`. Uji ini mencakup hak akses dengan sesi password (`aal1`), isolasi portal, penghitung
 kode salah, kuota pendaftaran, izin unggah, kepemilikan bukti, rotasi kode, dan audit append-only.
 Verifikasi pembayaran diuji dengan kegagalan update tagihan yang disengaja (seluruh penulisan harus
-rollback), permintaan berulang, cicilan event, serta aktivasi pendaftaran. Pencatatan pembayaran manual
-di luar alur verifikasi masih memakai lapisan sinkronisasi per tabel yang sudah ada.
+rollback), permintaan berulang, cicilan event, serta aktivasi pendaftaran. Mulai 11 Oktober, pembayaran
+manual juga memakai RPC atomik: pengujian mencakup kegagalan pada penulisan ledger terakhir dan iuran
+perdana, pengiriman ulang, snapshot pengurus, tanggal pembayaran, cicilan, dan duplikat tagihan.
+Endpoint TTD portal diuji dengan kredensial salah, kuitansi siswa lain, path foto siswa/eksternal,
+permintaan terlalu besar, dan kegagalan Storage. Key service-role hanya dibaca oleh server Vercel;
+validasi kepemilikan dilakukan sebelum pemanggilan Storage, dan respons tidak boleh dicache.
 Tes utilitas mencakup key rahasia, CSV injection, payload gambar dan kedaluwarsa sesi.
 Migrasi penonaktifan MFA diuji terhadap aturan database lama yang mewajibkan `aal2`, termasuk
 pengulangan migrasi dan pembatasan peran yang tetap berlaku. Ini bukan pentest terhadap layanan

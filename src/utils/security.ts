@@ -3,7 +3,10 @@ export const IDLE_TIMEOUT_MS = 30 * 60 * 1000;
 
 /** Only public Supabase credentials may be compiled into the browser bundle. */
 export function validateSupabaseConfig(url: string, key: string, production = false): boolean {
-  if (!url && !key) return false;
+  if (!url && !key) {
+    if (production) throw new Error('Konfigurasi Supabase wajib diisi sebelum build produksi.');
+    return false;
+  }
   if (!url || !key) throw new Error('URL Supabase dan publishable/anon key harus diisi bersama.');
   const parsed = new URL(url);
   const local = ['localhost', '127.0.0.1', '[::1]'].includes(parsed.hostname);

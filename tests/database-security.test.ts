@@ -53,6 +53,13 @@ before(async () => {
 });
 after(async () => { await db.close(); });
 
+async function manual(requestId: string, input: Record<string, unknown> = {}): Promise<any> {
+  const payload = { siswa_id: 'manual-student', tipe: 'Iuran Rutin', nominal: 40000, tanggal: '2026-09-15',
+    bulan: 9, tahun: 2026, metode_pembayaran: 'Tunai', ...input };
+  return (await db.query<{ result: any }>('select public.admin_record_payment($1,$2::jsonb) as result',
+    [requestId, JSON.stringify(payload)])).rows[0].result;
+}
+
 async function asRole<T>(role: 'anon' | 'authenticated', id: string | null, operation: () => Promise<T>, aal = 'aal1'): Promise<T> {
   await db.query("select set_config('request.jwt.claim.sub', $1, false), set_config('request.jwt.claim.aal', $2, false)", [id ?? '', aal]);
   await db.exec(`set role ${role}`);
@@ -339,4 +346,128 @@ test('swimming curriculum and structured answers persist unchanged and portal on
   await asRole('authenticated', outsider, async () => {
     assert.equal((await db.query('select * from public.rapor_entries')).rows.length, 0);
   });
+});
+
+test('receipt migration backfills once and keeps signer snapshots when the club profile changes', async () => {
+  const migration = await readFile(new URL('../supabase/migrations/20261010_kuitansi_ttd_pengurus.sql', import.meta.url), 'utf8');
+  await db.exec(`update public.club_profile set pengurus_nama='Pengurus Lama',pengurus_jabatan='Bendahara',pengurus_ttd=null where id=1;
+    insert into public.transactions(id,nomor_kuitansi,siswa_id,siswa_nama,tanggal,nominal,metode_pembayaran,tipe,pengurus_nama,pengurus_jabatan,pengurus_ttd)
+      values ('legacy-signer','LEGACY-SIGNER','student-1','Siswa Satu','2026-10-01',1000,'Tunai','Iuran Rutin',null,null,null),
+        ('empty-signer','EMPTY-SIGNER','student-1','Siswa Satu','2026-10-01',1000,'Tunai','Iuran Rutin','','','');`);
+  await db.exec(migration);
+  await db.exec(`update public.club_profile set pengurus_nama='Pengurus Baru',pengurus_jabatan='Ketua Baru',pengurus_ttd='new-signature' where id=1;`);
+  await db.exec(migration);
+  const schema = await readFile(new URL('../supabase/schema.sql', import.meta.url), 'utf8');
+  await db.exec(schema);
+  assert.deepEqual((await db.query("select pengurus_nama,pengurus_jabatan,pengurus_ttd from public.transactions where id='legacy-signer'")).rows[0],
+    { pengurus_nama: 'Pengurus Lama', pengurus_jabatan: 'Bendahara', pengurus_ttd: '' });
+  assert.deepEqual((await db.query("select pengurus_nama,pengurus_jabatan,pengurus_ttd from public.transactions where id='empty-signer'")).rows[0],
+    { pengurus_nama: '', pengurus_jabatan: '', pengurus_ttd: '' });
+  await db.exec(`insert into public.payment_submissions(id,siswa_id,siswa_nama,tipe,nominal,metode_pembayaran,tanggal_transfer,tanggal_kirim)
+    values ('signer-sub','candidate','Calon Uji','Pendaftaran',1000,'Tunai','2026-10-10','2026-10-10');`);
+  const result = await asRole('authenticated', admin, () => review('signer-sub'));
+  assert.equal(result.transaction.pengurus_nama, 'Pengurus Baru');
+  assert.equal(result.transaction.pengurus_ttd, 'new-signature');
+  await db.exec("update public.club_profile set pengurus_nama='Pengurus Berikutnya' where id=1");
+  assert.equal((await db.query('select pengurus_nama from public.transactions where id=$1', [result.transaction.id])).rows[0].pengurus_nama, 'Pengurus Baru');
+  await asRole('anon', null, async () => { await assert.rejects(review('signer-sub'), /permission denied/); });
+  assert.ok((await asRole('authenticated', coach, () => review('signer-sub'))).error);
+});
+
+
+test('manual payment migration can be repeated and only admins may record payments or access the private ledger', async () => {
+  const migration = await readFile(new URL('../supabase/migrations/20261011_atomic_manual_payments.sql', import.meta.url), 'utf8');
+  await db.exec(migration); await db.exec(migration);
+  await db.exec("insert into public.students(id,nama,kelas_id,jenis_kelamin,status,tanggal_bergabung) values ('manual-student','Nama dari database','class-1','Laki-laki','Aktif','2026-01-01')");
+  await asRole('anon', null, async () => {
+    await assert.rejects(manual('10000000-0000-0000-0000-000000000001'), /permission denied/);
+    await assert.rejects(db.query('select * from public.admin_payment_requests'), /permission denied/);
+  });
+  for (const id of [coach, outsider]) await asRole('authenticated', id, async () => {
+    assert.ok((await manual('10000000-0000-0000-0000-000000000001')).error);
+    await assert.rejects(db.query('select * from public.admin_payment_requests'), /permission denied/);
+  });
+  await asRole('authenticated', admin, async () => {
+    await assert.rejects(db.query('select * from public.admin_payment_requests'), /permission denied/);
+  });
+});
+
+test('manual installments use server receipts and snapshots, preserve dates, and retry without double-crediting', async () => {
+  const id = '10000000-0000-0000-0000-000000000002';
+  const first = await asRole('authenticated', admin, () => manual(id));
+  assert.ok(first.transaction, first.error);
+  assert.equal(first.transaction.siswa_nama, 'Nama dari database');
+  assert.equal(first.transaction.kelas_nama, 'Renang');
+  assert.equal(first.transaction.tanggal, '2026-09-15');
+  assert.equal(first.transaction.pengurus_nama, 'Pengurus Berikutnya');
+  const retry = await asRole('authenticated', admin, () => manual(id));
+  assert.deepEqual(retry.transaction, first.transaction);
+  assert.ok((await asRole('authenticated', admin, () => manual(id, { nominal: 50000 }))).error);
+  const second = await asRole('authenticated', admin, () => manual('10000000-0000-0000-0000-000000000003', { nominal: 60000, tipe: 'Angsuran' }));
+  assert.ok(second.transaction, second.error);
+  assert.equal(second.transaction.tipe, 'Angsuran');
+  assert.notEqual(second.transaction.nomor_kuitansi, first.transaction.nomor_kuitansi);
+  const due = (await db.query("select * from public.monthly_dues where siswa_id='manual-student' and bulan=9")).rows[0];
+  assert.equal(due.terbayar, 100000); assert.equal(due.status, 'lunas');
+  const rejected = await asRole('authenticated', admin, () => manual('10000000-0000-0000-0000-000000000004'));
+  assert.ok(rejected.error);
+  assert.equal((await db.query("select count(*)::int as n from public.payment_submissions where id='manual-10000000-0000-0000-0000-000000000004'")).rows[0].n, 0);
+  assert.equal((await db.query("select count(*)::int as n from public.transactions where siswa_id='manual-student'")).rows[0].n, 2);
+});
+
+test('manual payment rolls back receipt, proof archive and balance if the final ledger write fails', async () => {
+  const id = '10000000-0000-0000-0000-000000000005';
+  await db.exec("create function public.fail_manual_ledger() returns trigger language plpgsql as $$ begin raise exception 'simulated final failure'; end $$; create trigger fail_ledger before insert on public.admin_payment_requests for each row execute function public.fail_manual_ledger()");
+  const result = await asRole('authenticated', admin, () => manual(id, { bulan: 8 }));
+  assert.match(result.error, /simulated final failure/);
+  assert.equal((await db.query("select count(*)::int as n from public.monthly_dues where siswa_id='manual-student' and bulan=8")).rows[0].n, 0);
+  assert.equal((await db.query('select count(*)::int as n from public.payment_submissions where id=$1', ['manual-' + id])).rows[0].n, 0);
+  assert.equal((await db.query("select count(*)::int as n from public.transactions where siswa_id='manual-student'")).rows[0].n, 2);
+  await db.exec('drop trigger fail_ledger on public.admin_payment_requests; drop function public.fail_manual_ledger()');
+  const retry = await asRole('authenticated', admin, () => manual(id, { bulan: 8 }));
+  assert.ok(retry.transaction, retry.error);
+});
+
+test('manual enrollment splits first-month fees from server prices and rolls back activation on failure', async () => {
+  await db.exec("update public.classes set biaya_pendaftaran=50000 where id='class-1'; insert into public.students(id,nama,kelas_id,jenis_kelamin,status) values ('manual-candidate','Calon Manual','class-1','Laki-laki','Calon')");
+  const id = '10000000-0000-0000-0000-000000000006';
+  const input = { siswa_id: 'manual-candidate', tipe: 'Pendaftaran Siswa Baru', nominal: 125000, tanggal: '2025-12-20' };
+  await db.exec("create function public.fail_first_due() returns trigger language plpgsql as $$ begin if new.siswa_id='manual-candidate' then raise exception 'simulated first month failure'; end if; return new; end $$; create trigger fail_first_due before insert on public.monthly_dues for each row execute function public.fail_first_due()");
+  assert.ok((await asRole('authenticated', admin, () => manual(id, input))).error);
+  assert.equal((await db.query("select status from public.students where id='manual-candidate'")).rows[0].status, 'Calon');
+  assert.equal((await db.query("select count(*)::int as n from public.transactions where siswa_id='manual-candidate'")).rows[0].n, 0);
+  await db.exec('drop trigger fail_first_due on public.monthly_dues; drop function public.fail_first_due()');
+  const result = await asRole('authenticated', admin, () => manual(id, input));
+  assert.ok(result.transaction, result.error);
+  const student = (await db.query("select status,tanggal_bergabung from public.students where id='manual-candidate'")).rows[0];
+  assert.deepEqual(student, { status: 'Aktif', tanggal_bergabung: '2025-12-20' });
+  const due = (await db.query("select tahun,bulan,nominal,terbayar,status from public.monthly_dues where siswa_id='manual-candidate'")).rows[0];
+  assert.deepEqual(due, { tahun: 2025, bulan: 12, nominal: 100000, terbayar: 75000, status: 'belum_lunas' });
+  assert.ok((await asRole('authenticated', admin, () => manual('10000000-0000-0000-0000-000000000007', input))).error);
+  const retry = await asRole('authenticated', admin, () => manual(id, input));
+  assert.equal(retry.transaction.id, result.transaction.id);
+});
+
+test('manual event installments credit only the selected student and update event totals', async () => {
+  await db.exec("insert into public.events(id,nama) values ('manual-event','Lomba Manual'); insert into public.event_participants(id,event_id,siswa_id,status,nominal) values ('manual-participant','manual-event','manual-student','belum_bayar',90000)");
+  const input = { tipe: 'Iuran Insidentil', participant_id: 'manual-participant', nominal: 40000 };
+  const first = await asRole('authenticated', admin, () => manual('10000000-0000-0000-0000-000000000008', input));
+  assert.ok(first.transaction, first.error);
+  const second = await asRole('authenticated', admin, () => manual('10000000-0000-0000-0000-000000000009', { ...input, nominal: 50000 }));
+  assert.ok(second.transaction, second.error);
+  assert.deepEqual((await db.query("select terbayar,status from public.event_participants where id='manual-participant'")).rows[0], { terbayar: 90000, status: 'lunas' });
+  assert.deepEqual((await db.query("select total_peserta,peserta_lunas from public.events where id='manual-event'")).rows[0], { total_peserta: 1, peserta_lunas: 1 });
+  assert.ok((await asRole('authenticated', admin, () => manual('10000000-0000-0000-0000-000000000010', { ...input, siswa_id: 'student-2' }))).error);
+});
+
+test('manual inputs reject invalid dates, fractions, missing proof, nonbillable periods and duplicate due rows', async () => {
+  const id = '10000000-0000-0000-0000-000000000011';
+  for (const input of [{ tanggal: '2026-02-30' }, { nominal: 0 }, { nominal: 1.5 }, { bulan: 13 }, { bukti_path: '10000000-0000-0000-0000-000000000011.jpg' }, { bulan: 1, tahun: 2025 }]) {
+    assert.ok((await asRole('authenticated', admin, () => manual(id, input))).error, JSON.stringify(input));
+  }
+  await db.exec("insert into public.monthly_dues(id,siswa_id,tahun,bulan,status,nominal) values ('manual-blocked','manual-student',2026,7,'cuti',100000)");
+  assert.ok((await asRole('authenticated', admin, () => manual(id, { bulan: 7 }))).error);
+  await db.exec("insert into public.monthly_dues(id,siswa_id,tahun,bulan,status,nominal) values ('manual-dup1','manual-student',2026,6,'belum_bayar',100000), ('manual-dup2','manual-student',2026,6,'belum_bayar',100000)");
+  assert.ok((await asRole('authenticated', admin, () => manual(id, { bulan: 6 }))).error);
+  assert.equal((await db.query('select count(*)::int as n from public.admin_payment_requests where id=$1', [id])).rows[0].n, 0);
 });

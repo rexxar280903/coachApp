@@ -1,3 +1,5 @@
+begin;
+
 -- 1. Kolom pengurus penanda tangan pada Profil Klub (Pengaturan → Profil Klub)
 alter table public.club_profile add column if not exists pengurus_nama text;
 alter table public.club_profile add column if not exists pengurus_jabatan text;
@@ -12,11 +14,14 @@ alter table public.transactions add column if not exists pengurus_ttd text;
 -- agar kuitansi lama tidak ikut berubah jika profil diedit lagi di masa depan.
 update public.transactions t
 set
-  pengurus_nama = coalesce(t.pengurus_nama, cp.pengurus_nama),
-  pengurus_jabatan = coalesce(t.pengurus_jabatan, cp.pengurus_jabatan),
-  pengurus_ttd = coalesce(t.pengurus_ttd, cp.pengurus_ttd)
+  pengurus_nama = coalesce(t.pengurus_nama, cp.pengurus_nama, ''),
+  pengurus_jabatan = coalesce(t.pengurus_jabatan, cp.pengurus_jabatan, ''),
+  pengurus_ttd = coalesce(t.pengurus_ttd, cp.pengurus_ttd, '')
 from public.club_profile cp
-where cp.id = 1 and t.pengurus_nama is null;
+where cp.id = 1 and (t.pengurus_nama is null or t.pengurus_jabatan is null or t.pengurus_ttd is null);
+alter table public.transactions alter column pengurus_nama set default '';
+alter table public.transactions alter column pengurus_jabatan set default '';
+alter table public.transactions alter column pengurus_ttd set default '';
 
 -- 4. Perbarui fungsi verifikasi bukti transfer agar menyimpan snapshot pengurus ke transaksi
 create or replace function public.admin_review_payment(
@@ -94,9 +99,9 @@ begin
     v_today,v_sub.nominal,coalesce(p_terbilang,''),v_sub.metode_pembayaran,
     case when v_sub.tipe='Pendaftaran' then 'Pendaftaran Siswa Baru' else v_sub.tipe end,
     v_label || ' (Verifikasi Bukti Transfer Siswa)',p_note,
-    (select pengurus_nama from public.club_profile where id = 1),
-    (select pengurus_jabatan from public.club_profile where id = 1),
-    (select pengurus_ttd from public.club_profile where id = 1)) returning * into v_tx;
+    coalesce((select pengurus_nama from public.club_profile where id = 1), ''),
+    coalesce((select pengurus_jabatan from public.club_profile where id = 1), ''),
+    coalesce((select pengurus_ttd from public.club_profile where id = 1), '')) returning * into v_tx;
 
   if v_sub.tipe = 'Iuran Rutin' then
     if v_due.id is null then
@@ -124,4 +129,7 @@ begin
   return jsonb_build_object('transaction',to_jsonb(v_tx));
 end $$;
 
+revoke all on function public.admin_review_payment(text,text,text,text) from public, anon, authenticated;
+grant execute on function public.admin_review_payment(text,text,text,text) to authenticated;
 notify pgrst, 'reload schema';
+commit;

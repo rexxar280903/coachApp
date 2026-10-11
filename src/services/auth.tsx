@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { supabase, isSupabaseConfigured, startedInRecovery } from './supabase';
 import { passwordValidationError } from '../utils/security';
@@ -47,6 +47,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [recovery, setRecovery] = useState<boolean>(startedInRecovery);
   const [profileError, setProfileError] = useState<string | null>(null);
   const [profileAttempt, setProfileAttempt] = useState<number>(0);
+  const profileUserId = useRef<string | undefined>(undefined);
 
   useEffect(() => {
     if (!isSupabaseConfigured) return;
@@ -73,10 +74,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const userEmail = session?.user.email ?? '';
 
   useEffect(() => {
-    if (!userId) return;
+    if (!userId) { profileUserId.current = undefined; return; }
     let cancelled = false;
-    setLoading(true);
-    setStaff(null);
+    // Refresh JWT memeriksa ulang peran di latar belakang tanpa membongkar form yang sedang diisi.
+    if (profileUserId.current !== userId) {
+      setLoading(true);
+      setStaff(null);
+    }
+    profileUserId.current = userId;
     setProfileError(null);
     supabase.from('profiles').select('nama, role').eq('id', userId).maybeSingle()
       .then(

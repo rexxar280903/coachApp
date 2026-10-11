@@ -14,7 +14,7 @@ Urutan kerja (±30 menit). Semua langkah di sini dilakukan sekali.
 3. (Opsional) Jalankan [`seed.sql`](./seed.sql) untuk profil klub dan kelas contoh. Ubah isinya dulu sesuai klub Anda.
 
 Skema membuat tabel, kebijakan Row Level Security (RLS), fungsi `public_register` / `portal_data` /
-`portal_submit_payment` / `portal_create_upload` / `admin_review_payment`, dan dua bucket privat: `avatars` dan `payment-proofs`.
+`portal_submit_payment` / `portal_create_upload` / `admin_review_payment` / `admin_record_payment`, dan dua bucket privat: `avatars` dan `payment-proofs`.
 Logo profil klub memiliki policy baca publik tersendiri.
 
 ### Pembaruan keamanan (8 Okt 2026 — wajib diterapkan bersama frontend baru)
@@ -30,6 +30,40 @@ email + kata sandi. Jika versi skema dengan MFA wajib sudah diterapkan, jalankan
 [`migrations/20261008_disable_staff_mfa.sql`](./migrations/20261008_disable_staff_mfa.sql) bersama frontend
 terbaru untuk menghapus syarat MFA tanpa mengubah policy akses data lainnya. Database baru atau yang
 belum menerima pembaruan keamanan tetap memakai seluruh `schema.sql` terbaru.
+
+### Pembaruan rapor dan kuitansi (9–10 Okt 2026)
+
+Untuk database yang **sudah menerima seluruh pembaruan keamanan**, jalankan berurutan
+[`migrations/20261009_rapor_template_ttd.sql`](./migrations/20261009_rapor_template_ttd.sql) dan
+[`migrations/20261010_kuitansi_ttd_pengurus.sql`](./migrations/20261010_kuitansi_ttd_pengurus.sql).
+Jika migrasi kuitansi versi sebelumnya sudah dijalankan, jalankan ulang versi terbaru untuk mengunci
+snapshot yang kosong dan menetapkan default kolom. Kuitansi dengan pengurus yang sudah terisi tetap
+mempertahankan datanya. Jika pembaruan keamanan belum lengkap, jalankan seluruh `schema.sql` terbaru
+sesuai prosedur jendela pemeliharaan di atas; kedua pembaruan ini sudah termasuk di dalamnya.
+
+Build frontend tidak menjalankan migrasi Supabase. Sebelum menggabungkan branch dan deploy, baca
+hasil pemeriksaan di [`../docs/deploy-review-2026-10-10.md`](../docs/deploy-review-2026-10-10.md).
+
+### Pembayaran manual dan tanda tangan portal (11 Okt 2026)
+
+Jika pembaruan keamanan, rapor, dan kuitansi di atas sudah lengkap, jalankan
+[`migrations/20261011_atomic_manual_payments.sql`](./migrations/20261011_atomic_manual_payments.sql).
+Database yang belum lengkap tetap harus menjalankan seluruh `schema.sql` terbaru.
+RPC `admin_record_payment` menyimpan transaksi, saldo iuran/event, arsip bukti, dan aktivasi calon siswa
+dalam satu transaksi. Nomor kuitansi dibuat server dengan penguncian yang sama dengan verifikasi bukti
+portal. UUID permintaan dipakai untuk idempotensi: respons hilang bisa diulang tanpa pembayaran ganda.
+Unggahan file dilakukan lebih dahulu; file yang ditinggalkan setelah pembayaran gagal dapat dibersihkan
+seperti unggahan portal yang tidak dipakai. Pembayaran pendaftaran membagi iuran perdana berdasarkan
+tarif kelas di database dan bulan tanggal pembayaran.
+
+Endpoint Vercel `/api/portal-receipt-images` memvalidasi HP/kode melalui `portal_data` memakai anon key,
+memastikan setiap kuitansi milik siswa tersebut, lalu membuat signed URL snapshot TTD dari folder `club`
+selama satu jam. Endpoint tidak menerima path gambar dari browser dan tidak membuka foto siswa atau bukti
+transfer. Kuitansi yang sejak awal tanpa TTD tetap kosong. Jika konfigurasi/Storage gagal, portal memberikan
+peringatan dan tetap menampilkan data lainnya. Muat ulang halaman untuk memperbarui URL yang kedaluwarsa.
+Endpoint memerlukan `SUPABASE_SERVICE_ROLE_KEY` hanya di server; jangan memakai awalan `VITE_` untuk key ini.
+Dev server menyediakan endpoint yang sama jika key server diisi di `.env` lokal. Hosting statis saja tidak
+menjalankan endpoint tersebut; gunakan deployment Vercel dengan direktori `api` ikut di-commit.
 
 ## 3. Pengaturan Auth
 
@@ -89,7 +123,9 @@ transfer** (ditampilkan kepada siswa di Portal Siswa).
 ## 6. Deploy ke Vercel
 
 1. Import repo di <https://vercel.com> (framework Vite terdeteksi otomatis; `vercel.json` sudah memuat rewrite SPA).
-2. **Settings → Environment Variables**: isi `VITE_SUPABASE_URL` dan `VITE_SUPABASE_ANON_KEY`.
+2. **Settings → Environment Variables**: isi `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, dan
+   `SUPABASE_SERVICE_ROLE_KEY` untuk environment deployment yang digunakan. Key terakhir hanya dibaca
+   fungsi server dan tidak boleh dimasukkan ke `VITE_*`, kode frontend, atau Git. Redeploy setelah mengubahnya.
 3. Deploy, lalu masukkan domain final ke *Site URL* / *Redirect URLs* di Supabase (langkah 3).
 
 ## Cara kerja akses
@@ -114,6 +150,8 @@ Penghitung berlaku pada semua RPC portal, termasuk permintaan unggah/pembayaran 
 - Foto siswa/pelatih ada di bucket **privat**, hanya dapat dibaca staf yang berhak melalui signed URL
   berdurasi 1 jam. Logo yang dirujuk profil klub dapat dibaca publik. Foto siswa tidak dikirim ke portal
   tanpa akun Auth; portal menggunakan inisial sebagai pengganti foto.
+- TTD kuitansi portal dibaca melalui backend setelah validasi kredensial dan kepemilikan kuitansi,
+  menggunakan referensi historis yang tersimpan pada transaksi; bucket tetap privat.
 - Pelatih tidak dapat membaca tabel `students`. RPC khusus hanya mengirim nama, kelas, jenis kelamin,
   status, tanggal bergabung, dan referensi foto; kode akses serta kontak keluarga tidak dikirim.
 - Bukti transfer privat; pengurus admin melihatnya melalui signed URL 1 jam. Portal hanya menampilkan
@@ -128,3 +166,6 @@ Penghitung berlaku pada semua RPC portal, termasuk permintaan unggah/pembayaran 
   kode akses/biodata. API browser hanya mengizinkan admin membaca log, tidak mengubah atau menghapusnya.
 - Tidak ada foreign key antar tabel (ID dibuat aplikasi). Hindari mengedit tabel langsung dari dashboard kecuali perlu.
 - Aktifkan **Database → Backups** (paket Pro) atau ekspor berkala (`pg_dump`) untuk cadangan data.
+
+Referensi implementasi server: [Vercel Node.js runtime](https://vercel.com/docs/functions/runtimes/node-js)
+dan [Supabase createSignedUrls](https://supabase.com/docs/reference/javascript/storage-from-createsignedurls).

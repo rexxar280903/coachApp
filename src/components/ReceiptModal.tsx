@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { PaymentTransaction, ClubProfile } from '../types/sportkit';
 import { formatRupiah } from '../utils/numberToWordsId';
 import { formatTanggalPanjang } from '../utils/constants';
+import { receiptSigner } from '../utils/payments';
 import { BRAND_NAME, BRAND_LOGO } from '../utils/brand';
 import { Printer, X, Share2, CheckCircle2, ShieldCheck } from 'lucide-react';
 
@@ -26,9 +27,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
   const tanggal = formatTanggalPanjang(transaction.tanggal);
   const alamat = [profile.alamat, profile.kota].filter(Boolean).join(', ');
   const kontak = [profile.noHp && `Telp/WA: ${profile.noHp}`, profile.email].filter(Boolean).join(' | ');
-  const signerJabatan = transaction.pengurusJabatan?.trim() || profile.pengurusJabatan?.trim() || 'Bendahara / Pengurus Klub';
-  const signerTtd = transaction.pengurusTtd !== undefined ? transaction.pengurusTtd : profile.pengurusTtd;
-  const signerNama = transaction.pengurusNama?.trim() || profile.pengurusNama?.trim() || `Pengurus ${profile.namaKlub}`;
+  const { jabatan: signerJabatan, ttd: signerTtd, nama: signerNama } = receiptSigner(transaction, profile);
 
   const handlePrint = () => {
     // Judul dokumen menjadi nama file default saat "Simpan sebagai PDF".

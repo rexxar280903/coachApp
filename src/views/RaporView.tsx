@@ -68,7 +68,7 @@ interface RaporViewProps {
   actorName: string;
   /** Tabel rapor belum ada di server (schema.sql belum dijalankan ulang). */
   unavailable?: boolean;
-  onSaveTemplate: (template: RaporTemplate) => void;
+  onSaveTemplate: (template: RaporTemplate) => void | Promise<boolean>;
   onDeleteTemplate: (templateId: string) => void;
   onSaveFolder: (folder: RaporFolder) => void;
   onDeleteFolder: (folderId: string) => void;
@@ -119,9 +119,10 @@ export const RaporView: React.FC<RaporViewProps> = (props) => {
         profile={profile}
         usedBy={folders.filter((f) => f.templateId === screen.template.id).length}
         onCancel={() => setScreen({ kind: 'list' })}
-        onSave={(tpl) => {
-          props.onSaveTemplate(tpl);
-          setScreen({ kind: 'list' });
+        onSave={async (tpl) => {
+          const saved = await props.onSaveTemplate(tpl);
+          if (saved !== false) setScreen({ kind: 'list' });
+          return saved;
         }}
       />
     );
@@ -435,7 +436,7 @@ const TemplateEditor: React.FC<{
   profile: ClubProfile;
   usedBy: number;
   onCancel: () => void;
-  onSave: (t: RaporTemplate) => void;
+  onSave: (t: RaporTemplate) => void | Promise<boolean | void>;
 }> = ({ initial, isNew, profile, usedBy, onCancel, onSave }) => {
   const { toast } = useToast();
   // Tampilkan TTD yang benar-benar tercetak saat ini; template baru dimulai dengan Orangtua & Pelatih.
@@ -444,6 +445,7 @@ const TemplateEditor: React.FC<{
     ttd: isNew && !initial.ttd && !isSwimmingTemplate(initial) ? defaultRaporTtd() : raporSignatures(initial),
   }));
   const [preview, setPreview] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   const setItems = (fn: (items: RaporItem[]) => RaporItem[]) => setTpl((t) => ({ ...t, items: fn(t.items) }));
   const updateItem = (id: string, patch: Partial<RaporItem>) =>
@@ -461,7 +463,8 @@ const TemplateEditor: React.FC<{
       { id: newRaporId('itm'), tipe, label: '', ...(hasOpsi(tipe) ? { opsi: ['', ''] } : {}) },
     ]);
 
-  const handleSave = () => {
+  const handleSave = async () => {
+    if (saving) return;
     const nama = tpl.nama.trim();
     if (!nama) return toast.error('Nama template wajib diisi');
     if (tpl.items.length === 0) return toast.error('Template belum punya item penilaian');
@@ -485,7 +488,10 @@ const TemplateEditor: React.FC<{
       ...(t.gambar ? { gambar: t.gambar } : {}),
     }));
     if (ttd.some((t) => !t.jabatan)) return toast.error('Tanda tangan belum lengkap', 'Isi jabatan / keterangan di setiap kolom tanda tangan.');
-    onSave({ ...tpl, nama, items, ttd });
+    setSaving(true);
+    try { await onSave({ ...tpl, nama, items, ttd }); }
+    catch { toast.error('Template gagal disimpan', 'Periksa koneksi lalu coba lagi.'); }
+    finally { setSaving(false); }
   };
 
   const sampleDoc: RaporDocData = {
@@ -717,8 +723,8 @@ const TemplateEditor: React.FC<{
       </div>
 
       <div className="flex gap-2">
-        <button onClick={handleSave} className={btnPrimary}>
-          <Save className="w-4 h-4" /> Simpan Template
+        <button onClick={handleSave} disabled={saving} className={`${btnPrimary} disabled:opacity-50 disabled:cursor-wait`}>
+          <Save className="w-4 h-4" /> {saving ? 'Menyimpan…' : 'Simpan Template'}
         </button>
         <button onClick={onCancel} className={btnSecondary}>
           Batal
